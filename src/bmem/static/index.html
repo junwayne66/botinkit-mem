@@ -311,6 +311,19 @@
           </div>
         </div>
         <div class="sec source-grid" data-sec="sources"></div>
+        <div class="panel connector-panel" id="connector-panel">
+          <h2>飞书 / Lark 记忆</h2>
+          <div class="connector-form field-grid">
+            <label for="connector-brand">品牌
+              <select id="connector-brand" class="connector-brand">
+                <option value="feishu">飞书</option>
+                <option value="lark">Lark</option>
+              </select>
+            </label>
+          </div>
+          <div class="connector-body" id="connector-body"></div>
+          <div class="connector-msg" id="connector-status" role="status" aria-live="polite"></div>
+        </div>
         <div class="panel">
           <h2>部分接入</h2>
           <p class="panel-note">仅有 MCP 的工具：主动搜索可用，“自动想起来”需要文件补扫。用 <code class="measured">bmem connect &lt;harness&gt;</code> 写入 hooks / MCP 配置，接入矩阵详见项目 README。</p>
@@ -360,6 +373,11 @@
               </div>
             </div>
           </div>
+        </div>
+        <div class="panel" id="settings-connector">
+          <h2>飞书 / Lark 连接</h2>
+          <div id="settings-connector-body" role="status" aria-live="polite"></div>
+          <p class="panel-note"><a href="#/sources?connector=feishu" id="settings-connector-link">管理连接</a></p>
         </div>
         <div class="panel">
           <h2>运行时与服务</h2>

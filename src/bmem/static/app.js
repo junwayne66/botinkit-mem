@@ -97,7 +97,12 @@
     backup: "/api/backup",
     restore: "/api/restore",
     workerRun: "/api/worker/run",
-    rebuild: "/api/indexes/rebuild"
+    rebuild: "/api/indexes/rebuild",
+    connector: function (brand) { return "/api/connectors/" + brand; },
+    connectorConnect: function (brand) { return "/api/connectors/" + brand + "/connect"; },
+    connectorConfig: function (brand) { return "/api/connectors/" + brand + "/config"; },
+    connectorSync: function (brand) { return "/api/connectors/" + brand + "/sync"; },
+    connectorQr: function (brand) { return "/api/connectors/" + brand + "/qrcode"; }
   };
 
   function ApiError(status, message) {
@@ -340,6 +345,7 @@
     inj: { items: null },
     imports: { items: null },
     currentId: null,
+    connector: null,
     runtime: null,
     lastBackup: "",
     booting: true
@@ -347,7 +353,7 @@
 
   function hashFor(screen, params) {
     var p = new URLSearchParams();
-    ["q", "kind", "status", "harness", "offset", "prov", "gstatus"].forEach(function (k) {
+    ["q", "kind", "status", "harness", "offset", "prov", "gstatus", "connector"].forEach(function (k) {
       var v = params.get(k);
       if (v && v !== "all" && v !== "0" && v !== "false") p.set(k, v);
     });
@@ -393,6 +399,9 @@
       if (input && input.value !== q) input.value = q;
     }
     if (screenChanged && !state.booting) window.scrollTo({ top: 0 });
+    /* 连接器：GET 与轮询都在 loadSources / loadSettings / connSyncBrand 内各自管理，避免每次 render 重复取。 */
+    if (state.screen === "sources" || state.screen === "settings") $all(".connector-brand").forEach(function (s) { s.value = connSel.brand; });
+    else connectorStop();
     var act = {
       overview: loadOverview,
       memories: loadMemories,
@@ -956,6 +965,7 @@
   function afterWrite() {
     invalidateCaches();
     pollHealth();
+    if (state.screen === "sources" || state.screen === "settings") connectorRefresh();
     if (state.screen === "overview") {
       loadOverview();
     } else {
@@ -2036,6 +2046,7 @@
 
   function loadSources() {
     secShow("sources", "loading", { layout: "lines" });
+    connectorEnter("sources");
     apiFetch("GET", EP.sources).then(function (data) {
       var items = itemsOf(data);
       if (!items.length) {
@@ -2110,6 +2121,7 @@
         toast("语义开关读取失败：" + e.message, { bad: true });
       });
     refreshRuntime();
+    connectorEnter("settings");
   }
 
   function applySettings(s) {
@@ -2462,6 +2474,451 @@
     state.memories.items = [];
   }
 
+  /* ================= 连接器：飞书 / Lark（契约 specs/002-feishu-memory/contracts/interfaces.md） ================= */
+  var CONN_BRANDS = ["feishu", "lark"];
+  var CONN_NAME = { feishu: "飞书", lark: "Lark" };
+  var CONN_PHASE = {
+    unconfigured: "未配置", installing: "安装 CLI", configuring: "准备认证", authorizing: "等待授权",
+    connected: "已连接", syncing: "读取中", error: "出错"
+  };
+  var CONN_ACTIVE = { installing: 1, configuring: 1, authorizing: 1, syncing: 1 };
+  var CONN_SOURCES = [
+    { key: "private_chats", label: "私聊" },
+    { key: "group_chats", label: "群聊" },
+    { key: "documents", label: "文档" }
+  ];
+  var CONN_OFFICIAL = ["feishu.cn", "larksuite.com"];
+  var connSel = { brand: "feishu", draft: null };
+
+  function connBrand(v) { return CONN_BRANDS.indexOf(String(v || "")) >= 0 ? String(v) : "feishu"; }
+  function connName(b) { return CONN_NAME[b] || CONN_NAME.feishu; }
+  function connData(d) { return (d && d.brand === connSel.brand) ? d : null; }
+  function connPhase(d) { return d ? String(d.phase || "unconfigured") : ""; }
+  function connError(error) { return error && error.message ? String(error.message) : String(error || ""); }
+  function connActive(d) { return !!(d && (d.busy === true || CONN_ACTIVE[String(d.phase || "")])); }
+  function connLocked(d) { return CB.sending || connActive(d); }
+  function connLabel(key) {
+    var o = CONN_SOURCES.filter(function (x) { return x.key === key; })[0];
+    return o ? o.label : "";
+  }
+
+  /* 授权链接：仅 https、无凭据、主机为官方域名（feishu.cn / *.feishu.cn / larksuite.com / *.larksuite.com）。 */
+  function connSafeUrl(raw) {
+    if (typeof raw !== "string" || !raw || raw.length > 4096) return null;
+    var u;
+    try { u = new URL(raw, location.origin); } catch (e) { return null; }
+    if (u.protocol !== "https:" || u.username || u.password) return null;
+    var host = u.hostname.toLowerCase();
+    var ok = CONN_OFFICIAL.some(function (d) { return host === d || host.slice(-(d.length + 1)) === "." + d; });
+    return ok ? raw : null;
+  }
+
+  function connSourcesOf(d) {
+    var hs = asDict(d && d.history);
+    return Array.isArray(hs.sources) ? hs.sources.filter(function (s) { return connLabel(s); }) : [];
+  }
+  function connSensitivity(d) { return String(asDict(d && d.history).sensitivity || "private") === "normal" ? "normal" : "private"; }
+  /* 表单选择：用户草稿优先；首次未确认三项全不勾选；已确认回显已存配置。 */
+  function connSelection(d) {
+    if (connSel.draft && connSel.draft.brand === connSel.brand) return { sources: connSel.draft.sources.slice(), sensitivity: connSel.draft.sensitivity };
+    if (!d || !asDict(d.history).confirmed) return { sources: [], sensitivity: "private" };
+    return { sources: connSourcesOf(d), sensitivity: connSensitivity(d) };
+  }
+  function connSame(sel, saved) {
+    return sel.sensitivity === saved.sensitivity && sel.sources.join(",") === saved.sources.join(",");
+  }
+  function connSaved(d) {
+    return (d && asDict(d.history).confirmed) ? { sources: connSourcesOf(d), sensitivity: connSensitivity(d) } : { sources: [], sensitivity: "private" };
+  }
+  function connSourceZh(list) { return list.length ? list.map(connLabel).join(" · ") : "暂不读取"; }
+
+  /* ---- 加载 / 独立轮询：仅 sources/settings 且页面可见 ---- */
+  var CB = { data: null, err: null, sending: false, qr: { url: "", img: null, imgSrc: "", imgUrl: "" }, poll: { timer: null, fails: 0 } };
+
+  function connActivePage() { return state.screen === "sources" || state.screen === "settings"; }
+  /* 每个屏幕加载时调用一次：对齐品牌（路由参数可覆盖），再取一次状态。 */
+  function connectorEnter() {
+    connSyncBrand();
+  }
+  function connectorRefresh() { connectorGet(); }
+  /* 品牌来自路由 connector=feishu|lark（有效才采用，否则保持当前）；换品牌即停旧轮询、清空草稿与旧状态，之后仅接受新品牌响应。 */
+  function connSyncBrand() {
+    if (!connActivePage()) { connectorStop(); return; }
+    var route = connBrand(state.params.get("connector"));
+    var b = CONN_BRANDS.indexOf(String(state.params.get("connector") || "")) >= 0 ? route : connSel.brand;
+    if (b !== connSel.brand) {
+      connectorStopPoll();
+      connSel.brand = b;
+      connSel.draft = null;
+      CB.data = null;
+      CB.err = null;
+      CB.sending = false;
+      CB.qr = { url: "", img: null, imgSrc: "", imgUrl: "" };
+    }
+    var sel = $("#connector-brand");
+    if (sel) sel.value = connSel.brand;
+    connectorRefresh();   // 进入/返回页面或换品牌：立即刷新，进行中则恢复轮询
+  }
+  function connectorApply(data) {
+    var previous = CB.data && CB.data.sync;
+    CB.data = asDict(data);
+    var current = CB.data.sync || {};
+    if (current.last_success_at && (!previous || current.last_success_at !== previous.last_success_at)) {
+      invalidateCaches();
+      refreshSidebarStats();
+    }
+  }
+  function connectorGet() {
+    var brand = connSel.brand;
+    apiFetch("GET", EP.connector(brand)).then(function (d) {
+      if (brand !== connSel.brand) return;                 // 丢弃上一品牌响应
+      CB.poll.fails = 0;
+      connectorApply(d);
+      CB.err = null;
+      connectorRender();
+      if (connActive(CB.data) && document.hidden !== true) connectorStartPoll();
+      else connectorStopPoll();
+    }).catch(function (e) {
+      if (brand !== connSel.brand) return;
+      CB.err = e;
+      CB.poll.fails++;
+      if (CB.poll.fails > 6) connectorStopPoll();
+      connectorRender();
+    });
+  }
+  function connPollOnce() {
+    if (document.hidden || !connActivePage() || CB.sending) return;
+    var brand = connSel.brand;
+    apiFetch("GET", EP.connector(brand)).then(function (d) {
+      if (brand !== connSel.brand) return;
+      CB.poll.fails = 0;
+      connectorApply(d);
+      CB.err = null;
+      connectorRender();
+      if (!connActive(CB.data)) connectorStopPoll();
+    }).catch(function () {
+      if (brand !== connSel.brand) return;
+      CB.poll.fails++;
+      if (CB.poll.fails > 6) { connectorStopPoll(); CB.err = ApiError(0, "连接状态读取失败，已暂停轮询，点「重试读取」恢复。"); connectorRender(); }
+    });
+  }
+  function connectorStartPoll() {
+    if (CB.poll.timer || document.hidden || !connActivePage()) return;
+    CB.poll.fails = 0;
+    CB.poll.timer = setInterval(connPollOnce, 2000);
+  }
+  /* 操作刚返回时后端会短暂标记 busy：稍后确认一次再进行状态轮询。 */
+  function connectorPeekPoll() {
+    connectorStopPoll();
+    setTimeout(function () { if (connActivePage() && !CB.poll.timer) connectorStartPoll(); }, 600);
+  }
+  function connectorStopPoll() { if (CB.poll.timer) { clearInterval(CB.poll.timer); CB.poll.timer = null; } }
+  function connectorStop() { connectorStopPoll(); }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) connectorStopPoll();
+    else if (connActivePage()) connectorRefresh();
+  });
+
+  /* ---- 变更：本地发送中或后端 busy 时拒绝重复提交 ---- */
+  function connMutate(ep, method, body, okMsg, onOk) {
+    if (connLocked(connData(CB.data))) return;
+    var brand = connSel.brand;
+    CB.sending = true;
+    CB.err = null;
+    connectorRender();
+    apiFetch(method, ep, body === undefined ? {} : { body: body }).then(function (d) {
+      if (brand !== connSel.brand) return;
+      connectorApply(d);
+      CB.err = null;
+      if (onOk) onOk();   // 成功确认后、渲染前
+      if (okMsg) toast(d && d.error ? okMsg + "；错误：" + truncate(connError(d.error), 90) : okMsg, { bad: !!(d && d.error) });
+      connectorRender();
+      if (connActive(CB.data)) connectorStartPoll(); else connectorStopPoll();
+    }).catch(function (e) {
+      if (brand !== connSel.brand) return;
+      CB.err = e;
+      toast("请求未完成：" + e.message, { bad: true });
+      connectorRender();
+      if (e.status === 409) { connectorGet(); connectorPeekPoll(); }   // 已有操作在运行：改为跟踪当前操作
+    }).then(function () {
+      if (brand !== connSel.brand) return;
+      CB.sending = false;
+      connectorRender();
+    });
+  }
+  function connSaveSelection() {
+    var sel = connSelection(connData(CB.data));
+    var brand = connSel.brand;
+    connMutate(EP.connectorConfig(brand), "PUT",
+      { sources: sel.sources.slice(), enabled: sel.sources.length > 0, sensitivity: sel.sensitivity },
+      "读取范围已保存：" + connSourceZh(sel.sources), function () {
+        if (connSel.draft && connSel.draft.brand === brand) connSel.draft = null;   // 仅 PUT 成功后清除草稿
+      });
+  }
+  function connConnect() {
+    var sel = connSelection(connData(CB.data));
+    /* 新连接：先保存范围与敏感级别（PUT config），再以显式 sources 发起 connect。 */
+    var brand = connSel.brand;
+    if (connLocked(connData(CB.data))) return;
+    CB.sending = true;
+    CB.err = null;
+    connectorRender();
+    apiFetch("PUT", EP.connectorConfig(brand), { body: { sources: sel.sources.slice(), enabled: sel.sources.length > 0, sensitivity: sel.sensitivity } })
+      .then(function (d) {
+        if (brand !== connSel.brand) return null;
+        connectorApply(d);
+        return apiFetch("POST", EP.connectorConnect(brand), { body: { sources: sel.sources.slice() } });
+      }).then(function (d) {
+        if (!d || brand !== connSel.brand) return;
+        connectorApply(d);
+        connSel.draft = null;
+        CB.err = null;
+        toast(d.error ? "连接未成功：" + truncate(connError(d.error), 120) : "已发起连接：" + connSourceZh(sel.sources), { bad: !!d.error });
+        connectorRender();
+        connectorStartPoll();
+      }).catch(function (e) {
+        if (brand !== connSel.brand) return;
+        CB.err = e;
+        toast("连接失败：" + e.message, { bad: true });
+        connectorRender();
+      }).then(function () {
+        if (brand !== connSel.brand) return;
+        CB.sending = false;
+        connectorRender();
+      });
+  }
+  function connSyncNow(sel) {
+    if (!sel.sources.length) {
+      toast("暂未选择读取范围：请先勾选私聊 / 群聊 / 文档并保存", { bad: true });
+      return;
+    }
+    connMutate(EP.connectorSync(connSel.brand), "POST", undefined, "已开始读取所选范围");
+  }
+
+  /* ---- 小部件 ---- */
+  function connKv(label, node) {
+    var pairs = [];
+    pairs.push(h("dt", null, label));
+    var dd = document.createElement("dd");
+    if (node && node.nodeType) dd.appendChild(node);
+    else dd.appendChild(h("span", "measured", String(node === undefined || node === null ? "—" : node)));
+    pairs.push(dd);
+    return pairs;
+  }
+  function connAppendKv(dl, label, node) { connKv(label, node).forEach(function (n) { dl.appendChild(n); }); }
+
+  /* 授权 URL（真实链接，新标签）与同源二维码；二维码以挑战 URL 缓存，仅当前挑战显示，二维码生成中时，后续状态轮询继续尝试加载。 */
+  function connAuthBlock(d, active) {
+    var wrap = h("div", "connector-part");
+    var auth = asDict(d && d.authorization);
+    var raw = auth.url;
+    if (raw !== CB.qr.url) CB.qr = { url: raw, img: null, imgSrc: "", imgUrl: "" };   // 新挑战重新加载二维码
+    var safe = connSafeUrl(raw);
+    if (safe) {
+      var row = h("div", "connector-actions");
+      var a = h("a", "btn btn--primary", "打开授权页面");
+      a.href = safe;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      row.appendChild(a);
+      if (auth.expires_at) row.appendChild(h("span", "connector-msg", "有效期至 " + fmtTime(auth.expires_at)));
+      wrap.appendChild(row);
+    }
+    var qrUrl = EP.connectorQr(connBrand(d && d.brand));
+    if (active && raw && typeof raw === "string") {
+      var box = h("div", "connector-qr");
+      /* 同一挑战内轮询复用已加载的图片节点，不新建、不重设 src；新挑战才重新取同源端点。 */
+      if (CB.qr.img && CB.qr.imgSrc && CB.qr.imgUrl === qrUrl) {
+        box.appendChild(CB.qr.img);
+      } else {
+        var img = h("img");
+        img.alt = connName(connSel.brand) + " 授权二维码";
+        img.width = 200;
+        img.height = 200;
+        img.id = "conn-qr-img";
+        img.addEventListener("load", function () { CB.qr.img = img; CB.qr.imgSrc = img.src; CB.qr.imgUrl = qrUrl; });
+        img.addEventListener("error", function () { CB.qr.img = null; CB.qr.imgSrc = ""; box.remove(); });   // 图片尚未就绪时隐藏，下一次状态轮询再加载
+        img.src = qrUrl;                           // 固定同源端点，从不使用 DTO 的 URL
+        box.appendChild(img);
+      }
+      box.appendChild(h("span", "connector-msg", (safe ? "或用手机" : "") + connName(connSel.brand) + "扫码授权" + (auth.expires_at ? "，有效期至 " + fmtTime(auth.expires_at) : "")));
+      wrap.appendChild(box);
+    }
+    if (!wrap.firstChild) return null;
+    return wrap;
+  }
+
+  /* ---- 来源页：内联连接面板 ---- */
+  function connectorRenderSources() {
+    var host = $("#connector-body");
+    if (!host) return;
+    var d = connData(CB.data);
+    var locked = connLocked(d);
+    var focus = $("#connector-body").contains(document.activeElement)
+      ? (document.activeElement.id || (document.activeElement.getAttribute("data-conn-source") ? "conn-src-" + document.activeElement.getAttribute("data-conn-source") : null))
+      : null;
+    var status = $("#connector-status");
+
+    var phase = connPhase(d);
+    var chips = h("div", "chip-row");
+    var phaseChip = chip(connName(connSel.brand) + " · " + (CONN_PHASE[phase] || phase || "读取中"));
+    phaseChip.className = "chip " + (phase === "connected" ? "chip--ok" : phase === "error" || CB.err ? "chip--bad" : CONN_ACTIVE[phase] ? "chip--cool" : "chip--muted");
+    phaseChip.id = "connector-phase";
+    chips.appendChild(phaseChip);
+    if (CB.err) {
+      var ec = chip((CB.err.status === 0 ? "bmemd 离线" : "请求失败"), "chip--bad");
+      ec.id = "connector-error";
+      chips.appendChild(ec);
+    }
+    var retry = mkButton("重试读取", connectorGet, "btn btn--quiet");
+    retry.id = "connector-refresh";
+    chips.appendChild(retry);
+
+    var dl = h("dl", "kv");
+    if (CB.err) {
+      connAppendKv(dl, "错误", h("span", "connector-msg", CB.err.message));
+    }
+    if (d) {
+      connAppendKv(dl, "CLI", d.installed === true ? chip("已安装", "chip--ok") : chip("未安装", "chip--muted"));
+      connAppendKv(dl, "版本", d.cli_version ? String(d.cli_version) : "—");
+      var authRow = h("span", "chip-row");
+      authRow.appendChild(d.authenticated === true ? chip("身份与只读范围已验证", "chip--ok") : chip("尚无读取授权", "chip--amber"));
+      var ac = asDict(d.account);
+      var acName = String(ac.name || ac.id || "");
+      if (acName) authRow.appendChild(chip(truncate(acName, 40), "chip--muted"));
+      connAppendKv(dl, "认证", authRow);
+      connAppendKv(dl, "已存范围", connSourceZh(connSourcesOf(d)) + (asDict(d.history).confirmed ? "" : "（尚未确认）"));
+      var sy = asDict(d.sync);
+      connAppendKv(dl, "同步", "阶段 " + String(sy.stage || "idle") + (sy.running === true ? "（进行中）" : ""));
+      connAppendKv(dl, "导入 / 跳过 / 错误", fmtNum(intOf(sy.imported)) + " / " + fmtNum(intOf(sy.skipped)) + " / " + fmtNum(intOf(sy.errors)));
+      connAppendKv(dl, "上次成功", sy.last_success_at ? timeEl(String(sy.last_success_at)) : "—");
+      if (d.error) connAppendKv(dl, "服务端错误", h("span", "connector-msg", truncate(connError(d.error), 400)));
+    }
+
+    /* 范围表单：三项独立复选，互斥无；保存时按选择启用 enabled。 */
+    var sel = connSelection(d);
+    var form = h("div", "connector-part");
+    var fieldset = h("fieldset", "connector-ranges");
+    var legend = h("legend", "row-label", "读取范围（三类可任选，勾选范围后可保存并同步）");
+    legend.id = "connector-ranges-legend";
+    fieldset.appendChild(legend);
+    fieldset.setAttribute("aria-labelledby", "connector-ranges-legend");
+    CONN_SOURCES.forEach(function (o) {
+      var lab = h("label", "connector-range");
+      var cb = h("input");
+      cb.type = "checkbox";
+      cb.id = "conn-src-" + o.key;
+      cb.value = o.key;
+      cb.checked = sel.sources.indexOf(o.key) >= 0;
+      cb.setAttribute("data-conn-source", o.key);
+      cb.disabled = locked;
+      cb.addEventListener("change", function () {
+        var cur = connSelection(connData(CB.data));
+        var srcs = CONN_SOURCES.map(function (s) { return s.key; }).filter(function (k) { return $("#conn-src-" + k).checked; });
+        connSel.draft = { brand: connSel.brand, sources: srcs, sensitivity: cur.sensitivity };
+        connectorRender();
+      });
+      lab.appendChild(cb);
+      lab.appendChild(h("span", null, o.label));
+      fieldset.appendChild(lab);
+    });
+    form.appendChild(fieldset);
+
+    var sensLab = h("label", "connector-range");
+    var sensCb = h("input");
+    sensCb.type = "checkbox";
+    sensCb.id = "conn-sensitivity";
+    sensCb.checked = sel.sensitivity === "normal";
+    sensCb.disabled = locked;
+    sensCb.setAttribute("aria-describedby", "conn-sensitivity-desc");
+    sensCb.addEventListener("change", function () {
+      var cur = connSelection(connData(CB.data));
+      connSel.draft = { brand: connSel.brand, sources: cur.sources, sensitivity: sensCb.checked ? "normal" : "private" };
+      connectorRender();
+    });
+    sensLab.appendChild(sensCb);
+    sensLab.appendChild(h("span", null, "允许云端助手召回"));
+    form.appendChild(sensLab);
+    var sensDesc = h("p", "connector-msg", sensCb.checked
+      ? "已勾选：导入记忆为 normal，可被云端助手召回。"
+      : "默认 private，仅供本地检索与注入。");
+    sensDesc.id = "conn-sensitivity-desc";
+    form.appendChild(sensDesc);
+
+    var dirty = connSel.draft !== null && connSel.draft.brand === connSel.brand && !connSame(sel, connSaved(d));
+    var acts = h("div", "connector-actions");
+    if (!sel.sources.length) form.appendChild(h("p", "connector-msg", "暂不读取，勾选范围后可保存并同步。"));
+    var saveBtn = mkButton(dirty ? "保存范围（未保存）" : "保存范围", connSaveSelection, dirty ? "btn btn--primary" : "btn");
+    saveBtn.id = "conn-save";
+    var connBtn = mkButton(phase === "unconfigured" ? "连接" : "重新连接", connConnect, "btn btn--primary");
+    connBtn.id = "conn-connect";
+    var syncBtn = mkButton("立即同步", function () { connSyncNow(connSelection(connData(CB.data))); });
+    syncBtn.id = "conn-sync";
+    /* 同步始终使用后端已保存的范围；草稿未保存时禁用，避免读取旧范围。 */
+    syncBtn.disabled = locked || !sel.sources.length || dirty;
+    var syncHintText = !sel.sources.length ? "暂未选择读取范围" : (dirty ? "先保存范围，再同步" : "");
+    if (syncHintText) {
+      var hint = h("span", "connector-msg", syncHintText);
+      hint.id = "conn-sync-hint";
+      syncBtn.setAttribute("aria-describedby", "conn-sync-hint");
+      acts.appendChild(hint);
+    }
+    [saveBtn, connBtn, syncBtn].forEach(function (b) {
+      if (connLocked(d)) b.disabled = true;
+      acts.appendChild(b);
+    });
+    form.appendChild(acts);
+
+    /* 目标 DOM 先清空再装配；同一挑战内轮询复用已加载的二维码，不反复请求同源端点。 */
+    host.innerHTML = "";
+    host.appendChild(chips);
+    var authHost = h("div");
+    host.appendChild(authHost);
+    host.appendChild(dl);
+    host.appendChild(form);
+
+    var authBlock = connAuthBlock(d, CONN_ACTIVE[phase] === 1 && phase === "authorizing");
+    if (authBlock) authHost.appendChild(authBlock);
+    if (status) status.textContent = CB.sending ? "正在发送请求…" : (d && d.busy === true ? "后端操作进行中，完成后自动刷新。" : "读取范围与敏感级别：" + (asDict(d && d.history).confirmed ? "已确认" : "尚未确认"));
+    if (focus) {
+      var fEl = document.getElementById(focus);
+      if (fEl && fEl.focus && !fEl.disabled) fEl.focus({ preventScroll: true });
+    }
+  }
+
+  /* ---- 设置页：紧凑摘要 + 管理连接 ---- */
+  function connectorRenderSettings() {
+    var host = $("#settings-connector-body");
+    if (!host) return;
+    var d = connData(CB.data);
+    var phase = connPhase(d);
+    var dl = h("dl", "kv");
+    connAppendKv(dl, "品牌", connName(connSel.brand) + "（" + connSel.brand + "）");
+    var sc = chip(CONN_PHASE[phase] || phase || "读取中", phase === "connected" ? "chip--ok" : phase === "error" || CB.err ? "chip--bad" : "chip--muted");
+    sc.id = "settings-connector-state";
+    connAppendKv(dl, "状态", sc);
+    if (d) {
+      connAppendKv(dl, "认证", d.authenticated === true ? chip("已授权", "chip--ok") : chip("未授权", "chip--muted"));
+      connAppendKv(dl, "读取范围", connSourceZh(connSourcesOf(d)));
+    }
+    if (CB.err) connAppendKv(dl, "错误", h("span", "connector-msg", (CB.err.status === 0 ? "bmemd 离线：" : "读取失败：") + CB.err.message));
+    host.innerHTML = "";
+    host.appendChild(dl);
+    var link = $("#settings-connector-link");
+    if (link) link.href = "#/sources?connector=" + connSel.brand;
+  }
+
+  function connectorRender() {
+    if (state.screen === "sources") connectorRenderSources();
+    else if (state.screen === "settings") connectorRenderSettings();
+  }
+
+  $("#connector-brand").addEventListener("change", function () {
+    var v = connBrand(this.value);
+    navigate("sources", function (p) { p.set("connector", v); });
+  });
+
   /* ================= 启动 ================= */
   $("#page-foot-origin").textContent = location.origin;
   if (!location.hash || location.hash === "#" || location.hash === "#/") {
@@ -2473,4 +2930,5 @@
   /* 侧边栏计数与当前屏无关：启动即取一次 stats（声明/纠正/遗忘后再取）。 */
   if (state.screen !== "overview") refreshSidebarStats();
   setInterval(pollHealth, 20000);
+
 })();

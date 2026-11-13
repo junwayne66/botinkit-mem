@@ -1367,9 +1367,12 @@ class Store:
             result["memory"] = self._memory_detail(conn, memory)
         return result
 
-    def ingest(self, event: EventInput | dict) -> dict:
+    def ingest(self, event: EventInput | dict, *, reference_episode: bool = False) -> dict:
         ev = self._event_input(event)
+        if reference_episode and ev.source_type != "external":
+            raise DomainError(422, "reference episodes require an external source")
         declared_memory: dict[str, Any] | None = None
+        reference_memory: dict[str, Any] | None = None
         with self._write() as conn:
             duplicate = self._find_duplicate_event(conn, ev)
             if duplicate is not None:
@@ -1415,6 +1418,18 @@ class Store:
                     )
                 if event_row["reference_only"]:
                     self._add_injection_references(conn, event_row)
+                if reference_episode and not event_row["reference_only"]:
+                    # Explicit connector imports remain quoted T4 material.
+                    # Their snapshots are searchable without becoming rules.
+                    reference_id = self._insert_memory(
+                        conn, event_row, body=event_row["body"], kind="episode",
+                        fact_key=None, conditions={},
+                        sensitivity=event_row["sensitivity"], trust_tier="T4",
+                        confidence=0.5, status="active",
+                        model_id="policy:external-reference",
+                        reason="user-selected external reference",
+                    )
+                    reference_memory = self._memory_detail_by_id(conn, reference_id)
                 job_payload: dict[str, Any] = {
                     "event_id": event_row["event_id"],
                     "source_type": event_row["source_type"],
@@ -1432,6 +1447,10 @@ class Store:
                             "immediate_memory_id": declared_memory["memory_id"],
                             "reconcile": True,
                         }
+                    )
+                if reference_memory is not None:
+                    job_payload.update(
+                        {"memory_id": reference_memory["memory_id"], "reconcile": False}
                     )
                 job_id = self._queue_job(
                     conn,
@@ -1454,6 +1473,8 @@ class Store:
             }
             if declared_memory is not None:
                 result["memory"] = declared_memory
+            if reference_memory is not None:
+                result["memory"] = reference_memory
             return result
 
     def declare(self, data: DeclarationInput | dict) -> dict:

@@ -19,16 +19,16 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from mcp.server.lowlevel import Server as McpServer
 from mcp.server.streamable_http import TransportSecuritySettings
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import TextContent, Tool
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers
 from starlette.staticfiles import StaticFiles
@@ -53,6 +53,17 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 KINDS = {"episode", "fact", "decision", "method", "preference"}
 STATUSES = {"active", "proposed", "quarantined", "superseded", "disputed", "retracted", "deleted"}
 TARGETS = {"local", "cloud"}
+
+
+class ConnectorSelection(BaseModel):
+    sources: list[Literal["private_chats", "group_chats", "documents"]] | None = None
+    sensitivity: Literal["normal", "private"] | None = None
+
+
+class ConnectorConfig(BaseModel):
+    sources: list[Literal["private_chats", "group_chats", "documents"]]
+    enabled: bool = True
+    sensitivity: Literal["normal", "private"] = "private"
 RECORD_ENDPOINTS = {
     "arbitration": "arbitration",
     "injections": "injections",
@@ -212,6 +223,9 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
     store = Store(home)
     runtime = Runtime(home)
     worker = Worker(store, runtime)
+    from bmem.feishu import ConnectorError, FeishuConnector
+
+    feishu = FeishuConnector(store)
 
     # ------------------------------------------------------------------ worker
     loop_stats: dict[str, Any] = {
@@ -568,6 +582,17 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
     async def _mcp_asgi(scope: dict, receive: Any, send: Any) -> None:
         await mcp_box["manager"].handle_request(scope, receive, send)
 
+    connector_stats: dict[str, Any] = {"errors": 0, "last_error": None}
+
+    async def _connector_loop(stop_event: asyncio.Event) -> None:
+        while not await _pause(stop_event, 30):
+            try:
+                await run_in_threadpool(feishu.tick)
+                connector_stats["last_error"] = None
+            except Exception as exc:
+                connector_stats["errors"] += 1
+                connector_stats["last_error"] = _safe_message(exc)
+
     # ---------------------------------------------------------------- lifespan
     @asynccontextmanager
     async def _lifespan(app: FastAPI):
@@ -577,6 +602,7 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
         worker_task: asyncio.Task | None = None
         history_task: asyncio.Task | None = None
         warmup_task: asyncio.Task | None = None
+        connector_task: asyncio.Task | None = None
         if start_worker:
             # Store.__init__ no longer requeues running jobs, so opening a Store
             # (doctor, imports, tests) preserves live Worker ownership. This
@@ -590,6 +616,8 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
                                                   name="bmem-embedding-warmup")
             worker_task = asyncio.create_task(_worker_loop(stop_event),
                                               name="bmem-worker")
+            connector_task = asyncio.create_task(_connector_loop(stop_event),
+                                                 name="bmem-connectors")
             if history_stats["enabled"]:
                 history_task = asyncio.create_task(_history_loop(stop_event),
                                                    name="bmem-history-sync")
@@ -601,7 +629,7 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
                 yield
         finally:
             stop_event.set()
-            owned = [task for task in (worker_task, history_task, warmup_task,
+            owned = [task for task in (worker_task, history_task, warmup_task, connector_task,
                                        app.state.install_task)
                      if task is not None]
             for task in owned:
@@ -611,6 +639,7 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
             app.state.install_task = None
+            await run_in_threadpool(feishu.close)
 
     # -------------------------------------------------------------------- app
     app = FastAPI(title=SERVICE_NAME, version=_bmem_pkg.__version__,
@@ -620,6 +649,7 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
     app.state.store = store
     app.state.runtime = runtime
     app.state.worker = worker
+    app.state.feishu = feishu
     app.state.mcp_box = mcp_box
     app.state.worker_stats = loop_stats
     app.state.history_stats = history_stats
@@ -632,6 +662,11 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
         if status not in {400, 404, 409, 422}:
             status = 400
         return JSONResponse({"detail": _safe_message(exc)}, status_code=status)
+
+    @app.exception_handler(ConnectorError)
+    async def _connector_error(_req: Request, exc: ConnectorError) -> JSONResponse:
+        return JSONResponse({"detail": redact(exc.message)},
+                            status_code=409 if exc.code == "busy" else 422)
 
     @app.exception_handler(Exception)
     async def _internal_error(_req: Request, exc: Exception) -> JSONResponse:
@@ -656,6 +691,7 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
             "schema_version": store.schema_version,
             "worker": dict(loop_stats),
             "history_sync": dict(history_stats),
+            "connectors": dict(connector_stats),
         }
 
     @app.post("/api/events")
@@ -734,6 +770,35 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
     @app.get("/api/sources")
     def sources() -> dict:
         return {"items": adapters.doctor()}
+
+    @app.get("/api/connectors/{brand}")
+    def connector_status(brand: Literal["feishu", "lark"]) -> dict:
+        return feishu.status(brand)
+
+    @app.post("/api/connectors/{brand}/connect")
+    def connector_connect(brand: Literal["feishu", "lark"],
+                          payload: ConnectorSelection = Body(default=ConnectorSelection())) -> dict:
+        if payload.sensitivity is not None and payload.sources is not None:
+            feishu.configure(brand, payload.sources, enabled=bool(payload.sources),
+                             sensitivity=payload.sensitivity)
+        return feishu.connect(brand, sources=payload.sources)
+
+    @app.put("/api/connectors/{brand}/config")
+    def connector_config(brand: Literal["feishu", "lark"], payload: ConnectorConfig) -> dict:
+        return feishu.configure(brand, payload.sources, enabled=payload.enabled,
+                                 sensitivity=payload.sensitivity)
+
+    @app.post("/api/connectors/{brand}/sync")
+    def connector_sync(brand: Literal["feishu", "lark"]) -> dict:
+        return feishu.sync(brand)
+
+    @app.get("/api/connectors/{brand}/qrcode")
+    def connector_qrcode(brand: Literal["feishu", "lark"]) -> Response:
+        content = feishu.qrcode(brand)
+        if not content:
+            raise HTTPException(status_code=404, detail="No active authorization")
+        return Response(content=content, media_type="image/png",
+                        headers={"Cache-Control": "no-store"})
 
     @app.get("/api/settings/semantic")
     def get_semantic_settings() -> dict:

@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -299,9 +300,108 @@ def cmd_web(args: argparse.Namespace) -> int:
 
 
 def cmd_connect(args: argparse.Namespace) -> int:
+    if args.harness in {"feishu", "lark"}:
+        args.brand = args.harness
+        args.action = "connect"
+        return cmd_connector(args)
+    if args.sources is not None or args.no_history or args.sensitivity is not None:
+        raise CliError("历史范围选项用于飞书或 Lark 连接")
     adapters = _adapters()
     result = adapters.connect(args.harness, config_root=None, url=_url(args))
     return _emit(result)
+
+
+def cmd_connector(args: argparse.Namespace) -> int:
+    url = _url(args)
+    path = f"/api/connectors/{args.brand}"
+    if args.action == "status":
+        return _emit(_api(url, "GET", path))
+    state = _api(url, "GET", path)
+    if args.action == "connect":
+        sources = _connector_sources(args, state)
+        payload = {}
+        if sources is not None:
+            payload["sources"] = sources
+        if args.sensitivity is not None:
+            if sources is None:
+                payload["sources"] = state["history"]["sources"]
+            payload["sensitivity"] = args.sensitivity
+        state = _api(url, "POST", path + "/connect", json_body=payload)
+    else:
+        state = _api(url, "POST", path + "/sync", json_body={})
+    should_wait = args.wait if args.wait is not None else sys.stdin.isatty()
+    if should_wait:
+        state = _wait_connector(url, path, state)
+    _emit(state)
+    return 1 if state.get("phase") == "error" else 0
+
+
+def _connector_sources(args: argparse.Namespace, state: dict) -> list[str] | None:
+    if args.no_history:
+        return []
+    if args.sources is not None:
+        return args.sources
+    if state.get("history", {}).get("confirmed"):
+        return None
+    if not sys.stdin.isatty():
+        raise CliError("请选择历史范围，使用 --sources private_chats,group_chats,documents，"
+                       "或使用 --no-history 暂不读取")
+    print("首次连接可读取历史资料，可多选。", file=sys.stderr)
+    print("1 私聊  2 群聊  3 飞书文档", file=sys.stderr)
+    answer = input("输入编号并用逗号分隔，直接回车暂不读取\n").strip()
+    choices = {"1": "private_chats", "2": "group_chats", "3": "documents"}
+    selected = answer.replace(" ", ",").replace("，", ",").split(",")
+    selected = [value for value in selected if value]
+    if any(value not in choices for value in selected):
+        raise CliError("范围编号为 1、2、3，可使用逗号多选")
+    return list(dict.fromkeys(choices[value] for value in selected))
+
+
+def _wait_connector(url: str, path: str, state: dict) -> dict:
+    import webbrowser
+
+    last_phase = None
+    last_authorization = None
+    deadline = time.monotonic() + 1200
+    while True:
+        phase = state.get("phase")
+        if phase != last_phase:
+            print(f"当前步骤 {phase}", file=sys.stderr, flush=True)
+            last_phase = phase
+        authorization = state.get("authorization") or {}
+        authorization_url = authorization.get("url")
+        if authorization_url and authorization_url != last_authorization:
+            print(f"授权链接\n{authorization_url}", file=sys.stderr, flush=True)
+            print(f"二维码\n{url}{path}/qrcode", file=sys.stderr, flush=True)
+            webbrowser.open(authorization_url)
+            last_authorization = authorization_url
+        if not state.get("busy"):
+            return state
+        if time.monotonic() >= deadline:
+            raise CliError("连接仍在后台进行，可通过 status 或 Web 来源页继续查看")
+        time.sleep(1)
+        state = _api(url, "GET", path)
+
+
+def _parse_connector_sources(value: str) -> list[str]:
+    sources = list(dict.fromkeys(part.strip() for part in value.split(",") if part.strip()))
+    allowed = {"private_chats", "group_chats", "documents"}
+    if not sources or not set(sources) <= allowed:
+        raise argparse.ArgumentTypeError("范围为 private_chats、group_chats、documents，可用逗号多选")
+    return sources
+
+
+def _add_connector_options(parser: argparse.ArgumentParser) -> None:
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--sources", type=_parse_connector_sources,
+                           help="private_chats,group_chats,documents，多选历史范围")
+    selection.add_argument("--no-history", action="store_true", help="暂不读取历史")
+    parser.add_argument("--sensitivity", choices=["normal", "private"], default=None,
+                        help="private 仅本机，normal 允许云端助手召回")
+    waiting = parser.add_mutually_exclusive_group()
+    waiting.add_argument("--wait", dest="wait", action="store_true")
+    waiting.add_argument("--no-wait", dest="wait", action="store_false")
+    parser.set_defaults(wait=None)
 
 
 def cmd_hook(args: argparse.Namespace) -> int:
@@ -526,8 +626,15 @@ def build_parser(prog: str = "bmem") -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_web)
 
     p = sub.add_parser("connect", help="wire one harness into bmem (honors BMEM_CONFIG_ROOT)")
-    p.add_argument("harness", choices=["claude-code", "codex", "dsh"])
+    p.add_argument("harness", choices=["claude-code", "codex", "dsh", "feishu", "lark"])
+    _add_connector_options(p)
     p.set_defaults(func=cmd_connect)
+
+    for brand in ("feishu", "lark"):
+        p = sub.add_parser(brand, help=f"{brand} 连接、授权与历史同步")
+        p.add_argument("action", choices=["connect", "status", "sync"])
+        _add_connector_options(p)
+        p.set_defaults(func=cmd_connector, brand=brand)
 
     p = sub.add_parser("hook", help="harness hook bridge: JSON payload on stdin, "
                                     "additionalContext JSON on stdout")

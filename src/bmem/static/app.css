@@ -435,6 +435,22 @@ details.trace summary td { display: table-cell; }
 .arb-link { background: none; border: none; padding: 0; font: inherit; color: var(--color-cool); cursor: pointer; }
 .arb-link:hover { text-decoration: underline; text-underline-offset: 0.16em; }
 
+/* ---- connector: feishu / lark ---- */
+.connector-panel { display: flex; flex-direction: column; gap: var(--space-sm); }
+.connector-form { margin-bottom: var(--space-xs); }
+.connector-body { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
+.connector-part { display: flex; flex-direction: column; gap: var(--space-xs); min-width: 0; }
+.connector-ranges { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: var(--space-2xs); min-width: 0; }
+.connector-range { display: inline-flex; align-items: center; gap: var(--space-xs); min-height: 32px; font-size: var(--text-sm); color: var(--color-ink-2); cursor: pointer; }
+.connector-range input { flex: none; width: 16px; height: 16px; accent-color: var(--color-accent); margin: 0; }
+.connector-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; }
+.connector-actions .btn { min-height: 36px; }
+.connector-msg { font-size: var(--text-sm); color: var(--color-muted); overflow-wrap: anywhere; }
+.connector-msg .chip { white-space: normal; }
+.connector-link { color: var(--color-cool); overflow-wrap: anywhere; }
+.connector-qr { display: flex; flex-direction: column; gap: var(--space-2xs); align-items: flex-start; }
+.connector-qr img { width: 200px; height: 200px; max-width: 100%; border-radius: var(--radius-pill); background: var(--color-paper-3); }
+
 /* ---- responsive ---- */
 @media (max-width: 72rem) {
   .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }

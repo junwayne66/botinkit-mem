@@ -125,7 +125,7 @@ bmem connect codex
 bmem connect dsh
 ```
 
-`connect` 只接受 `claude-code`、`codex`、`dsh` 三个值。命令会修改对应 Harness 的配置，并备份或保留原用户配置。接入后重启 Harness 或重新打开会话，使新配置生效。
+`connect` 支持 `claude-code`、`codex`、`dsh`、`feishu` 和 `lark`。上面的三个 Harness 接入命令会修改对应工具的配置，并备份或保留原用户配置。接入后重启 Harness 或重新打开会话，使新配置生效。
 
 | Harness | 自动召回与采集 | MCP | 说明 |
 |---|---|---|---|
@@ -148,6 +148,35 @@ Hooks 与原生插件按各 Harness 的可用事件自动召回并采集内容�
 | `memory_status` | 查询记忆库与导入状态 |
 
 MCP 端点地址为当前服务的 `/mcp`，例如 `http://127.0.0.1:8790/mcp`。接入状态以 `bmem doctor` 的实测结果为准。
+
+## 飞书与 Lark 资料接入
+
+先启动 bmem 服务，再连接飞书或 Lark。连接使用官方 npm 包 `@larksuite/cli`，命令为 `lark-cli`。已有可用安装会被复用，缺失时由 bmem 托管安装固定版本 `1.0.100`，安装依赖 Node.js 16 及以上版本与 npm。
+
+系统复用匹配品牌的现有 profile，每次调用显式指定该 profile，新增命名 profile 时保留已有默认 profile，首次配置会创建首个 profile。需要配置应用或登录时，按官方浏览器 URL 或二维码完成操作，连接状态会检查用户身份与所选范围的只读权限。
+
+```bash
+bmem connect feishu                         # 首次交互选择历史范围
+bmem connect lark --no-history --no-wait     # 暂不读取历史，后台准备连接
+bmem connect feishu --sources private_chats,documents --sensitivity private --no-wait
+bmem feishu status                          # 查看安装、认证与同步状态
+bmem feishu sync --no-wait                   # 手动同步已保存的范围
+bmem connect lark --sources documents --sensitivity normal --no-wait
+```
+
+首次交互可多选私聊、群聊、文档，直接回车表示暂不读取。非交互连接使用 `--sources private_chats,group_chats,documents` 指定类别，或用 `--no-history` 明确暂不读取，两者互斥。已有确认的范围可继续复用，后续也可重新选择并保存。
+
+首次敏感级别默认为 `private`，后续沿用已存设置。`--sensitivity normal` 显式允许云端助手召回新导入的资料，`--sensitivity private` 设置为仅供本地检索与注入。私密资料可用 `bmem search "关键词" --target local` 检索。
+
+交互终端默认等待并打开官方授权页面。`--no-wait` 提交后立即返回，通过 `bmem feishu status`、`bmem lark status` 或 Web 来源页继续查看 URL、二维码与进度。`bmem feishu connect` 和 `bmem lark connect` 也支持上述范围、敏感级别与等待参数。
+
+运行 `bmem web`，在“来源”的飞书 / Lark 面板选择品牌、私聊/群聊/文档范围并连接。全部不选即暂不读取。“允许云端助手召回”对应 `normal`，默认使用 `private`。范围保存后可手动同步，设置页提供连接摘要与管理入口，Web 与 CLI 共用配置和状态。
+
+飞书资料以 `external` 来源、T4 信任级别的 `episode` 引用保存，保留账号、对象、时间与出处，供检索时作为外部资料使用，规则候选仍隔离。本连接流程保存可检索的原文引用并跳过额外模型蒸馏。导入进度表示资料采集与落库，普通 Harness 历史的模型提炼进度由 Worker 队列展示。授权日志不写入记忆。
+
+下载或网络中断后可重新执行连接。缺少 Node/npm 时先补齐依赖再重试，缺少读取 scope 时通过同一连接命令继续官方授权流程。文档范围为官方搜索可见的 docx/wiki 结果，逐页读取。当前尚未实现对任意旧消息编辑、撤回的完整跟踪。读到平台返回的编辑或撤回标记时会保存对应版本，先前导入的引用沿现有遗忘流程处理。
+
+完整范围与接口见 [飞书/Lark 规格](specs/002-feishu-memory/spec.md) 和 [接口契约](specs/002-feishu-memory/contracts/interfaces.md)。
 
 ## 日常使用
 
