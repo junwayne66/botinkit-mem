@@ -1,0 +1,5 @@
+# Generated architecture viewers contain bundled upstream code.
+docs/assets/overview.html linguist-generated=true -whitespace
+docs/assets/phase1-architecture.html linguist-generated=true -whitespace
+docs/assets/phase1-data-model.html linguist-generated=true -whitespace
+docs/assets/phase2-topology.html linguist-generated=true -whitespace
