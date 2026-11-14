@@ -492,6 +492,10 @@ def cmd_declare(args: argparse.Namespace) -> int:
     }
     if args.fact_key:
         payload["fact_key"] = args.fact_key
+    if args.effective_at:
+        payload["effective_at"] = args.effective_at
+    if args.occurred_at:
+        payload["occurred_at"] = args.occurred_at
     if args.memory_id:
         payload["memory_id"] = args.memory_id
         if args.expected_revision is None:
@@ -673,6 +677,8 @@ def build_parser(prog: str = "bmem") -> argparse.ArgumentParser:
     p.add_argument("--kind", choices=["episode", "fact", "decision", "method",
                                       "preference"], default="fact")
     p.add_argument("--fact-key", dest="fact_key", default="")
+    p.add_argument("--effective-at", default=None, help="fact validity time in ISO 8601")
+    p.add_argument("--occurred-at", default=None, help="original source occurrence time in ISO 8601")
     p.add_argument("--memory-id", dest="memory_id", default="")
     p.add_argument("--expected-revision", dest="expected_revision", type=int,
                    default=None)

@@ -46,7 +46,7 @@ from .models import (
     validation_message,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RETRIEVABLE_STATUS = "active"
 RETRIEVABLE_STATUSES = ("active", "disputed")
 STATUS_VALUES = (
@@ -305,18 +305,19 @@ class Store:
             try:
                 conn.execute("PRAGMA journal_mode = WAL")
                 conn.executescript(schema)
-                # Additive migration for databases created before source
-                # invalidation metadata existed.  Existing source rows remain
-                # valid until a later correction explicitly invalidates them.
-                columns = {
-                    str(row[1]) for row in conn.execute("PRAGMA table_info(sources)")
-                }
-                if "invalidated_at" not in columns:
-                    conn.execute("ALTER TABLE sources ADD COLUMN invalidated_at TEXT")
+                self._migrate_columns(conn)
                 if conn.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
                     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             finally:
                 conn.close()
+
+    @staticmethod
+    def _migrate_columns(conn: sqlite3.Connection) -> None:
+        for table, column in (("sources", "invalidated_at"), ("events", "effective_at"),
+                              ("memories", "effective_at"), ("revisions", "effective_at")):
+            columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
 
     def _requeue_abandoned_jobs(self) -> None:
         try:
@@ -421,6 +422,7 @@ class Store:
         item["revision_no"] = int(item.get("revision_no") or 0)
         item["evidence_count"] = int(item.get("evidence_count") or 0)
         item["supersedes"] = item.get("supersedes")
+        item["effective_at"] = item.get("effective_at") or item["occurred_at"]
         is_disputed = item.get("status") == "disputed"
         item["disputed"] = is_disputed
         if is_disputed:
@@ -438,10 +440,13 @@ class Store:
         memory = self._memory_row_to_dict(row)
         revisions = []
         for item in conn.execute(
-            "SELECT * FROM revisions WHERE memory_id=? ORDER BY revision_no",
+            "SELECT r.*,COALESCE(r.effective_at,e.effective_at,e.occurred_at,r.created_at) AS fact_time "
+            "FROM revisions r LEFT JOIN events e ON e.event_id=r.source_event_id "
+            "WHERE r.memory_id=? ORDER BY r.revision_no",
             (memory["memory_id"],),
         ):
             revision = dict(item)
+            revision["effective_at"] = revision.pop("fact_time")
             revision["conditions"] = _json_loads(revision.get("conditions"), {}) or {}
             revision["confidence"] = float(revision.get("confidence") or 0.0)
             revision["revision_no"] = int(revision.get("revision_no") or 0)
@@ -694,6 +699,7 @@ class Store:
             "source_type": event.source_type,
             "body": body,
             "occurred_at": occurred,
+            "effective_at": iso_utc(event.effective_at) if event.effective_at else None,
             "ingested_at": now_iso(),
             "session_id": event.session_id,
             "project": event.project,
@@ -710,8 +716,8 @@ class Store:
         return payload
 
     def _event_evidence_payload(self, event_row: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "schema_version": SCHEMA_VERSION,
+        payload = {
+            "schema_version": event_row.get("schema_version", SCHEMA_VERSION),
             "event_id": event_row["event_id"],
             "device_id": event_row["device_id"],
             "harness": event_row["harness"],
@@ -727,13 +733,16 @@ class Store:
             "trust_tier": event_row["trust_tier"],
             "metadata": event_row["metadata"],
         }
+        if event_row.get("effective_at"):
+            payload["effective_at"] = event_row["effective_at"]
+        return payload
 
     def _insert_event(self, conn: sqlite3.Connection, event_row: dict[str, Any]) -> None:
         conn.execute(
             "INSERT INTO events(event_id, device_id, harness, native_event_id, "
             "operation_id, source_type, body, occurred_at, ingested_at, session_id, "
-            "project, sensitivity, trust_tier, evidence_hash, metadata, schema_version) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "project, sensitivity, trust_tier, evidence_hash, metadata, schema_version,effective_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 event_row["event_id"],
                 event_row["device_id"],
@@ -751,6 +760,7 @@ class Store:
                 event_row["evidence_hash"],
                 _json_dumps(event_row["metadata"]),
                 event_row["schema_version"],
+                event_row.get("effective_at"),
             ),
         )
 
@@ -1042,15 +1052,17 @@ class Store:
         decision: str | None = None,
         decision_reason: str | None = None,
         supersedes: str | None = None,
+        effective_at: str | None = None,
     ) -> str:
         memory_id = str(uuid.uuid4())
         now = now_iso()
         occurred = event_row["occurred_at"]
+        fact_time = effective_at or event_row.get("effective_at") or occurred
         conn.execute(
             "INSERT INTO memories(memory_id, fact_key, body, kind, status, revision_no, "
             "conditions, sensitivity, trust_tier, confidence, evidence_count, "
-            "occurred_at, created_at, updated_at, supersedes, harness, project, model_id) "
-            "VALUES(?,?,?,?,?,1,?,?,?,?,0,?,?,?,?,?,?,?)",
+            "occurred_at, created_at, updated_at, supersedes, harness, project, model_id,effective_at) "
+            "VALUES(?,?,?,?,?,1,?,?,?,?,0,?,?,?,?,?,?,?,?)",
             (
                 memory_id,
                 fact_key,
@@ -1068,13 +1080,14 @@ class Store:
                 event_row["harness"],
                 event_row["project"],
                 model_id,
+                fact_time,
             ),
         )
         conn.execute(
             "INSERT INTO revisions(memory_id, revision_no, body, kind, status, "
             "conditions, sensitivity, trust_tier, confidence, source_event_id, "
-            "supersedes, reason, model_id, created_at) "
-            "VALUES(?,1,?,?,?,?,?,?,?,?,NULL,?,?,?)",
+            "supersedes, reason, model_id, created_at,effective_at) "
+            "VALUES(?,1,?,?,?,?,?,?,?,?,NULL,?,?,?,?)",
             (
                 memory_id,
                 body,
@@ -1088,6 +1101,7 @@ class Store:
                 reason,
                 model_id,
                 now,
+                fact_time,
             ),
         )
         self._add_event_sources(conn, memory_id, event_row, derived_from)
@@ -1126,11 +1140,13 @@ class Store:
         decision: str,
         decision_reason: str,
         derived_from: list[str] | None = None,
+        effective_at: str | None = None,
     ) -> str:
         previous_revision = int(target["revision_no"])
         new_revision = previous_revision + 1
         now = now_iso()
         occurred = max(str(target["occurred_at"]), str(event_row["occurred_at"]))
+        fact_time = effective_at or event_row.get("effective_at") or event_row["occurred_at"]
         conn.execute(
             "UPDATE revisions SET status='superseded' "
             "WHERE memory_id=? AND revision_no=?",
@@ -1139,7 +1155,7 @@ class Store:
         conn.execute(
             "UPDATE memories SET fact_key=?, body=?, kind=?, status=?, revision_no=?, "
             "conditions=?, sensitivity=?, trust_tier=?, confidence=?, occurred_at=?, "
-            "updated_at=?, harness=?, project=?, model_id=? WHERE memory_id=?",
+            "updated_at=?, harness=?, project=?, model_id=?,effective_at=? WHERE memory_id=?",
             (
                 fact_key,
                 body,
@@ -1155,14 +1171,15 @@ class Store:
                 event_row["harness"],
                 event_row["project"],
                 model_id,
+                fact_time,
                 target["memory_id"],
             ),
         )
         conn.execute(
             "INSERT INTO revisions(memory_id, revision_no, body, kind, status, "
             "conditions, sensitivity, trust_tier, confidence, source_event_id, "
-            "supersedes, reason, model_id, created_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "supersedes, reason, model_id, created_at,effective_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 target["memory_id"],
                 new_revision,
@@ -1178,6 +1195,7 @@ class Store:
                 reason,
                 model_id,
                 now,
+                fact_time,
             ),
         )
         self._add_event_sources(conn, target["memory_id"], event_row, derived_from)
@@ -1196,6 +1214,23 @@ class Store:
         if status == "active":
             self._queue_embed(conn, target["memory_id"], new_revision)
         return target["memory_id"]
+
+    @staticmethod
+    def _fact_time(row: sqlite3.Row) -> str:
+        return str(row["effective_at"] or row["occurred_at"])
+
+    def _confirm_fact_time(self, conn: sqlite3.Connection, target: sqlite3.Row, fact_time: str) -> bool:
+        if fact_time == self._fact_time(target):
+            return False
+        conn.execute(
+            "UPDATE memories SET effective_at=?,updated_at=? WHERE memory_id=?",
+            (fact_time, now_iso(), target["memory_id"]),
+        )
+        conn.execute(
+            "UPDATE revisions SET effective_at=? WHERE memory_id=? AND revision_no=?",
+            (fact_time, target["memory_id"], int(target["revision_no"])),
+        )
+        return True
 
     def _set_memory_status(
         self,
@@ -1273,7 +1308,9 @@ class Store:
         sql = (
             "SELECT * FROM memories WHERE fact_key=? AND status IN ("
             + placeholders
-            + ") ORDER BY updated_at DESC, rowid DESC"
+            + ") ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END, "
+            "CASE WHEN trust_tier IN ('T1','T2') THEN 0 ELSE 1 END, "
+            "COALESCE(effective_at,occurred_at) DESC, updated_at DESC, rowid DESC"
         )
         for row in conn.execute(sql, values):
             if exclude_id and row["memory_id"] == exclude_id:
@@ -1576,7 +1613,7 @@ class Store:
     ) -> dict[str, Any]:
         sensitivity = self._candidate_sensitivity(conn, sensitivity, derived_from)
         target: sqlite3.Row | None = None
-        explicitly_targeted = bool(memory_id)
+        fact_time = event_row.get("effective_at") or event_row["occurred_at"]
         if memory_id:
             target = conn.execute(
                 "SELECT * FROM memories WHERE memory_id=?", (memory_id,)
@@ -1592,18 +1629,13 @@ class Store:
         elif fact_key:
             target = self._find_memory_by_fact_key(conn, fact_key, conditions)
 
-        if target is not None and not explicitly_targeted:
-            # A late historical observation is retained as evidence but does not
-            # roll the current fact back to an older occurrence time.
-            if str(event_row["occurred_at"]) < str(target["occurred_at"]):
-                self._add_event_sources(
-                    conn, target["memory_id"], event_row, derived_from
-                )
+        if target is not None and target["trust_tier"] in ("T1", "T2"):
+            if fact_time < self._fact_time(target):
                 self._add_decision(
                     conn,
                     target["memory_id"],
                     "NOOP",
-                    source_label,
+                    "older_fact",
                     evidence_ids=[event_row["event_id"]],
                     trust_tier=event_row.get("trust_tier", "T1"),
                     confidence=1.0,
@@ -1629,9 +1661,10 @@ class Store:
                 self._add_event_sources(
                     conn, target["memory_id"], event_row, derived_from
                 )
-                changed = False
+                changed = self._confirm_fact_time(conn, target, fact_time)
                 if target["status"] != "active":
                     self._set_memory_status(conn, target["memory_id"], "active")
+                    self._queue_embed(conn, target["memory_id"], int(target["revision_no"]))
                     changed = True
                 if target["trust_tier"] != "T1" or int(target["revision_no"]) == 1:
                     conn.execute(
@@ -1652,7 +1685,21 @@ class Store:
                         model_id=model_id,
                         occurred_at=event_row["occurred_at"],
                     )
-                return self._memory_detail(conn, target)
+                self._resolve_older_disputes(
+                    conn, target["memory_id"], event_row, model_id=model_id,
+                    allow_equal=bool(memory_id),
+                )
+                return self._memory_detail_by_id(conn, target["memory_id"]) or {}
+
+            if (not memory_id and target["trust_tier"] in ("T1", "T2")
+                    and body != target["body"]
+                    and fact_time == self._fact_time(target)):
+                conflicting_id = self._dispute_claim(
+                    conn, target, event_row, body=body, kind=kind, fact_key=fact_key,
+                    conditions=conditions, sensitivity=effective_sensitivity,
+                    trust_tier="T1", confidence=1.0, model_id=model_id, derived_from=derived_from,
+                )
+                return self._memory_detail_by_id(conn, conflicting_id) or {}
 
             invalid_roots = {f"memory:{target['memory_id']}"}
             invalid_roots.update(self._related_event_ids(conn, target["memory_id"]))
@@ -1682,6 +1729,9 @@ class Store:
                 decision_reason=source_label,
                 derived_from=derived_from,
             )
+            self._resolve_older_disputes(
+                conn, updated_id, event_row, model_id=model_id, allow_equal=bool(memory_id),
+            )
             self._invalidate_dependents(conn, updated_id, invalid_roots)
             return self._memory_detail_by_id(conn, updated_id) or {}
 
@@ -1705,6 +1755,87 @@ class Store:
             decision_reason=source_label,
         )
         return self._memory_detail_by_id(conn, memory_id_new) or {}
+
+    def _dispute_claim(
+        self, conn: sqlite3.Connection, target: sqlite3.Row, event: dict[str, Any], *,
+        body: str, kind: str, fact_key: str | None, conditions: dict[str, Any],
+        sensitivity: str, trust_tier: str, confidence: float, model_id: str,
+        derived_from: list[str],
+    ) -> str:
+        self._set_memory_status(conn, target["memory_id"], "disputed")
+        self._add_decision(
+            conn, target["memory_id"], "DISPUTE", "unresolved claim conflict",
+            evidence_ids=[event["event_id"]], trust_tier=trust_tier, confidence=confidence,
+            model_id=model_id, occurred_at=event["occurred_at"],
+        )
+        fact_key = fact_key if fact_key is not None else target["fact_key"]
+        for existing in conn.execute(
+            "SELECT * FROM memories WHERE body=? AND kind=? AND fact_key IS ? "
+            "AND status='disputed' AND memory_id!=? ORDER BY updated_at DESC",
+            (body, kind, fact_key, target["memory_id"]),
+        ):
+            if _canonical(_json_loads(existing["conditions"], {}) or {}) == _canonical(conditions):
+                self._add_event_sources(conn, existing["memory_id"], event, derived_from)
+                self._add_decision(
+                    conn, existing["memory_id"], "DISPUTE", "additional report of disputed claim",
+                    evidence_ids=[event["event_id"]], trust_tier=trust_tier, confidence=confidence,
+                    model_id=model_id, occurred_at=event["occurred_at"],
+                )
+                return str(existing["memory_id"])
+        return self._insert_memory(
+            conn, event, body=body, kind=kind, fact_key=fact_key, conditions=conditions,
+            sensitivity=sensitivity, trust_tier=trust_tier, confidence=confidence,
+            status="disputed", model_id=model_id, reason="dispute", derived_from=derived_from,
+            decision="DISPUTE", decision_reason="unresolved conflict",
+        )
+
+    def _resolve_older_disputes(
+        self,
+        conn: sqlite3.Connection,
+        memory_id: str,
+        event: dict[str, Any],
+        *,
+        model_id: str,
+        confidence: float = 1.0,
+        allow_equal: bool = False,
+    ) -> None:
+        winner = conn.execute("SELECT * FROM memories WHERE memory_id=?", (memory_id,)).fetchone()
+        fact_time = event.get("effective_at") or event["occurred_at"]
+        if (event["trust_tier"] not in ("T1", "T2") or winner["status"] != "active"
+                or not winner["fact_key"] or fact_time < self._fact_time(winner)):
+            return
+        conditions = _canonical(_json_loads(winner["conditions"], {}) or {})
+        retired: list[sqlite3.Row] = []
+        for other in conn.execute(
+            "SELECT * FROM memories WHERE fact_key=? AND status='disputed' AND memory_id!=?",
+            (winner["fact_key"], memory_id),
+        ).fetchall():
+            if _canonical(_json_loads(other["conditions"], {}) or {}) != conditions:
+                continue
+            other_time = self._fact_time(other)
+            if fact_time < other_time or (fact_time == other_time and not allow_equal):
+                continue
+            self._set_memory_status(conn, other["memory_id"], "retracted")
+            self._add_decision(
+                conn, other["memory_id"], "UPDATE", "resolved_by_newer_fact",
+                evidence_ids=[event["event_id"], memory_id], trust_tier=event["trust_tier"],
+                confidence=confidence, model_id=model_id, occurred_at=event["occurred_at"],
+            )
+            retired.append(other)
+        # Retire resolved siblings before invalidation can requeue them.
+        for other in retired:
+            retired_id = other["memory_id"]
+            invalid_roots = {f"memory:{retired_id}"}
+            invalid_roots.update(self._related_event_ids(conn, retired_id))
+            invalid_roots.update(
+                str(row["root_source_id"]) for row in conn.execute(
+                    "SELECT root_source_id FROM sources WHERE memory_id=? AND invalidated_at IS NULL",
+                    (retired_id,),
+                )
+            )
+            self._invalidate_dependents(
+                conn, retired_id, invalid_roots, protected_memory_ids=(memory_id,),
+            )
 
     def _add_injection_references(
         self, conn: sqlite3.Connection, event_row: dict[str, Any]
@@ -2347,10 +2478,17 @@ class Store:
                 raise DomainError(404, "memory not found")
             if row["status"] == "deleted":
                 raise DomainError(409, "memory was forgotten")
-            return row
-        return self._find_memory_by_fact_key(
-            conn, candidate.fact_key, conditions
-        )
+            if ("conditions" in candidate.model_fields_set
+                    and _canonical(conditions) != _canonical(_json_loads(row["conditions"], {}) or {})):
+                raise DomainError(409, "candidate conditions do not match target")
+            if candidate.fact_key and row["fact_key"] and candidate.fact_key != row["fact_key"]:
+                raise DomainError(409, "candidate fact_key does not match target")
+        else:
+            row = self._find_memory_by_fact_key(conn, candidate.fact_key, conditions)
+        if (row is not None and candidate.expected_revision is not None
+                and int(candidate.expected_revision) != int(row["revision_no"])):
+            raise DomainError(409, "revision conflict")
+        return row
 
     def _find_quarantined(
         self,
@@ -2388,6 +2526,12 @@ class Store:
             if event_row is None:
                 raise DomainError(404, "event not found")
             event = self._event_row_to_dict(event_row)
+            # This annotates the in-memory candidate context. The captured
+            # event and its evidence hash retain their original timestamps.
+            event["effective_at"] = (event.get("effective_at")
+                                     or (iso_utc(cand.effective_at) if cand.effective_at else None)
+                                     or event["occurred_at"])
+            fact_time = event["effective_at"]
             trust_tier = event.get("trust_tier") or _trust_for_source(
                 event.get("source_type", "external")
             )
@@ -2403,16 +2547,10 @@ class Store:
                     raise DomainError(
                         400, "recompute requires memory_id and expected_revision"
                     )
-                target = conn.execute(
-                    "SELECT * FROM memories WHERE memory_id=?",
-                    (cand.memory_id,),
-                ).fetchone()
-                if target is None:
-                    raise DomainError(404, "memory not found")
-                if target["status"] == "deleted":
-                    raise DomainError(409, "memory was forgotten")
-                if int(cand.expected_revision) != int(target["revision_no"]):
-                    raise DomainError(409, "revision conflict")
+                target = self._candidate_target(conn, cand, conditions)
+                assert target is not None
+                if "conditions" not in cand.model_fields_set:
+                    conditions = _json_loads(target["conditions"], {}) or {}
                 invalidated_roots = {
                     str(row["root_source_id"])
                     for row in conn.execute(
@@ -2466,6 +2604,7 @@ class Store:
                     decision="UPDATE",
                     decision_reason="trusted derived recompute",
                     derived_from=derived_from,
+                    effective_at=iso_utc(cand.effective_at) if cand.effective_at else self._fact_time(target),
                 )
                 self._recount_evidence(conn, updated_id)
                 refreshed = conn.execute(
@@ -2559,6 +2698,8 @@ class Store:
                         )
 
             target = self._candidate_target(conn, cand, conditions)
+            if target is not None and "conditions" not in cand.model_fields_set:
+                conditions = _json_loads(target["conditions"], {}) or {}
             action = cand.action
 
             if trust_tier == "T4" or action == "QUARANTINE":
@@ -2611,6 +2752,7 @@ class Store:
             if target is not None:
                 incoming_rank = TRUST_RANK.get(trust_tier, 5)
                 target_rank = TRUST_RANK.get(str(target["trust_tier"]), 5)
+                comparable = incoming_rank == target_rank or max(incoming_rank, target_rank) <= 2
                 same_claim = (
                     body == target["body"]
                     and cand.kind == target["kind"]
@@ -2622,6 +2764,13 @@ class Store:
                     self._add_event_sources(
                         conn, target["memory_id"], event, cand.derived_from
                     )
+                    if incoming_rank <= target_rank or comparable:
+                        confirmation = max(fact_time, self._fact_time(target)) if comparable else fact_time
+                        self._confirm_fact_time(conn, target, confirmation)
+                        if (trust_tier in ("T1", "T2") and target["status"] == "disputed"
+                                and fact_time > self._fact_time(target)):
+                            self._set_memory_status(conn, target["memory_id"], "active")
+                            self._queue_embed(conn, target["memory_id"], int(target["revision_no"]))
                     promoted = self._maybe_promote_independent(
                         conn, target["memory_id"], model_id=model_id
                     )
@@ -2636,15 +2785,18 @@ class Store:
                         model_id=model_id,
                         occurred_at=event["occurred_at"],
                     )
+                    self._resolve_older_disputes(
+                        conn, target["memory_id"], event, model_id=model_id, confidence=cand.confidence,
+                    )
                     return {
                         "event_id": event_id,
                         "action": "NOOP",
-                        "memory": self._memory_detail(conn, target),
+                        "memory": self._memory_detail_by_id(conn, target["memory_id"]),
                         "decision": "NOOP",
                         "reason": "promoted" if promoted else "duplicate_claim",
                     }
 
-                if incoming_rank > target_rank:
+                if incoming_rank > target_rank and not comparable:
                     # A weaker source must never overwrite or dispute higher
                     # authority.  Keep the target authoritative and retain the
                     # contrary claim as its own lower-trust memory.
@@ -2688,6 +2840,21 @@ class Store:
                         "conflicting_memory_id": split_id,
                     }
 
+                if comparable and fact_time < self._fact_time(target):
+                    self._add_decision(
+                        conn, target["memory_id"], "NOOP", "older_fact",
+                        evidence_ids=[event_id], trust_tier=trust_tier,
+                        confidence=cand.confidence, model_id=model_id,
+                        occurred_at=event["occurred_at"],
+                    )
+                    return {"event_id": event_id, "action": "NOOP", "decision": "NOOP",
+                            "reason": "older_fact", "memory": self._memory_detail(conn, target)}
+                if comparable and fact_time == self._fact_time(target) and action != "NOOP":
+                    action = "DISPUTE"
+                if (comparable and fact_time > self._fact_time(target)
+                        and (action in ("ADD", "UPDATE") or (action == "DISPUTE" and incoming_rank <= 2))):
+                    action = "UPDATE"
+
                 if action == "NOOP":
                     # A no-change report with a different body must not add
                     # evidence to the authoritative claim.
@@ -2713,79 +2880,21 @@ class Store:
                 if action == "DISPUTE" or (
                     action == "ADD" and incoming_rank >= target_rank
                 ):
-                    # Preserve both claim bodies: mark the target disputed and
-                    # keep the incoming claim as a separate disputed memory.
-                    self._set_memory_status(conn, target["memory_id"], "disputed")
-                    self._add_decision(
-                        conn,
-                        target["memory_id"],
-                        "DISPUTE",
-                        "candidate reported an unresolved conflict",
-                        evidence_ids=[event_id],
-                        trust_tier=trust_tier,
-                        confidence=cand.confidence,
-                        model_id=model_id,
-                        occurred_at=event["occurred_at"],
+                    conflicting_id = self._dispute_claim(
+                        conn, target, event, body=body, kind=cand.kind, fact_key=fact_key,
+                        conditions=conditions, sensitivity=sensitivity, trust_tier=trust_tier,
+                        confidence=cand.confidence, model_id=model_id, derived_from=cand.derived_from,
                     )
-                    conflicting_id: str | None = None
-                    for existing in conn.execute(
-                        "SELECT * FROM memories WHERE body=? AND kind=? "
-                        "AND status='disputed' AND memory_id!=? "
-                        "ORDER BY updated_at DESC",
-                        (body, cand.kind, target["memory_id"]),
-                    ):
-                        if _canonical(
-                            _json_loads(existing["conditions"], {}) or {}
-                        ) == _canonical(conditions):
-                            conflicting_id = str(existing["memory_id"])
-                            self._add_event_sources(
-                                conn, conflicting_id, event, cand.derived_from
-                            )
-                            self._add_decision(
-                                conn,
-                                conflicting_id,
-                                "DISPUTE",
-                                "additional report of disputed claim",
-                                evidence_ids=[event_id],
-                                trust_tier=trust_tier,
-                                confidence=cand.confidence,
-                                model_id=model_id,
-                                occurred_at=event["occurred_at"],
-                            )
-                            break
-                    if conflicting_id is None:
-                        conflicting_id = self._insert_memory(
-                            conn,
-                            event,
-                            body=body,
-                            kind=cand.kind,
-                            fact_key=fact_key,
-                            conditions=conditions,
-                            sensitivity=sensitivity,
-                            trust_tier=trust_tier,
-                            confidence=cand.confidence,
-                            status="disputed",
-                            model_id=model_id,
-                            reason="dispute",
-                            derived_from=cand.derived_from,
-                            decision="DISPUTE",
-                            decision_reason="unresolved conflict",
-                        )
                     return {
                         "event_id": event_id,
                         "action": "DISPUTE",
-                        "memory": self._memory_detail(conn, target),
+                        "memory": self._memory_detail_by_id(conn, target["memory_id"]),
                         "decision": "DISPUTE",
                         "reason": "unresolved_conflict",
                         "conflicting_memory_id": conflicting_id,
                     }
 
                 # Equal or higher authority may revise the current claim.
-                if (
-                    cand.expected_revision is not None
-                    and int(cand.expected_revision) != int(target["revision_no"])
-                ):
-                    raise DomainError(409, "revision conflict")
                 new_status = (
                     "active"
                     if target["status"] == "active"
@@ -2832,6 +2941,9 @@ class Store:
                 )
                 self._maybe_promote_independent(
                     conn, updated_id, model_id=model_id
+                )
+                self._resolve_older_disputes(
+                    conn, updated_id, event, model_id=model_id, confidence=cand.confidence,
                 )
                 self._invalidate_dependents(conn, updated_id, invalid_roots)
                 return {
@@ -3104,8 +3216,12 @@ class Store:
         conn: sqlite3.Connection,
         memory_id: str,
         invalid_roots: set[str],
+        *,
+        protected_memory_ids: Iterable[str] = (),
     ) -> list[str]:
         dependents, _ = self._dependent_memory_ids(conn, [memory_id])
+        # An accepted winner can share an old proof root with a retired claim.
+        dependents.difference_update(protected_memory_ids)
         invalid_roots = set(invalid_roots)
         invalidated_at = now_iso()
         affected: list[str] = []
@@ -3476,6 +3592,7 @@ class Store:
                         "sensitivity": row["sensitivity"],
                         "fact_key": row["fact_key"],
                         "occurred_at": row["occurred_at"],
+                        "effective_at": row["effective_at"] or row["occurred_at"],
                     }
                 )
             relations: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -3531,7 +3648,7 @@ class Store:
             for row in conn.execute(
                 "SELECT previous.*,current.revision_no AS to_revision,"
                 "current.source_event_id AS to_event_id,current.created_at AS replaced_at,"
-                "event.occurred_at AS occurred_at "
+                "event.occurred_at AS occurred_at,event.effective_at AS event_effective_at "
                 "FROM memories memory JOIN revisions current "
                 "ON current.memory_id=memory.memory_id AND current.revision_no=memory.revision_no "
                 "JOIN revisions previous ON previous.memory_id=current.memory_id "
@@ -3549,6 +3666,7 @@ class Store:
                     "status": row["status"], "revision_no": int(row["revision_no"]),
                     "trust_tier": row["trust_tier"], "sensitivity": row["sensitivity"],
                     "occurred_at": row["occurred_at"] or row["created_at"],
+                    "effective_at": row["effective_at"] or row["event_effective_at"] or row["occurred_at"] or row["created_at"],
                 })
                 add_edge(revision_id, memory_id, "supersedes", {
                     "memory_id": memory_id, "from_revision": int(row["revision_no"]),
@@ -3918,13 +4036,8 @@ class Store:
         try:
             conn.execute("PRAGMA journal_mode = DELETE")
             conn.executescript(schema)
-            columns = {
-                str(row[1]) for row in conn.execute("PRAGMA table_info(sources)")
-            }
-            if "invalidated_at" not in columns:
-                conn.execute(
-                    "ALTER TABLE sources ADD COLUMN invalidated_at TEXT"
-                )
+            self._migrate_columns(conn)
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             # FTS is derived and may be absent or stale in older archives.
             conn.execute("DELETE FROM memory_fts")
             for row in conn.execute(

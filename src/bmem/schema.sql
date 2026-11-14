@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS events (
     source_type     TEXT NOT NULL,
     body            TEXT NOT NULL,
     occurred_at     TEXT NOT NULL,
+    effective_at    TEXT,
     ingested_at     TEXT NOT NULL,
     session_id      TEXT NOT NULL,
     project         TEXT NOT NULL DEFAULT '',
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS events (
     trust_tier      TEXT NOT NULL DEFAULT 'T4',
     evidence_hash   TEXT NOT NULL,
     metadata        TEXT NOT NULL DEFAULT '{}',
-    schema_version  INTEGER NOT NULL DEFAULT 1
+    schema_version  INTEGER NOT NULL DEFAULT 2
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_events_native_identity
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS memories (
     confidence      REAL NOT NULL DEFAULT 1.0,
     evidence_count  INTEGER NOT NULL DEFAULT 0,
     occurred_at     TEXT NOT NULL,
+    effective_at    TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
     supersedes      TEXT,
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS revisions (
     trust_tier      TEXT NOT NULL,
     confidence      REAL NOT NULL DEFAULT 1.0,
     source_event_id TEXT,
+    effective_at    TEXT,
     supersedes      INTEGER,
     reason          TEXT NOT NULL DEFAULT '',
     model_id        TEXT NOT NULL DEFAULT 'policy:t1',

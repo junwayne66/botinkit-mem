@@ -415,6 +415,8 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
                 "body": {"type": "string", "minLength": 1, "maxLength": 100000,
                          "pattern": "\\S"},
                 "fact_key": {"type": "string", "minLength": 1},
+                "effective_at": {"type": "string", "format": "date-time"},
+                "occurred_at": {"type": "string", "format": "date-time"},
                 "conditions": {"type": "object", "default": {}},
                 "sensitivity": {"type": "string", "enum": ["normal", "private"],
                                 "default": "normal"},
@@ -435,6 +437,8 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
                          "pattern": "\\S"},
                 "kind": {"type": "string", "enum": sorted(KINDS), "default": "fact"},
                 "fact_key": {"type": "string", "minLength": 1},
+                "effective_at": {"type": "string", "format": "date-time"},
+                "occurred_at": {"type": "string", "format": "date-time"},
                 "memory_id": {"type": "string", **_NONBLANK},
                 "expected_revision": {"type": "integer", "minimum": 1},
                 "conditions": {"type": "object", "default": {}},
@@ -506,6 +510,9 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
             target = args.get("target", "cloud")
             if args.get("fact_key"):
                 payload["fact_key"] = args["fact_key"]
+            for field in ("effective_at", "occurred_at"):
+                if args.get(field):
+                    payload[field] = args[field]
             if name == "memory_declare":
                 if args.get("derived_from"):
                     payload["derived_from"] = args["derived_from"]

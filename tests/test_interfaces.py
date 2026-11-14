@@ -77,9 +77,12 @@ def live_service(tmp_path, request):
 def test_cli_declare_and_search(live_service):
     url, root = live_service
     common = [str(BMEM), "--home", str(root / "data"), "--url", url]
-    declared = subprocess.run(common + ["declare", "CLI 链路使用 SQLite", "--fact-key", "cli.storage"],
+    declared = subprocess.run(common + ["declare", "CLI 链路使用 SQLite", "--fact-key", "cli.storage",
+                                       "--occurred-at", "2026-01-01T00:00:00Z",
+                                       "--effective-at", "2026-02-01T00:00:00Z"],
                               capture_output=True, text=True, timeout=20)
     assert declared.returncode == 0, declared.stderr
+    assert json.loads(declared.stdout)["memory"]["effective_at"].startswith("2026-02-01T")
     searched = subprocess.run(common + ["search", "SQLite"], capture_output=True, text=True, timeout=20)
     assert searched.returncode == 0, searched.stderr
     assert "SQLite" in searched.stdout
@@ -93,8 +96,11 @@ async def test_mcp_actual_streamable_http(live_service):
             names = {tool.name for tool in (await session.list_tools()).tools}
             assert names == {"memory_recall", "memory_search", "memory_expand", "memory_save",
                              "memory_declare", "memory_forget", "memory_status"}
-            saved = await session.call_tool("memory_save", {"body": "MCP 自动共享蓝莓布丁"})
+            saved = await session.call_tool("memory_save", {"body": "MCP 自动共享蓝莓布丁",
+                                                            "occurred_at": "2026-01-01T00:00:00Z",
+                                                            "effective_at": "2026-02-01T00:00:00Z"})
             assert not saved.isError, saved
+            assert json.loads(saved.content[0].text)["memory"]["effective_at"].startswith("2026-02-01T")
             found = await session.call_tool("memory_search", {"query": "蓝莓布丁"})
             assert not found.isError
             assert "蓝莓布丁" in str(found.content)

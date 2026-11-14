@@ -1343,7 +1343,7 @@
     apiFetch("GET", EP.event(id), { query: { target: "local" } }).then(function (event) {
       if (request !== drawerRequest || !drawerOpen) return;
       host.innerHTML = "";
-      [["来源", event.harness], ["类型", event.source_type], ["发生时间", event.occurred_at],
+      [["来源", event.harness], ["类型", event.source_type], ["发生时间", event.occurred_at], ["事实生效时间", event.effective_at],
        ["采集时间", event.ingested_at], ["原始标识", event.native_event_id]].forEach(function (pair) {
         if (pair[1]) host.appendChild(h("p", "measured", pair[0] + " " + String(pair[1])));
       });
@@ -1552,6 +1552,11 @@
     var secBody = h("div", "drawer-section");
     secBody.appendChild(h("h3", null, "当前正文"));
     secBody.appendChild(h("p", "drawer-text", mbody(m) || "（正文已清除）"));
+    if (m.effective_at) {
+      var factTime = h("p", "measured", "事实时间水位 ");
+      factTime.appendChild(timeEl(m.effective_at));
+      secBody.appendChild(factTime);
+    }
     host.appendChild(secBody);
 
     var secCond = h("div", "drawer-section");
@@ -1581,6 +1586,11 @@
       var who = rtier ? TIER_ZH[rtier] : (r.source_event_id ? "事件采入" : "系统");
       li.appendChild(h("span", isUserTier(rtier) ? "who--user" : "who--agent", who));
       li.appendChild(timeEl(r.created_at));
+      if (r.effective_at) {
+        var factTime = h("span", "measured", "事实时间 ");
+        factTime.appendChild(timeEl(r.effective_at));
+        li.appendChild(factTime);
+      }
       if (isCurrent) li.appendChild(chip("当前", "chip--cool"));
       li.appendChild(h("p", null, String(r.body || "（正文已清除）")));
       if (r.reason) li.appendChild(h("p", null, "原因：" + String(r.reason)));
@@ -1691,6 +1701,7 @@
     $("#declare-form").hidden = false;
     $("#declare-error").hidden = true;
     $("#declare-error").textContent = "";
+    $("#declare-effective-at").value = "";
     var corr = $("#declare-correction-fields");
     if (mode === "correct" && m && mid(m)) {
       state.currentId = mid(m);
@@ -1744,6 +1755,8 @@
     };
     var fk = ($("#declare-factkey").value || "").trim();
     if (fk) payload.fact_key = fk;
+    var effective = $("#declare-effective-at").value;
+    if (effective) payload.effective_at = new Date(effective).toISOString();
     var condRaw = ($("#declare-conditions").value || "").trim();
     if (condRaw) {
       var cond = asObj(condRaw);

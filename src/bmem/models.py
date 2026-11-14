@@ -271,6 +271,7 @@ class EventInput(BaseModel):
     operation_id: str | None = None
     source_type: SourceType = "user_dialogue"
     occurred_at: datetime | None = None
+    effective_at: datetime | None = None
     session_id: str = "manual"
     project: str = ""
     sensitivity: Sensitivity = "normal"
@@ -285,7 +286,7 @@ class EventInput(BaseModel):
             raise ValueError("body is too long")
         return value
 
-    @field_validator("occurred_at")
+    @field_validator("occurred_at", "effective_at")
     @classmethod
     def _occurred_at_utc(cls, value: datetime | None) -> datetime | None:
         return _normalize_datetime(value)
@@ -384,6 +385,12 @@ class CandidateInput(BaseModel):
     action: Literal["ADD", "UPDATE", "NOOP", "DISPUTE", "QUARANTINE"]
     memory_id: str | None = None
     expected_revision: int | None = Field(default=None, ge=0)
+    effective_at: datetime | None = None
+
+    @field_validator("effective_at")
+    @classmethod
+    def _effective_at_utc(cls, value: datetime | None) -> datetime | None:
+        return _normalize_datetime(value)
 
     @field_validator("body")
     @classmethod

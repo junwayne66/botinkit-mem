@@ -11,4 +11,6 @@
 
 ## Slice 2
 
-声明、候选及对应CLI/MCP入口接受可选事实生效时间。缺省使用事件发生时间，既有调用保持可用。细化行为遵循spec.md的FR-001至FR-007。
+声明、候选及对应CLI/MCP入口接受可选 `effective_at`。CLI支持 `--effective-at` 和 `--occurred-at`，MCP的memory_save与memory_declare支持对应字段，Web声明提供可选本地日期时间。输入日期规范化为UTC，缺省使用原事件发生时间。
+
+记忆和修订响应增加 `effective_at`，事件响应保留可空的显式时间。可信度相近时按事实时间更新，等时相反正文保留争议，用户带memory_id与expected_revision的版本纠正可以消歧。既有调用可省略时间字段。细化行为遵循spec.md的FR-001至FR-007。

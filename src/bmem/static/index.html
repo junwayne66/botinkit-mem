@@ -503,12 +503,15 @@
           <input id="declare-conditions" type="text" spellcheck="false" placeholder='如 {"phase":1}'>
         </label>
       </div>
+      <label for="declare-effective-at">事实生效时间（可选，留空采用来源发生时间）
+        <input id="declare-effective-at" type="datetime-local" step="1">
+      </label>
       <div class="chip-row">
         <button type="button" class="btn btn--primary" id="declare-save">提交声明</button>
         <button type="button" class="btn" id="declare-cancel">取消</button>
       </div>
       <p class="panel-note" id="declare-error" role="alert" hidden></p>
-      <p class="panel-note">T1 高信任：冲突检查 → 新版本立即生效 → 派生链传播。你不直接编辑记忆，系统自主整合。</p>
+      <p class="panel-note">同一事实按可信度与事实时间整合，同值确认可推进时间水位，较旧资料保留来源历史。</p>
     </div>
   </div>
   <div class="drawer-actions" id="drawer-actions" hidden>
