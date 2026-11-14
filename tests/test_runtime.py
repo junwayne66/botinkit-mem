@@ -109,6 +109,8 @@ def test_truncated_generation_retries_once_with_larger_budget(tmp_path, monkeypa
                 output = {"response": '{"candidates": []}', "done_reason": "stop"}
             else:
                 reason = "length" if payload["prompt"] == "truncated" else "stop"
+                if payload["prompt"] == "unknown_reason":
+                    reason = "untrusted finish metadata"
                 output = {"response": '{"candidates": [', "done_reason": reason}
             encoded = json.dumps(output).encode()
             self.send_response(200)
@@ -127,14 +129,24 @@ def test_truncated_generation_retries_once_with_larger_budget(tmp_path, monkeypa
     try:
         runtime = Runtime(tmp_path)
         assert runtime._generate_json("truncated", schema) == {"candidates": []}
-        with pytest.raises(RuntimeError, match="requested JSON schema"):
+        with pytest.raises(RuntimeError, match="requested JSON schema") as invalid:
             runtime._generate_json("invalid", schema)
-        with pytest.raises(RuntimeError, match="requested JSON schema"):
+        assert "done_reason=stop" in str(invalid.value)
+        assert "num_predict=800" in str(invalid.value)
+        with pytest.raises(RuntimeError, match="requested JSON schema") as truncated:
             runtime._generate_json("truncated", schema, num_predict=64)
-        assert [path for path, _ in requests] == ["/api/generate"] * 4
+        assert "done_reason=length" in str(truncated.value)
+        assert "num_predict=64" in str(truncated.value)
+        with pytest.raises(RuntimeError, match="requested JSON schema") as unknown:
+            runtime._generate_json("unknown_reason", schema, num_predict=64)
+        assert "done_reason=unknown" in str(unknown.value)
+        assert "untrusted finish metadata" not in str(unknown.value)
+        assert '{"candidates"' not in str(unknown.value)
+        assert [path for path, _ in requests] == ["/api/generate"] * 5
         assert [(payload["prompt"], payload["options"]["num_predict"]) for _, payload in requests] == [
             ("truncated", 800), ("truncated", 3200), ("invalid", 800),
             ("truncated", 64),
+            ("unknown_reason", 64),
         ]
         assert all(payload["format"] == schema for _, payload in requests)
     finally:
@@ -248,3 +260,100 @@ def test_target_binding_uses_snapshot_revision_and_excludes_self_ancestry():
     assert result["kind"] == "fact"
     assert result["conditions"] == {"phase": "m1"}
     assert result["fact_key"] == "canonical.claim"
+
+
+@pytest.fixture
+def distill_batch(tmp_path, monkeypatch):
+    from bmem.runtime import Worker
+    from bmem.store import Store
+
+    monkeypatch.setenv("BMEM_CONFIG_ROOT", str(tmp_path / "config"))
+    monkeypatch.setenv("BMEM_OLLAMA_URL", "http://127.0.0.1:1")
+    store = Store(tmp_path)
+    store.set_settings({"semantic_enabled": False})
+    target = store.declare({"body": "batch original", "fact_key": "batch.fact",
+                            "effective_at": "2026-01-01T00:00:00Z"})["memory"]
+    for job in store.records("jobs"):
+        store.finish_job(job["job_id"])
+    store.ingest({"body": "batch", "source_type": "verification"})
+    runtime = Runtime(tmp_path)
+    candidate = {"body": "batch updated", "kind": "fact", "fact_key": "batch.fact",
+                 "conditions": {}, "derived_from": [], "action": "UPDATE",
+                 "memory_id": target["memory_id"], "effective_at": "2026-02-01T00:00:00Z"}
+    return store, runtime, Worker(store, runtime), target, candidate
+
+
+@pytest.mark.parametrize("last_action", ["UPDATE", "NOOP", "DISPUTE"])
+def test_distill_batch_uses_own_committed_revisions(distill_batch, monkeypatch, last_action):
+    store, runtime, worker, target, candidate = distill_batch
+    last_body = "batch disputed" if last_action == "DISPUTE" else candidate["body"]
+    candidates = [
+        {"body": "batch independent", "kind": "fact", "fact_key": "batch.extra",
+         "conditions": {}, "derived_from": [], "action": "ADD"},
+        candidate,
+        {**candidate, "body": last_body, "action": last_action, "effective_at": "2026-03-01T00:00:00Z"},
+    ]
+    monkeypatch.setattr(runtime, "_generate_json", lambda *_args, **_kwargs: {"candidates": candidates})
+    result = worker.run_once()
+    assert result["status"] == "done", result
+    current = store.get_memory(target["memory_id"])
+    assert current["body"] == last_body
+    assert current["revision_no"] == (3 if last_action == "DISPUTE" else 2)
+    expected_time = "2026-02-01T" if last_action == "NOOP" else "2026-03-01T"
+    assert current["effective_at"].startswith(expected_time)
+    assert len(store.list_memories()) == 2
+
+
+def test_distill_noop_keeps_revision_for_next_update(distill_batch, monkeypatch):
+    store, runtime, worker, target, candidate = distill_batch
+    candidates = [{**candidate, "action": "NOOP", "effective_at": "2026-01-01T00:00:00Z"}, candidate]
+    monkeypatch.setattr(runtime, "_generate_json", lambda *_args, **_kwargs: {"candidates": candidates})
+    assert worker.run_once()["status"] == "done"
+    current = store.get_memory(target["memory_id"])
+    assert current["revision_no"] == 2
+    assert current["body"] == candidate["body"]
+
+
+def test_distill_batch_still_rejects_external_revision(distill_batch, monkeypatch):
+    store, runtime, worker, target, candidate = distill_batch
+    candidates = [candidate, {**candidate, "body": "batch later", "effective_at": "2026-03-01T00:00:00Z"}]
+    monkeypatch.setattr(runtime, "_generate_json", lambda *_args, **_kwargs: {"candidates": candidates})
+    apply = store.apply_candidate
+    inserted_external = False
+
+    def apply_with_external_write(event_id, item, model_id):
+        nonlocal inserted_external
+        result = apply(event_id, item, model_id)
+        if not inserted_external:
+            inserted_external = True
+            store.declare({"body": "batch external", "memory_id": target["memory_id"],
+                           "expected_revision": result["memory"]["revision_no"],
+                           "effective_at": "2026-04-01T00:00:00Z"})
+        return result
+
+    monkeypatch.setattr(store, "apply_candidate", apply_with_external_write)
+    result = worker.run_once()
+    assert result["status"] == "failed"
+    assert "revision conflict" in result["error"]
+    current = store.get_memory(target["memory_id"])
+    assert current["revision_no"] == 3
+    assert current["body"] == "batch external"
+
+
+def test_untargeted_add_does_not_rebase_snapshot(distill_batch, monkeypatch):
+    store, runtime, worker, target, candidate = distill_batch
+    added = {key: value for key, value in candidate.items() if key != "memory_id"}
+    added.update({"action": "ADD", "body": "batch added", "effective_at": "2026-03-01T00:00:00Z"})
+
+    def generate(*_args, **_kwargs):
+        store.declare({"body": "batch external", "memory_id": target["memory_id"],
+                       "expected_revision": 1, "effective_at": "2026-02-15T00:00:00Z"})
+        return {"candidates": [added, {**candidate, "effective_at": "2026-04-01T00:00:00Z"}]}
+
+    monkeypatch.setattr(runtime, "_generate_json", generate)
+    result = worker.run_once()
+    assert result["status"] == "failed"
+    assert "revision conflict" in result["error"]
+    current = store.get_memory(target["memory_id"])
+    assert current["revision_no"] == 3
+    assert current["body"] == added["body"]

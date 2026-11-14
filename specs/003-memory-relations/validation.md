@@ -148,3 +148,28 @@ HTTP413触发批量逐条恢复，单输入最多额外3次前缀减半，各次
 一条长期HTTP413向量任务于19:39:55按自然周期完成，从第121次失败进入第122次成功，错误字段清空。对应记忆第1版已有canonical BGE向量行，完整正文哈希及关键词索引验证通过。重启前的在途蒸馏任务亦由既有恢复流程完成。
 
 19:40:33校验显示Worker已运行162个周期，循环异常0。此次实测覆盖该条向量任务的自然恢复，其余蒸馏失败仍需按诊断分别处理。前缀语义损失和严格墙钟时限的验证边界见上节。
+
+# 运行恢复补丁 · 同批候选版本衔接
+
+2026-11-15，新增失败诊断后修复隔离确认的同批版本自冲突路径，当前工作区等待独立审查。
+
+## 实际执行
+
+```sh
+.venv/bin/python -m pytest tests/test_runtime.py -k 'truncated_generation or distill_batch or distill_noop or untargeted_add' -q --tb=short --basetemp <隔离临时目录>
+.venv/bin/python -m pytest tests/test_runtime.py tests/test_fact_time.py tests/test_recompute.py tests/test_embedding_limits.py -q --tb=short --basetemp <隔离临时目录>
+.venv/bin/python -m pytest tests -q --tb=short --basetemp <隔离临时目录>
+git diff --check
+```
+
+新增6项批次回归并扩展既有生成诊断测试。初轮4 failed、3 passed，修复后7 passed，0.82秒。定向87 passed，11.75秒，全套205 passed，42.47秒，1条上游Starlette弃用提示。Python AST与差异空白检查通过。
+
+## 行为与审查边界
+
+整批候选继续采用生成时的目标快照预检。一次作业内，成功通过CAS的UPDATE、NOOP和DISPUTE返回目标身份匹配的实际版本时，后续同目标定向候选承接该版本。版本映射只在该次调用内使用。测试验证外部修订介入时仍触发Store冲突，不定向ADD不会授予后续候选跨快照版本。
+
+测试覆盖ADD后连续UPDATE、NOOP及DISPUTE，同值时间确认、NOOP保持版本、外部写入介入，以及不定向ADD的边界。JSON解析报错补充白名单done_reason和程序侧num_predict，合成HTTP测试核对结束、截断及未知结束原因，错误消息采用脱敏元信息。
+
+本次修复不提供跨次任务的统一幂等保证。真实失败的原始第三候选未保存，隔离复现确认的是可触发的批内自冲突路径，真实任务的唯一成因仍待进一步证据。真实JSON失败记录缺少结束原因与输出预算，新增诊断用于后续区分。
+
+并行只读静态复核未发现阻塞问题。独立审查方逐行复核通过，另行执行runtime、fact_time及acceptance共123 passed，6.50秒，1条上游弃用提示。新增失败ID、时间、来源及部分写入的脱敏证据保存在本机私有诊断目录。本地发布待完成。

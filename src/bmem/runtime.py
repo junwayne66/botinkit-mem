@@ -1978,9 +1978,13 @@ Use only kind method|decision, action ADD, and derived_from from the listed memo
         if parsed is None:
             if body.get("done_reason") == "length" and num_predict == 800:
                 return self._generate_json(prompt, schema, num_predict=3200)
+            reason = body.get("done_reason")
+            if reason not in ("length", "stop", "load", "unload"):
+                reason = "unknown"
             raise RuntimeError(
                 f"generation model {DISTILL_MODEL} returned output that does not "
-                f"match the requested JSON schema"
+                f"match the requested JSON schema "
+                f"(invalid JSON, done_reason={reason}, num_predict={num_predict})"
             )
         return parsed
 
@@ -2862,9 +2866,20 @@ class Worker:
             or f"{DISTILL_MODEL}@{PINNED_OLLAMA_VERSION}"
         )
         applied: list[dict[str, Any]] = []
+        confirmed_revisions: dict[str, int] = {}
         for candidate in candidates:
+            memory_id = candidate.get("memory_id")
+            targeted = candidate.get("action") in {"UPDATE", "NOOP", "DISPUTE"}
+            if targeted and memory_id in confirmed_revisions:
+                candidate["expected_revision"] = confirmed_revisions[memory_id]
             result = self.store.apply_candidate(event_id, candidate, model_id)
             result_data = _as_dict(result)
+            memory = _as_dict(result_data.get("memory"))
+            if targeted and memory.get("memory_id") == memory_id:
+                revision = _memory_revision(memory)
+                if revision is not None:
+                    # Only this job's successful CAS can advance a later target.
+                    confirmed_revisions[memory_id] = revision
             applied.append(
                 {
                     "action": candidate.get("action", "ADD"),
