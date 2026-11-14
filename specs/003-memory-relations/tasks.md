@@ -18,7 +18,7 @@
 - [x] T008 [US1] 在 tests/ 增补同一范围的新旧事实、显式目标、迟到旧资料、确认时间和可信度回归。
 - [x] T009 [US1] 在 src/bmem/models.py、schema.sql、store.py 实现事实时间、兼容读取和统一更新规则。
 - [x] T010 [US1] 在 src/bmem/runtime.py、api.py、cli.py 与现有界面入口传递事实时间和来源。
-- [ ] T011 [US1] 验证旧备份及原有调用，完成独立review后本地提交部署并更新 specs/003-memory-relations/validation.md。
+- [x] T011 [US1] 验证旧备份及原有调用，完成独立review后本地提交部署并更新 specs/003-memory-relations/validation.md。
 
 ## 运行评估
 
