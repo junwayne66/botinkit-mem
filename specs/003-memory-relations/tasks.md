@@ -11,7 +11,7 @@
 - [x] T004 [US2] 在 src/bmem/api.py 暴露带目标边界的只读事件详情及图谱。
 - [x] T005 [US2] 在 src/bmem/static/app.js、app.css 复用星图和抽屉，关联端点优先、筛选后截取、节点与边查看详情。
 - [x] T006 [US3] 在 src/bmem/store.py 修正自定义根的间接引用遍历，并在 tests/test_recompute.py 覆盖。
-- [ ] T007 在 specs/003-memory-relations/validation.md 记录第一切片结果，交独立review后本地提交与部署。
+- [x] T007 在 specs/003-memory-relations/validation.md 记录第一切片结果，交独立review后本地提交与部署。
 
 ## 第二切片 · 当前事实时间
 
