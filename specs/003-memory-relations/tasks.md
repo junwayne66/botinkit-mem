@@ -33,3 +33,4 @@ T002→T003→T004→T005→T007，T006纳入第一切片。第一切片先交�
 - [x] T013 按FR-005在tests/test_fact_time.py覆盖同时间相反内容，并在store.py保留未消歧冲突，允许用户显式版本纠正（partial）。
 - [x] T014 按FR-002在tests/test_fact_time.py覆盖重算候选与首条证据日期不同的情况，在store.py采用重算候选明确时间，缺省保留当前水位（partial）。
 - [x] T015 按独立审查及FR-003至FR-006，在tests/test_fact_time.py复现较新可信事实接受后旧争议继续召回，修复同键精确条件的争议状态与审计，覆盖声明、候选、同值确认和较旧/低可信输入边界。
+- [x] T016 按运行失败诊断在Runtime.embed加入HTTP413的有界前缀恢复，保持结果顺序与调用时限，在tests/test_embedding_limits.py用合成HTTP及真实Store/Worker验证，整理失败分类、重试幂等性和差异供独立审查。

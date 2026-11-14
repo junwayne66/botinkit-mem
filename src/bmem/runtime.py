@@ -1651,10 +1651,46 @@ class Runtime:
             cleaned.append(text)
         if not cleaned:
             return []
+        deadline = time.monotonic() + timeout
+        try:
+            return self._embed_request(cleaned, timeout)
+        except httpx.HTTPStatusError as error:
+            return self._embed_context_fallback(cleaned, error, deadline)
+
+    def _embed_context_fallback(
+        self, texts: list[str], error: httpx.HTTPStatusError, deadline: float,
+    ) -> list[list[float]]:
+        if len(texts) > 1:
+            vectors = []
+            for text in texts:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("embedding recovery deadline exceeded") from error
+                vectors.extend(self.embed([text], timeout=remaining))
+            return vectors
+
+        text = texts[0]
+        for _ in range(3):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or len(text) <= 1:
+                break
+            # The server has already tried token truncation. Only a runner 413
+            # permits this further prefix reduction within the caller's budget.
+            text = text[: len(text) // 2]
+            try:
+                return self._embed_request([text], remaining)
+            except httpx.HTTPStatusError as latest_error:
+                error = latest_error
+        raise RuntimeError(
+            f"embedding model {EMBED_MODEL} failed with HTTP 413 after bounded recovery: "
+            f"{_response_error(error.response)}"
+        ) from error
+
+    def _embed_request(self, texts: list[str], timeout: float) -> list[list[float]]:
         endpoint = self._endpoint()
         payload = {
             "model": EMBED_MODEL,
-            "input": cleaned,
+            "input": texts,
             "truncate": True,
             "keep_alive": -1,
         }
@@ -1671,6 +1707,8 @@ class Runtime:
                 f"embedding model {EMBED_MODEL} is not installed "
                 f"(local endpoint {endpoint}); run runtime install"
             )
+        if response.status_code == 413:
+            response.raise_for_status()
         if response.status_code >= 400:
             raise RuntimeError(
                 f"embedding model {EMBED_MODEL} failed with HTTP "
@@ -1687,11 +1725,11 @@ class Runtime:
         embeddings = body.get("embeddings")
         if embeddings is None and "embedding" in body:
             embeddings = [body["embedding"]]
-        if not isinstance(embeddings, list) or len(embeddings) != len(cleaned):
+        if not isinstance(embeddings, list) or len(embeddings) != len(texts):
             raise RuntimeError(
                 f"embedding model {EMBED_MODEL} returned "
                 f"{len(embeddings) if isinstance(embeddings, list) else 0} "
-                f"vectors for {len(cleaned)} texts"
+                f"vectors for {len(texts)} texts"
             )
         vectors: list[list[float]] = []
         for vector in embeddings:
