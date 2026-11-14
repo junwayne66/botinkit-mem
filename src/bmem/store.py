@@ -2998,8 +2998,13 @@ class Store:
     # ------------------------------------------------------------------
 
     def _dependent_memory_ids(
-        self, conn: sqlite3.Connection, seed_ids: Iterable[str]
+        self,
+        conn: sqlite3.Connection,
+        seed_ids: Iterable[str],
+        *,
+        include_invalidated: bool = False,
     ) -> tuple[set[str], set[str]]:
+        """Privacy erasure also follows invalidated provenance."""
         seeds = {str(value) for value in seed_ids}
         event_ids: set[str] = set()
         roots: set[str] = {f"memory:{memory_id}" for memory_id in seeds}
@@ -3025,9 +3030,10 @@ class Store:
             if placeholders:
                 sql = (
                     "SELECT DISTINCT memory_id FROM sources WHERE "
-                    f"root_source_id IN ({placeholders})"
+                    f"root_source_id IN ({placeholders}) "
+                    "AND (invalidated_at IS NULL OR ?)"
                 )
-                params: list[Any] = list(roots_for_frontier)
+                params: list[Any] = [*roots_for_frontier, include_invalidated]
                 if visited:
                     sql += " AND memory_id NOT IN ("
                     sql += ",".join("?" for _ in visited) + ")"
@@ -3038,7 +3044,9 @@ class Store:
                         candidates.add(candidate)
             # derived_from may name an event or memory without a matching root.
             for row in conn.execute(
-                "SELECT memory_id, derived_from FROM sources"
+                "SELECT memory_id, derived_from FROM sources "
+                "WHERE invalidated_at IS NULL OR ?",
+                (include_invalidated,),
             ):
                 memory_id = str(row["memory_id"])
                 if memory_id in seeds or memory_id in visited:
@@ -3203,7 +3211,7 @@ class Store:
                 }
 
             dependents, related_events = self._dependent_memory_ids(
-                conn, [memory_id]
+                conn, [memory_id], include_invalidated=True
             )
             invalid_roots = {f"memory:{memory_id}"}
             invalid_roots.update(related_events)
