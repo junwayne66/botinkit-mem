@@ -1756,13 +1756,14 @@ class Store:
     # Read API
     # ------------------------------------------------------------------
 
-    def get_event(self, event_id: str) -> dict:
+    def get_event(self, event_id: str, target="local") -> dict:
+        target = self._target(target)
         event_id = str(event_id)
         with self._read() as conn:
             row = conn.execute(
                 "SELECT * FROM events WHERE event_id=?", (event_id,)
             ).fetchone()
-            if row is None:
+            if row is None or (target == "cloud" and row["sensitivity"] == "private"):
                 raise DomainError(404, "event not found")
             event = self._event_row_to_dict(row)
             event["has_evidence"] = (
@@ -3052,7 +3053,8 @@ class Store:
                 if memory_id in seeds or memory_id in visited:
                     continue
                 refs = _json_loads(row["derived_from"], []) or []
-                if any(str(ref) in seeds or str(ref) in event_ids for ref in refs):
+                if any(str(ref) in seeds or str(ref) in visited or str(ref) in event_ids
+                       for ref in refs):
                     candidates.add(memory_id)
             frontier = set()
             for candidate in candidates:
@@ -3465,6 +3467,7 @@ class Store:
                     {
                         "id": row["memory_id"],
                         "memory_id": row["memory_id"],
+                        "node_type": "memory",
                         "label": (row["body"] or "")[:80],
                         "kind": row["kind"],
                         "status": row["status"],
@@ -3472,52 +3475,94 @@ class Store:
                         "trust_tier": row["trust_tier"],
                         "sensitivity": row["sensitivity"],
                         "fact_key": row["fact_key"],
+                        "occurred_at": row["occurred_at"],
                     }
                 )
-            edges: list[dict[str, str]] = []
-            seen: set[tuple[str, str, str]] = set()
+            relations: dict[tuple[str, str, str], dict[str, Any]] = {}
+            shared_roots: dict[str, list[dict[str, Any]]] = {}
+
+            def add_edge(source: str, target: str, relation: str, evidence: dict) -> None:
+                if source == target:
+                    return
+                key = (source, target, relation)
+                edge = relations.setdefault(key, {
+                    "id": f"{relation}|{source}|{target}", "source": source,
+                    "target": target, "relation": relation, "evidence": [],
+                })
+                edge["evidence"].append(evidence)
+
             for row in conn.execute("SELECT * FROM sources"):
                 target_id = str(row["memory_id"])
                 if target_id not in ids:
                     continue
                 root = str(row["root_source_id"])
-                source_id = None
+                proof = {
+                    "source_row_id": int(row["source_row_id"]),
+                    "event_id": row["event_id"], "root_source_id": root,
+                    "source_type": row["source_type"], "trust_tier": row["trust_tier"],
+                    "created_at": row["created_at"], "invalidated_at": row["invalidated_at"],
+                }
+                if row["source_type"] != "injection_reference":
+                    shared_roots.setdefault(root, []).append({**proof, "memory_id": target_id})
+                parent_ids: set[str] = set()
                 if root.startswith("memory:"):
-                    candidate = root.split(":", 1)[1]
-                    if candidate in ids:
-                        source_id = candidate
-                if source_id is None:
-                    for reference in _json_loads(row["derived_from"], []) or []:
-                        reference = str(reference)
-                        if reference in ids:
-                            source_id = reference
-                            break
-                if source_id and source_id != target_id:
-                    edge = (source_id, target_id, "derived")
-                    if edge not in seen:
-                        seen.add(edge)
-                        edges.append(
-                            {
-                                "source": source_id,
-                                "target": target_id,
-                                "relation": "derived",
-                            }
-                        )
+                    parent_ids.add(root.split(":", 1)[1])
+                parent_ids.update(str(value) for value in _json_loads(row["derived_from"], []) or [])
+                for parent_id in sorted(parent_ids & ids):
+                    add_edge(parent_id, target_id, "derived", proof)
+
+            for root, proofs in shared_roots.items():
+                owners = sorted({proof["memory_id"] for proof in proofs})
+                if len(owners) < 2:
+                    continue
+                source_id = f"source:{root}"
+                event_ids = sorted({proof["event_id"] for proof in proofs if proof["event_id"]})
+                nodes.append({
+                    "id": source_id, "memory_id": None, "node_type": "source",
+                    "label": f"共同来源 · {len(owners)} 条记忆", "kind": "source",
+                    "status": "active" if any(not proof["invalidated_at"] for proof in proofs) else "historical",
+                    "root_source_id": root, "event_ids": event_ids, "memory_ids": owners,
+                })
+                for proof in proofs:
+                    add_edge(source_id, proof["memory_id"], "evidence", proof)
+
+            # Revisions keep one memory identity, so expose the latest saved
+            # predecessor as a separate node. Full history stays in its drawer.
+            for row in conn.execute(
+                "SELECT previous.*,current.revision_no AS to_revision,"
+                "current.source_event_id AS to_event_id,current.created_at AS replaced_at,"
+                "event.occurred_at AS occurred_at "
+                "FROM memories memory JOIN revisions current "
+                "ON current.memory_id=memory.memory_id AND current.revision_no=memory.revision_no "
+                "JOIN revisions previous ON previous.memory_id=current.memory_id "
+                "AND previous.revision_no=current.supersedes "
+                "LEFT JOIN events event ON event.event_id=previous.source_event_id "
+                "WHERE memory.status!='deleted'"
+            ):
+                memory_id = str(row["memory_id"])
+                if memory_id not in ids or (target_value == "cloud" and row["sensitivity"] == "private"):
+                    continue
+                revision_id = f"revision:{memory_id}:{row['revision_no']}"
+                nodes.append({
+                    "id": revision_id, "memory_id": memory_id, "node_type": "revision",
+                    "label": (row["body"] or "")[:80], "kind": row["kind"],
+                    "status": row["status"], "revision_no": int(row["revision_no"]),
+                    "trust_tier": row["trust_tier"], "sensitivity": row["sensitivity"],
+                    "occurred_at": row["occurred_at"] or row["created_at"],
+                })
+                add_edge(revision_id, memory_id, "supersedes", {
+                    "memory_id": memory_id, "from_revision": int(row["revision_no"]),
+                    "to_revision": int(row["to_revision"]), "event_id": row["to_event_id"],
+                    "previous_event_id": row["source_event_id"], "created_at": row["replaced_at"],
+                })
             for row in conn.execute(
                 "SELECT memory_id, supersedes FROM memories WHERE supersedes IS NOT NULL"
             ):
                 if row["supersedes"] in ids and row["memory_id"] in ids:
-                    edge = (row["supersedes"], row["memory_id"], "supersedes")
-                    if edge not in seen:
-                        seen.add(edge)
-                        edges.append(
-                            {
-                                "source": row["supersedes"],
-                                "target": row["memory_id"],
-                                "relation": "supersedes",
-                            }
-                        )
-            return {"nodes": nodes, "edges": edges}
+                    add_edge(row["supersedes"], row["memory_id"], "supersedes", {
+                        "memory_id": row["memory_id"], "previous_memory_id": row["supersedes"],
+                    })
+            return {"nodes": nodes, "edges": list(relations.values())}
 
     def get_settings(self) -> dict:
         with self._read() as conn:

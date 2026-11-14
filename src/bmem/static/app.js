@@ -90,6 +90,7 @@
     imports: "/api/imports",
     jobs: "/api/jobs",
     graph: "/api/graph",
+    event: function (id) { return "/api/events/" + encodeURIComponent(id); },
     sources: "/api/sources",
     semantic: "/api/settings/semantic",
     runtime: "/api/runtime",
@@ -981,13 +982,15 @@
   function graphNodes(g) {
     return (g && Array.isArray(g.nodes)) ? g.nodes : [];
   }
+  function graphId(node) { return String(node.id || mid(node)); }
   function graphEdges(g) {
     var ids = {};
-    graphNodes(g).forEach(function (n) { ids[mid(n)] = true; });
+    graphNodes(g).forEach(function (n) { ids[graphId(n)] = true; });
     var edges = (g && Array.isArray(g.edges)) ? g.edges : [];
     return edges.filter(function (e) { return e && e.source && e.target && ids[e.source] && ids[e.target] && e.source !== e.target; });
   }
   function nodeShape(kind) {
+    if (kind === "source") return svg("path", { class: "shape", d: "M-12 -10H12V10H-12ZM-7 -4H7M-7 3H4", fill: "none" });
     if (kind === "decision") return svg("rect", { class: "shape", x: -11, y: -11, width: 22, height: 22, rx: 3 });
     if (kind === "method") return svg("path", { class: "shape", d: "M0 -14 14 0 0 14 -14 0Z" });
     if (kind === "episode") return svg("path", { class: "shape", d: "M0 -13 11 -6.5 11 6.5 0 13 -11 6.5 -11 -6.5Z" });
@@ -1002,16 +1005,16 @@
       var r = 26 * Math.sqrt(i + 1);
       var x = W / 2 + r * Math.cos(a) * 0.9;
       var y = H / 2 + r * Math.sin(a) * 0.62;
-      pos[mid(n)] = { x: clamp(x, 40, W - 40), y: clamp(y, 40, H - 40), vx: 0, vy: 0 };
+      pos[graphId(n)] = { x: clamp(x, 40, W - 40), y: clamp(y, 40, H - 40), vx: 0, vy: 0 };
     });
     var links = edges.filter(function (e) { return pos[e.source] && pos[e.target] && e.source !== e.target; });
     var iterations = nodes.length > 60 ? 180 : 260;
     for (var it = 0; it < iterations; it++) {
       var alpha = 1 - it / iterations;
       for (var i = 0; i < nodes.length; i++) {
-        var pi = pos[mid(nodes[i])];
+        var pi = pos[graphId(nodes[i])];
         for (var j = i + 1; j < nodes.length; j++) {
-          var pj = pos[mid(nodes[j])];
+          var pj = pos[graphId(nodes[j])];
           var dx = pj.x - pi.x, dy = pj.y - pi.y;
           var d2 = dx * dx + dy * dy;
           if (d2 < 1) { dx = (i - j) * 0.13; dy = 0.37; d2 = 1; }
@@ -1032,7 +1035,7 @@
         pt.vx -= (dx / d) * f; pt.vy -= (dy / d) * f;
       });
       nodes.forEach(function (n) {
-        var p = pos[mid(n)];
+        var p = pos[graphId(n)];
         p.x = clamp(p.x + p.vx * 0.6, 40, W - 40);
         p.y = clamp(p.y + p.vy * 0.6, 34, H - 34);
         p.vx *= 0.55; p.vy *= 0.55;
@@ -1046,16 +1049,10 @@
     opts = opts || {};
     var hostEl = host === "graph" ? sections["graph"] : sections[host];
     hostEl.innerHTML = "";
-    var nodes = graphNodes(data).slice();
-    var edges = graphEdges(data);
-    var truncated = false;
     var limit = opts.limit || 240;
-    if (nodes.length > limit) { nodes = nodes.slice(0, limit); truncated = true; }
-    edges = edges.filter(function (e) {
-      var ok = {};
-      nodes.forEach(function (n) { ok[mid(n)] = true; });
-      return ok[e.source] && ok[e.target];
-    });
+    var view = graphView(data, limit);
+    var nodes = view.nodes;
+    var edges = view.edges;
 
     var W = 960, H = 560;
     var pos = forceLayout(nodes, edges, W, H);
@@ -1063,11 +1060,11 @@
     var glowId = "node-glow-" + seq, arrowId = "edge-arrow-" + seq;
 
     var root = svg("svg", {
-      class: "constellation", viewBox: "0 0 " + W + " " + H,
+      class: "constellation" + (nodes.length > 24 ? " constellation--dense" : ""), viewBox: "0 0 " + W + " " + H,
       role: opts.mini ? "img" : "group",
       "aria-label": opts.mini
         ? "记忆星图缩略预览：形状分类型，琥珀为用户声明，蓝为 Agent 派生，虚线环为待确认"
-        : "交互记忆星图：Tab 聚焦节点，Enter 打开详情，悬停高亮派生链"
+        : "交互记忆星图：Tab 聚焦节点或关系，Enter 打开详情，悬停高亮关联"
     });
     var defs = svg("defs");
     var filter = svg("filter", { id: glowId, x: "-80%", y: "-80%", width: "260%", height: "260%" });
@@ -1085,39 +1082,48 @@
       var ps = pos[e.source], pt = pos[e.target];
       if (!ps || !pt) return;
       var rel = String(e.relation || e.kind || "");
+      var historical = e.evidence && e.evidence.length && e.evidence.every(function (p) { return !!p.invalidated_at; });
       var dx = pt.x - ps.x, dy = pt.y - ps.y;
       var d = Math.sqrt(dx * dx + dy * dy) || 1;
       var inset = rel.indexOf("supersede") >= 0 ? 16 : 19;
       var line = svg("line", {
-        class: "edge" + (rel.indexOf("supersede") >= 0 ? " edge--supersede" : ""),
+        class: "edge" + (rel.indexOf("supersede") >= 0 ? " edge--supersede" : "") + (historical ? " edge--historical" : ""),
         x1: ps.x + (dx / d) * 15, y1: ps.y + (dy / d) * 15,
         x2: pt.x - (dx / d) * inset, y2: pt.y - (dy / d) * inset
       });
       line.setAttribute("data-from", e.source);
       line.setAttribute("data-to", e.target);
-      if (rel.indexOf("supersede") < 0) line.setAttribute("marker-end", "url(#" + arrowId + ")");
+      if (rel === "derived") line.setAttribute("marker-end", "url(#" + arrowId + ")");
       var t = svg("title");
-      t.textContent = rel ? rel : "关联";
+      t.textContent = (RELATION_ZH[rel] || rel) + (historical ? " · 历史已失效" : "");
       line.appendChild(t);
-      gEdges.appendChild(line);
+      var group = svg("g", { class: "graph-relation", role: "button", tabindex: "0", "aria-label": t.textContent + "，查看证据" });
+      var hit = svg("line", { class: "edge-hit", x1: line.getAttribute("x1"), y1: line.getAttribute("y1"), x2: line.getAttribute("x2"), y2: line.getAttribute("y2") });
+      group.appendChild(line);
+      group.appendChild(hit);
+      group.addEventListener("click", function () { openGraphRelation(e, data); });
+      group.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openGraphRelation(e, data); }
+      });
+      gEdges.appendChild(group);
       edgeEls.push({ el: line, from: e.source, to: e.target, data: e });
     });
     root.appendChild(gEdges);
 
     var nodeEls = [];
     nodes.forEach(function (n) {
-      var p = pos[mid(n)];
+      var p = pos[graphId(n)];
       if (!p) return;
-      var id = mid(n), st = mstatus(n), kind = mkind(n);
+      var id = graphId(n), st = mstatus(n), kind = mkind(n);
       var user = misUser(n);
-      var cls = "node " + (st === "disputed" ? "node--disputed" : (user ? "node--user" : "node--agent")) + " node--" + (st || "active");
+      var cls = "node " + (st === "disputed" ? "node--disputed" : (user ? "node--user" : "node--agent")) + " node--" + (st || "active") + (n.node_type === "source" ? " node--source" : "");
       var g = svg("g", { class: cls, transform: "translate(" + p.x.toFixed(1) + " " + p.y.toFixed(1) + ")" });
       g.setAttribute("data-id", id);
       g.setAttribute("tabindex", "0");
       g.setAttribute("role", "button");
       var label = truncate(mbody(n) || id, 26);
       var kindZh = KIND_ZH[kind] || kind;
-      g.setAttribute("aria-label", id + " " + kindZh + "：" + label + "，" + (user ? "用户声明" : "Agent 派生") + (st ? "，" + st : ""));
+      g.setAttribute("aria-label", kindZh + " " + label + (n.node_type === "revision" ? " v" + n.revision_no : "") + (st ? "，" + st : ""));
       g.appendChild(svg("circle", { class: "halo", cx: 0, cy: 0, r: st === "disputed" ? 21 : 21 }));
       g.appendChild(nodeShape(kind));
       if (st === "disputed") g.appendChild(svg("circle", { class: "shape", cx: 0, cy: 0, r: 7, fill: "none" }));
@@ -1128,12 +1134,12 @@
       g.insertBefore(ttl, g.firstChild);
       if (!opts.mini) {
         var txt = svg("text", { class: "node-label", x: 0, y: 32 });
-        txt.textContent = truncate(mbody(n) || id, 16);
+        txt.textContent = (n.node_type === "revision" ? "v" + n.revision_no + " · " : "") + truncate(mbody(n) || id, 16);
         g.appendChild(txt);
       }
-      g.addEventListener("click", function () { openMemory(id); });
+      g.addEventListener("click", function () { openGraphNode(n); });
       g.addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openMemory(id, true); }
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openGraphNode(n); }
       });
       gNodes.appendChild(g);
       nodeEls.push({ el: g, id: id, data: n });
@@ -1171,33 +1177,52 @@
       n.el.addEventListener("blur", function () { highlight(null); });
     });
 
-    applyGraphVisibility(nodeEls, edgeEls);
-
     var note = h("p", "panel-note", "");
-    if (truncated) note.textContent = "节点较多：当前显示前 " + limit + " 条（共 " + fmtNum(((data && data.nodes) || []).length) + " 条），请用筛选缩小范围。";
-    else if (!opts.mini) note.textContent = "共 " + nodeEls.length + " 条记忆、" + edgeEls.length + " 条关系。";
+    var memories = nodes.filter(function (n) { return !n.node_type || n.node_type === "memory"; }).length;
+    note.textContent = memories + " 条记忆、" + (nodes.length - memories) + " 个来源或历史节点、" + edges.length + " 条关系。";
+    if (view.total > nodes.length) note.textContent += " 当前展示 " + nodes.length + " / " + fmtNum(view.total) + " 个筛选后节点，优先显示有关联的端点。";
     if (note.textContent) hostEl.appendChild(note);
   }
 
-  var KIND_ZH = { fact: "事实", decision: "决策", method: "方法", episode: "经历", preference: "偏好" };
+  var KIND_ZH = { fact: "事实", decision: "决策", method: "方法", episode: "经历", preference: "偏好", source: "来源" };
+  var RELATION_ZH = { derived: "派生依据", evidence: "共同来源", supersedes: "版本替代" };
 
-  function applyGraphVisibility(nodeEls, edgeEls) {
+  function graphView(data, limit) {
     var prov = state.screen === "graph" ? (state.params.get("prov") || "all") : "all";
     var gstatus = state.screen === "graph" ? (state.params.get("gstatus") || "all") : "all";
     var visible = {};
-    nodeEls.forEach(function (n) {
-      var st = mstatus(n.data);
-      var user = misUser(n.data);
+    var nodes = graphNodes(data);
+    nodes.forEach(function (n) {
+      if (n.node_type && n.node_type !== "memory") return;
+      var st = mstatus(n);
+      var user = misUser(n);
       var provOk = prov === "all" || (prov === "user" ? user : !user);
       var stOk = gstatus === "all" || st === gstatus || (gstatus === "active" && (st === "" || st === "active"));
-      var show = provOk && stOk;
-      n.el.style.display = show ? "" : "none";
-      n.el.setAttribute("aria-hidden", show ? "false" : "true");
-      visible[n.id] = show;
+      if (provOk && stOk) visible[graphId(n)] = true;
     });
-    edgeEls.forEach(function (e) {
-      e.el.style.display = (visible[e.from] && visible[e.to]) ? "" : "none";
+    nodes.forEach(function (n) {
+      if (n.node_type === "revision" && visible[n.memory_id]) visible[graphId(n)] = true;
+      if (n.node_type === "source" && n.memory_ids.some(function (id) { return visible[id]; })) visible[graphId(n)] = true;
     });
+    nodes = nodes.filter(function (n) { return visible[graphId(n)]; });
+    var byId = {}, rank = {};
+    nodes.forEach(function (n, i) { byId[graphId(n)] = n; rank[graphId(n)] = i; });
+    var edges = graphEdges(data).filter(function (e) { return visible[e.source] && visible[e.target]; });
+    edges.sort(function (a, b) { return Math.min(rank[a.source], rank[a.target]) - Math.min(rank[b.source], rank[b.target]); });
+    var chosen = {}, selected = [];
+    edges.forEach(function (e) {
+      var additions = [e.source, e.target].filter(function (id) { return !chosen[id]; });
+      if (selected.length + additions.length > limit) return;
+      additions.forEach(function (id) { chosen[id] = true; selected.push(byId[id]); });
+    });
+    nodes.forEach(function (n) {
+      var id = graphId(n);
+      if (selected.length < limit && !chosen[id] && (!n.node_type || n.node_type === "memory")) {
+        chosen[id] = true;
+        selected.push(n);
+      }
+    });
+    return { nodes: selected, edges: edges.filter(function (e) { return chosen[e.source] && chosen[e.target]; }), total: nodes.length };
   }
 
   /* 父级直接来自详情 memory.sources[].derived_from（不依赖星图缓存）；
@@ -1225,7 +1250,7 @@
   function childIds(g, id) {
     var seen = {}, out = [];
     graphEdges(g).forEach(function (e) {
-      if (e.source !== id || seen[e.target]) return;
+      if (e.relation !== "derived" || e.source !== id || seen[e.target]) return;
       seen[e.target] = true;
       out.push(e.target);
     });
@@ -1252,7 +1277,7 @@
     var parents = parentIds(memory);
     function paintChildren(g) {
       var byId = {};
-      graphNodes(g).forEach(function (n) { byId[mid(n)] = mbody(n); });
+      graphNodes(g).forEach(function (n) { if (!n.node_type || n.node_type === "memory") byId[mid(n)] = mbody(n); });
       paintDerived(host, id, parents, childIds(g, id), byId);
     }
     if (state.graph.data && graphNodes(state.graph.data).length) { paintChildren(state.graph.data); return; }
@@ -1273,15 +1298,6 @@
   }
 
   function loadGraph() {
-    /* 空星图不留在缓存里：新记忆到达后要能重新拉到。 */
-    if (state.graph.data && graphNodes(state.graph.data).length) {
-      if (!graphNodes(state.graph.data).length) {
-        secShow("graph", "empty", { title: "还没有记忆节点", message: "入库后自动出现在星图；也可先发起一条声明。", actionLabel: "发起声明", action: function () { openDeclare("new"); } });
-      } else {
-        renderConstellation("graph", state.graph.data, { mini: false });
-      }
-      return;
-    }
     secShow("graph", "loading", { layout: "canvas" });
     apiFetch("GET", EP.graph, { query: { target: "local" } }).then(function (g) {
       state.graph.data = g;
@@ -1296,11 +1312,102 @@
   }
 
   /* ================= 详情抽屉 ================= */
+  $("#graph-refresh").addEventListener("click", loadGraph);
+
+  function readOnlyDetail(title, id) {
+    drawerRequest += 1;
+    state.currentId = null;
+    state.currentMemory = null;
+    openDrawerShell(document.activeElement);
+    $("#drawer-title").textContent = title;
+    $("#drawer-id").textContent = id || "";
+    $("#drawer-status").hidden = true;
+    $("#drawer-chips").innerHTML = "";
+    drawerLoading();
+    var host = $("#drawer-detail");
+    host.innerHTML = "";
+    return host;
+  }
+
+  function eventLink(id) {
+    var button = h("button", "arb-link measured", "来源事件 " + truncate(String(id), 18));
+    button.type = "button";
+    button.addEventListener("click", function () { openEvent(String(id)); });
+    return button;
+  }
+
+  function openEvent(id) {
+    var host = readOnlyDetail("来源事件", id);
+    var request = drawerRequest;
+    host.appendChild(h("p", "drawer-text", "读取中…"));
+    apiFetch("GET", EP.event(id), { query: { target: "local" } }).then(function (event) {
+      if (request !== drawerRequest || !drawerOpen) return;
+      host.innerHTML = "";
+      [["来源", event.harness], ["类型", event.source_type], ["发生时间", event.occurred_at],
+       ["采集时间", event.ingested_at], ["原始标识", event.native_event_id]].forEach(function (pair) {
+        if (pair[1]) host.appendChild(h("p", "measured", pair[0] + " " + String(pair[1])));
+      });
+      host.appendChild(h("pre", "drawer-text", event.body || "原文已清除。"));
+      host.appendChild(h("p", "measured", event.has_evidence ? "原始证据文件可用" : "原始证据文件已不可用"));
+    }).catch(function (err) {
+      if (request !== drawerRequest || !drawerOpen) return;
+      host.innerHTML = "";
+      host.appendChild(statePanel("error", "来源读取失败", err.message, { retry: function () { openEvent(id); } }));
+    });
+  }
+
+  function openGraphNode(node) {
+    if (node.node_type !== "source") {
+      openMemory(node.memory_id || graphId(node), true, node.node_type === "revision" ? node.revision_no : undefined);
+      return;
+    }
+    var host = readOnlyDetail("共同来源", node.root_source_id);
+    host.appendChild(h("p", "drawer-text", mbody(node)));
+    node.event_ids.forEach(function (id) { host.appendChild(eventLink(id)); });
+    var byId = {};
+    graphNodes(state.graph.data).forEach(function (n) { byId[graphId(n)] = n; });
+    var section = h("div", "drawer-section");
+    section.appendChild(h("h3", null, "关联记忆"));
+    node.memory_ids.forEach(function (id) { section.appendChild(linkBtn(byId[id] ? mbody(byId[id]) : id, id)); });
+    host.appendChild(section);
+  }
+
+  function openGraphRelation(edge, data) {
+    var host = readOnlyDetail(RELATION_ZH[edge.relation] || edge.relation);
+    var endpoints = {};
+    graphNodes(data).forEach(function (n) { endpoints[graphId(n)] = n; });
+    var labels = edge.relation === "supersedes" ? ["上一版", "当前版"] : ["依据", "关联记忆"];
+    [edge.source, edge.target].forEach(function (id, index) {
+      var node = endpoints[id];
+      var button = h("button", "arb-link", (node.node_type === "revision" ? "v" + node.revision_no + " · " : "") + mbody(node));
+      button.type = "button";
+      button.addEventListener("click", function () { openGraphNode(node); });
+      var section = h("div", "drawer-section");
+      section.appendChild(h("p", "measured", labels[index]));
+      section.appendChild(button);
+      host.appendChild(section);
+    });
+    edge.evidence.forEach(function (proof) {
+      var section = h("div", "drawer-section");
+      section.appendChild(h("h3", null, proof.source_row_id ? "来源记录 #" + proof.source_row_id : "修订记录"));
+      if (proof.from_revision) section.appendChild(h("p", "drawer-text", "v" + proof.from_revision + " → v" + proof.to_revision));
+      [["证据根", proof.root_source_id], ["来源类型", proof.source_type], ["可信度", proof.trust_tier],
+       ["记录时间", proof.created_at], ["失效时间", proof.invalidated_at]].forEach(function (pair) {
+        if (pair[1]) section.appendChild(h("p", "measured", pair[0] + " " + String(pair[1])));
+      });
+      section.appendChild(h("p", "drawer-text", proof.invalidated_at ? "历史关系，来源已失效" : "依据保存在来源或修订记录中"));
+      if (proof.previous_event_id) section.appendChild(eventLink(proof.previous_event_id));
+      if (proof.event_id && proof.event_id !== proof.previous_event_id) section.appendChild(eventLink(proof.event_id));
+      host.appendChild(section);
+    });
+  }
+
   var drawer = $("#drawer");
   var frame = $("#app-frame");
   var scrim = $("#scrim");
   var lastFocus = null;
   var drawerOpen = false;
+  var drawerRequest = 0;
   var forgetArmed = false;
 
   function focusables(root) {
@@ -1329,6 +1436,7 @@
   }
   function closeDrawer() {
     if (!drawerOpen) return;
+    drawerRequest += 1;
     drawerOpen = false;
     drawer.classList.remove("is-open");
     drawer.setAttribute("aria-hidden", "true");
@@ -1371,8 +1479,9 @@
     host.hidden = false;
   }
 
-  function openMemory(id, viaKeyboard) {
+  function openMemory(id, viaKeyboard, revisionNo) {
     if (!id) { toast("缺少记忆 ID"); return; }
+    var request = ++drawerRequest;
     lastFocus = document.activeElement;
     state.currentId = id;
     openDrawerShell(viaKeyboard ? lastFocus : null);
@@ -1381,8 +1490,20 @@
     $("#drawer-chips").innerHTML = "";
     drawerLoading("正在读取 " + id + " …");
     apiFetch("GET", EP.memory(id), { query: { target: "local" } }).then(function (m) {
+      if (request !== drawerRequest || !drawerOpen) return;
       renderMemoryDetail(m || { memory_id: id });
+      if (revisionNo !== undefined) {
+        $("#drawer-chips").appendChild(chip("查看历史 v" + revisionNo, "chip--muted"));
+        var revision = $("#drawer-detail [data-revision-no='" + Number(revisionNo) + "']");
+        if (revision) {
+          revision.classList.add("rev-row--selected");
+          revision.setAttribute("tabindex", "-1");
+          revision.focus();
+          revision.scrollIntoView({ block: "center" });
+        }
+      }
     }).catch(function (err) {
+      if (request !== drawerRequest || !drawerOpen) return;
       var host = $("#drawer-detail");
       host.innerHTML = "";
       host.appendChild(statePanel("error", "详情读取失败", err.message, {
@@ -1449,6 +1570,7 @@
       r = r || {};
       var li = h("li", "rev-row");
       var rno = Number(r.revision_no);
+      li.setAttribute("data-revision-no", String(rno));
       var isCurrent = isFinite(rno) && rno === mrev(m) && ["active", "proposed", "disputed", "quarantined"].indexOf(st) >= 0;
       var retired = ["superseded", "retracted", "deleted"].indexOf(String(r.status || st)) >= 0;
       if (isCurrent) li.classList.add("row--current");
@@ -1463,6 +1585,7 @@
       li.appendChild(h("p", null, String(r.body || "（正文已清除）")));
       if (r.reason) li.appendChild(h("p", null, "原因：" + String(r.reason)));
       if (r.model_id) li.appendChild(h("p", "measured", "决策者：" + String(r.model_id)));
+      if (r.source_event_id) li.appendChild(eventLink(r.source_event_id));
       ol.appendChild(li);
     });
     secRevs.appendChild(ol);
@@ -1481,7 +1604,8 @@
       var userS = String(s.source_type || "") === "user_declaration" || String(s.source_type || "") === "verification" || isUserTier(stier);
       head.appendChild(chip(String(s.source_type || "source"), userS ? "chip--amber" : "chip--cool"));
       if (stier) head.appendChild(chip(stier, tierChipCls(stier)));
-      if (s.event_id) head.appendChild(h("span", "measured", truncate(String(s.event_id), 18)));
+      if (s.event_id) head.appendChild(eventLink(s.event_id));
+      if (s.invalidated_at) head.appendChild(chip("历史来源已失效", "chip--muted"));
       head.appendChild(timeEl(s.created_at));
       block.appendChild(head);
       if (s.root_source_id) block.appendChild(h("span", "src-head measured", "证据根 " + truncate(String(s.root_source_id), 40)));

@@ -262,12 +262,19 @@ tr.is-retracted { opacity: 0.55; }
 .node .hit { fill: transparent; stroke: none; }
 .edge { stroke: var(--color-rule-2); stroke-width: 1; }
 .edge--supersede { stroke-dasharray: 3 4; }
+.edge--historical { stroke-dasharray: 6 4; opacity: 0.45; }
+.edge-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+.graph-relation:focus-visible { outline: none; }
+.graph-relation:focus-visible .edge { stroke: var(--color-accent); stroke-width: 3; }
 .node { cursor: pointer; }
 .node .shape { fill: var(--color-paper-2); stroke: var(--color-ink-2); stroke-width: 1.2; transition: stroke-width var(--dur-micro) var(--ease-out); }
 .node--user .shape { stroke: var(--color-accent); }
 .node--agent .shape { stroke: var(--color-cool); }
+.node--source .shape { stroke: var(--color-muted); }
 .node--disputed .shape { stroke: var(--color-bad); }
 .node--superseded, .node--retracted, .node--deleted { opacity: 0.45; }
+.node--historical { opacity: 0.45; }
+.rev-row--selected { outline: 2px solid var(--color-accent); outline-offset: 4px; }
 .node--proposed .shape { stroke-dasharray: 4 3; }
 .node .halo { fill: none; stroke: var(--color-cool); opacity: 0.16; filter: url(#node-glow); }
 .node--user .halo { stroke: var(--color-accent); }
@@ -276,6 +283,8 @@ tr.is-retracted { opacity: 0.55; }
 @keyframes halo-pulse { from { opacity: 0.1; } to { opacity: 0.42; } }
 .node:hover .shape, .node:focus-visible .shape { stroke-width: 2.4; }
 .node-label { font-family: var(--font-body); font-size: 12px; fill: var(--color-muted); text-anchor: middle; pointer-events: none; }
+.constellation--dense .node-label { opacity: 0; }
+.constellation--dense .node:hover .node-label, .constellation--dense .node:focus-visible .node-label, .constellation--dense .node.is-lit .node-label { opacity: 1; }
 .node.is-dim, .edge.is-dim { opacity: 0.18; transition: opacity var(--dur-short) var(--ease-out); }
 .node.is-lit .shape { stroke-width: 2.4; }
 .graph-legend { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-lg); margin-top: var(--space-sm); font-size: var(--text-sm); color: var(--color-muted); align-items: center; }

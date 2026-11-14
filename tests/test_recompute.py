@@ -157,9 +157,11 @@ def test_shared_invalidated_source_converges_and_history_continues(
     assert worker.run_once()["status"] == "idle"
 
 
-def test_valid_transitive_dependencies_still_recompute(tmp_path, model_endpoint):
+@pytest.mark.parametrize("custom_root", [False, True])
+def test_valid_transitive_dependencies_still_recompute(tmp_path, model_endpoint, custom_root):
     store = Store(tmp_path)
-    root = store.declare({"body": "根事实旧版", "fact_key": "root"})["memory"]
+    root = store.declare({"body": "根事实旧版", "fact_key": "root",
+                          "metadata": {"root_source_id": "proof:sample"} if custom_root else {}})["memory"]
     child = store.declare({"body": "子事实", "fact_key": "child",
                            "derived_from": [root["memory_id"]]})["memory"]
     grandchild = store.declare({"body": "孙事实", "fact_key": "grandchild",

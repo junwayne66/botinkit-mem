@@ -764,8 +764,12 @@ def create_app(home: Path | None = None, start_worker: bool = True) -> FastAPI:
         return adapters.import_history(store, harness=harness, paths=paths)
 
     @app.get("/api/graph")
-    def graph() -> dict:
-        return store.graph()
+    def graph(target: Literal["local", "cloud"] = "local") -> dict:
+        return store.graph(target=target)
+
+    @app.get("/api/events/{event_id}")
+    def event_detail(event_id: str, target: Literal["local", "cloud"] = "local") -> dict:
+        return store.get_event(event_id, target=target)
 
     @app.get("/api/sources")
     def sources() -> dict:
