@@ -181,3 +181,41 @@ git diff --check
 06:16:00短时校验显示Worker自然完成5个周期，done任务新增5，重启前在途任务经既有恢复流程完成。部署前失败记录的尝试次数及错误摘要一致性校验通过。
 
 此次发布范围为隔离复现的批内同目标版本衔接及JSON脱敏诊断。真实历史冲突的唯一成因仍待证据，跨次任务幂等问题仍需单独处理。
+
+# 运行恢复补丁 · 蒸馏输出约束与完成状态
+
+2026-11-15，T018实现、隔离验证与独立审查完成，补丁处于未部署状态。
+
+## 诊断与实现
+
+只读诊断确认两条新失败均在3200输出预算下以length结束。两条事件各4024个ASCII字符，均低于已有6000字符输入裁剪阈值，关联记忆及修订计数均为0。原始生成响应未保存，具体膨胀字段及唯一成因仍无法确定。
+
+既有最多3条、正文600字符的约束只写在提示中，schema未表达数量和长度。解析后只取前三条无法限制生成阶段的开销，还会漏掉后续独立候选。现将普通蒸馏和整合限制为最多3条，重算最多1条，正文最多600字符、事实键最多512字符，并按上下文约束来源引用数量。生成入口拒绝超长字段及去重后超量候选，整批校验完成后才返回Worker。
+
+候选响应以length结束时，包含可解析JSON的响应同样进入原有800到3200的一次重试，预算耗尽后失败。顶层has_more=true表示尚有明确耐久信息未完整表达，整批失败并保留源事件和证据。重算Worker额外拒绝多个结果。旧包络及省略has_more的响应继续兼容，明确false的边界成功路径已有回归。
+
+## 实际执行
+
+```sh
+.venv/bin/python -m pytest tests/test_generation_bounds.py -q --tb=no --basetemp <隔离临时目录>
+.venv/bin/python -m pytest tests/test_generation_bounds.py tests/test_runtime.py tests/test_recompute.py tests/test_fact_time.py tests/test_embedding_limits.py -q --tb=short --basetemp <隔离临时目录>
+nice -n 10 .venv/bin/python -m pytest tests -q --tb=short --basetemp <隔离临时目录>
+uv build --wheel --out-dir <隔离构建目录>
+git diff --check
+```
+
+首轮新增15项回归得到11 failed、4 passed，7.70秒。修复并补充边界用例后新增18 passed，9.21秒。定向105 passed，22.98秒。全套223 passed，69.15秒，1条上游Starlette弃用提示。wheel构建、Python AST和差异空白检查通过。仓库未配置独立类型检查器及lint工具，本轮复用现有验证工具。
+
+新增回归覆盖三种生成入口的schema、闭合及不闭合JSON的length重试与耗尽、第四条独立候选、has_more、超长正文及事实键、3条/600字符/512字符成功边界、重复去重与旧包络、64 token耐久门控，以及真实Runtime和替代Runtime重算超量时正文与版本保留。失败路径核对实际job状态、完整源正文和证据文件可用性。
+
+## 审查与验证边界
+
+源线程独立逐文件人工审查覆盖runtime.py、生成约束测试、tasks及validation，未发现阻塞问题。独立执行如下命令得到49 passed，15.89秒。同会话并行只读静态复核也未发现阻塞问题。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest tests/test_generation_bounds.py tests/test_runtime.py tests/test_recompute.py -q -p no:cacheprovider --tb=short --basetemp <独立隔离临时目录>
+```
+
+初轮缺少OCR入口，用户随后授权联网安装、配置和使用。已安装官方OCR CLI v1.13.10及open-code-review-delegate技能，并执行workspace模式的delegate preview和delegate rule。OCR默认筛选出runtime.py，按Python规则完成1/1文件委托审查，跳过0，覆盖率100%，未发现阻塞问题。默认排除的测试文件及两项Markdown文档均已补充逐文件人工复核。委托审查由OCR负责文件选择和规则解析，当前助手负责代码审阅。[官方技能说明](https://github.com/alibaba/open-code-review/blob/main/skills/open-code-review-delegate/SKILL.md)
+
+全部模型测试使用本机合成HTTP端点，真实Store和Worker使用隔离数据。真实模型对原失败任务的恢复率尚未验证。has_more依赖模型如实报告，并为兼容旧响应允许缺省。conditions对象仍无新增长度限制，字符长度无法保证token上限。既有事件、上下文及证据输入裁剪继续存在，因此本轮无法给出全部事实语义覆盖保证。超出本轮表达上限的作业保留失败状态和证据，后续分批处理尚未实现。
