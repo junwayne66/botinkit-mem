@@ -219,3 +219,37 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest tests/test_generation_bound
 初轮缺少OCR入口，用户随后授权联网安装、配置和使用。已安装官方OCR CLI v1.13.10及open-code-review-delegate技能，并执行workspace模式的delegate preview和delegate rule。OCR默认筛选出runtime.py，按Python规则完成1/1文件委托审查，跳过0，覆盖率100%，未发现阻塞问题。默认排除的测试文件及两项Markdown文档均已补充逐文件人工复核。委托审查由OCR负责文件选择和规则解析，当前助手负责代码审阅。[官方技能说明](https://github.com/alibaba/open-code-review/blob/main/skills/open-code-review-delegate/SKILL.md)
 
 全部模型测试使用本机合成HTTP端点，真实Store和Worker使用隔离数据。真实模型对原失败任务的恢复率尚未验证。has_more依赖模型如实报告，并为兼容旧响应允许缺省。conditions对象仍无新增长度限制，字符长度无法保证token上限。既有事件、上下文及证据输入裁剪继续存在，因此本轮无法给出全部事实语义覆盖保证。超出本轮表达上限的作业保留失败状态和证据，后续分批处理尚未实现。
+
+# 普通distill批次事务补丁
+
+2026-11-15，T019实现、隔离验证与独立复审完成，补丁处于未部署状态。
+
+## 实现
+
+Store.apply_distill_batch在一次SQLite事务内应用候选并标记job done，模型生成在事务外完成。公开apply_candidate与批次入口复用同一内部候选业务。候选业务及完成/失败标记的内部逻辑经AST比对与原实现一致，同批成功定向候选继续承接已确认版本。条件、CAS或完成标记失败时，本批记忆、修订、来源、审计、FTS与索引outbox一起回滚。Worker使用批次完成状态跳过第二次标记。
+
+重试生成前按event关联的非policy修订及审计识别既有模型应用。命中时保留failed、原始last_error及既有数据，在现有job.payload记录待核对原因。即时T1声明的policy记录不触发该保护，自由文本调和可继续处理。静态复核发现的当前memory.model_id归属误判已先复现再修复，判定采用该event自身的历史记录。
+
+## 实际执行
+
+```sh
+nice -n 15 .venv/bin/python -m pytest -c pyproject.toml <隔离基线复现脚本> -k 'later_conditions_failure or finish_failure' -q -p no:cacheprovider --tb=short --basetemp <隔离临时目录>
+nice -n 15 .venv/bin/python -m pytest tests/test_distill_transactions.py tests/test_runtime.py tests/test_fact_time.py tests/test_recompute.py -q -p no:cacheprovider --tb=short --basetemp <隔离临时目录>
+BMEM_OLLAMA_URL=http://127.0.0.1:1 nice -n 15 .venv/bin/python -m pytest tests -q -p no:cacheprovider --tb=short --basetemp <隔离临时目录>
+nice -n 15 uv build --wheel --out-dir <隔离构建目录>
+git diff --check
+```
+
+基线按目标断言得到2 failed，0.77秒，分别确认部分提交和完成标记窗口。T1跨事件模型更新豁免补充用例先得到1 failed、1 passed，0.15秒。修复后定向90 passed，7.19秒，全套235 passed，50.07秒，1条上游Starlette弃用提示。wheel构建、4文件AST与差异空白检查通过。
+
+新增12项展开回归覆盖后续条件/CAS失败全回滚、完成标记失败全回滚、提交后模拟进程中断及恢复、旧无键ADD和低信任分支保护、仅审计的旧NOOP、连续定向更新、公开单候选、结构化T1与自由文本调和。两项原有runtime回归按整批原子语义调整，生成时的外部声明保留第2版。模型边界使用合成响应或CandidateStub，Store、Worker及数据库均为真实隔离实现。
+
+## 审查与未测项
+
+同会话只读静态复核已完成，T1归属误判修复后未发现新增具体问题。OCR委托完成2/2项应用源码审阅，跳过0，覆盖率100%。默认排除的两份测试和两份规格文档均已补充人工复核。
+
+源线程独立复审已核对runtime/store核心差异与事务设计，未发现阻塞问题。独立低优先级执行tests/test_distill_transactions.py及tests/test_runtime.py，34 passed，4.29秒，采用隔离/tmp目录，未访问生产数据或模型。该结果单独记录，作者侧全套结果为235 passed，50.07秒。
+
+本补丁基于c62c22a，事务正确性验证无法证明输出限制的真实模型质量。c62c22a仍缺完整真实配对，建议维持待部署状态。
+
+历史候选未保存，保护仅能确认event已有模型应用，不能推断哪些剩余事实尚未完成，命中的旧重试进入待核对。重算采用原有独立入口，其正常回归已通过，本次未为该入口实施事务变更。提交后中断通过SystemExit模拟，未执行操作系统强杀、断电或生产故障注入。真实失败恢复及c62c22a输出约束的完整实模配对仍待验证。

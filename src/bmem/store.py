@@ -2515,467 +2515,374 @@ class Store:
         self, event_id: str, candidate: dict, model_id: str, *, recompute: bool = False
     ) -> dict:
         cand = self._candidate_input(candidate)
+        with self._write() as conn:
+            return self._apply_candidate(
+                conn, str(event_id), cand, model_id, recompute=recompute
+            )
+
+    def apply_distill_batch(
+        self, job_id: str, event_id: str, candidates: list[dict], model_id: str
+    ) -> list[dict]:
+        """Commit a distill candidate batch and its job completion together."""
+        values = [self._candidate_input(candidate) for candidate in candidates]
+        event_id = str(event_id)
+        with self._write() as conn:
+            job = conn.execute(
+                "SELECT kind,event_id,status FROM jobs WHERE job_id=?", (str(job_id),)
+            ).fetchone()
+            if (job is None or job["kind"] != "distill"
+                    or job["event_id"] != event_id or job["status"] != "running"):
+                raise DomainError(409, "distill batch requires its running event job")
+            applied = []
+            confirmed_revisions: dict[str, int] = {}
+            for candidate in values:
+                memory_id = candidate.memory_id
+                targeted = candidate.action in {"UPDATE", "NOOP", "DISPUTE"}
+                if targeted and memory_id in confirmed_revisions:
+                    candidate = candidate.model_copy(update={
+                        "expected_revision": confirmed_revisions[memory_id],
+                    })
+                result = self._apply_candidate(conn, event_id, candidate, model_id)
+                memory = result.get("memory") or {}
+                if targeted and memory_id and memory.get("memory_id") == memory_id:
+                    confirmed_revisions[memory_id] = int(memory["revision_no"])
+                applied.append({
+                    "action": candidate.action,
+                    "memory_id": result.get("memory_id") or memory.get("memory_id"),
+                    "duplicate": bool(result.get("duplicate")),
+                })
+            self._finish_job(conn, str(job_id))
+            return applied
+
+    def hold_distill_retry(self, job_id: str, event_id: str) -> dict | None:
+        """Retain retries with prior model application for review."""
+        with self._read() as conn:
+            job = conn.execute("SELECT * FROM jobs WHERE job_id=?", (str(job_id),)).fetchone()
+            if job is None or int(job["attempts"]) <= 1:
+                return None
+            if job["event_id"] != str(event_id) or job["status"] != "running":
+                raise DomainError(409, "distill retry requires its running event job")
+            # Current memory ownership may come from a later event.
+            # Revisions and decisions identify this event's original writes.
+            has_application = conn.execute(
+                "SELECT EXISTS(SELECT 1 FROM revisions WHERE source_event_id=? "
+                "AND model_id NOT LIKE 'policy:%') OR "
+                "EXISTS(SELECT 1 FROM arbitration a,json_each(a.evidence_ids) e "
+                "WHERE e.value=? AND a.model_id NOT LIKE 'policy:%')",
+                (str(event_id), str(event_id)),
+            ).fetchone()[0]
+        if not has_application:
+            return None
+        reason = "prior_model_application"
+        error = job["last_error"] or "distill retry requires review: prior model application"
+        payload = _json_loads(job["payload"], {}) or {}
+        payload["distill_review_required"] = True
+        payload["distill_review_reason"] = reason
+        with self._write() as conn:
+            conn.execute("UPDATE jobs SET payload=? WHERE job_id=?",
+                         (_json_dumps(payload), str(job_id)))
+            self._fail_job(conn, str(job_id), error)
+        return {"error": error, "review_required": True, "review_reason": reason}
+
+    def _apply_candidate(
+        self, conn: sqlite3.Connection, event_id: str, cand: CandidateInput,
+        model_id: str, *, recompute: bool = False,
+    ) -> dict:
         body = redact(cand.body)
         conditions = redact_value(cand.conditions)
         fact_key = redact(cand.fact_key) if cand.fact_key else None
-        event_id = str(event_id)
-        with self._write() as conn:
-            event_row = conn.execute(
-                "SELECT * FROM events WHERE event_id=?", (event_id,)
+        event_row = conn.execute(
+            "SELECT * FROM events WHERE event_id=?", (event_id,)
+        ).fetchone()
+        if event_row is None:
+            raise DomainError(404, "event not found")
+        event = self._event_row_to_dict(event_row)
+        # This annotates the in-memory candidate context. The captured
+        # event and its evidence hash retain their original timestamps.
+        event["effective_at"] = (event.get("effective_at")
+                                 or (iso_utc(cand.effective_at) if cand.effective_at else None)
+                                 or event["occurred_at"])
+        fact_time = event["effective_at"]
+        trust_tier = event.get("trust_tier") or _trust_for_source(
+            event.get("source_type", "external")
+        )
+        sensitivity = self._candidate_sensitivity(
+            conn, event.get("sensitivity", "normal"), cand.derived_from
+        )
+        if recompute:
+            # Trusted internal regeneration path: never accepted from model
+            # JSON or a public payload.  The fixed target and its expected
+            # revision are authoritative, so ordinary declaration duplicate
+            # absorption must not turn this into a NOOP.
+            if not cand.memory_id or cand.expected_revision is None:
+                raise DomainError(
+                    400, "recompute requires memory_id and expected_revision"
+                )
+            target = self._candidate_target(conn, cand, conditions)
+            assert target is not None
+            if "conditions" not in cand.model_fields_set:
+                conditions = _json_loads(target["conditions"], {}) or {}
+            invalidated_roots = {
+                str(row["root_source_id"])
+                for row in conn.execute(
+                    "SELECT root_source_id FROM sources WHERE memory_id=? "
+                    "AND invalidated_at IS NOT NULL",
+                    (target["memory_id"],),
+                )
+            }
+            derived_from = [
+                reference
+                for reference in cand.derived_from
+                if reference not in invalidated_roots
+                and f"memory:{reference}" not in invalidated_roots
+            ]
+            invalid_roots = {f"memory:{target['memory_id']}"}
+            invalid_roots.update(
+                self._related_event_ids(conn, target["memory_id"])
+            )
+            invalid_roots.update(
+                str(row["root_source_id"])
+                for row in conn.execute(
+                    "SELECT root_source_id FROM sources WHERE memory_id=?",
+                    (target["memory_id"],),
+                )
+            )
+            target_rank = TRUST_RANK.get(str(target["trust_tier"]), 5)
+            incoming_rank = TRUST_RANK.get(trust_tier, 5)
+            new_trust = (
+                target["trust_tier"]
+                if target_rank < incoming_rank
+                else trust_tier
+            )
+            updated_id = self._revise_memory(
+                conn,
+                target,
+                event,
+                body=body,
+                kind=cand.kind,
+                fact_key=fact_key
+                if fact_key is not None
+                else target["fact_key"],
+                conditions=conditions,
+                sensitivity=self._effective_sensitivity(
+                    str(target["sensitivity"]), sensitivity
+                ),
+                trust_tier=str(new_trust),
+                confidence=cand.confidence,
+                status="active",
+                model_id=model_id,
+                reason="candidate_recompute",
+                decision="UPDATE",
+                decision_reason="trusted derived recompute",
+                derived_from=derived_from,
+                effective_at=iso_utc(cand.effective_at) if cand.effective_at else self._fact_time(target),
+            )
+            self._recount_evidence(conn, updated_id)
+            refreshed = conn.execute(
+                "SELECT evidence_count FROM memories WHERE memory_id=?",
+                (updated_id,),
             ).fetchone()
-            if event_row is None:
-                raise DomainError(404, "event not found")
-            event = self._event_row_to_dict(event_row)
-            # This annotates the in-memory candidate context. The captured
-            # event and its evidence hash retain their original timestamps.
-            event["effective_at"] = (event.get("effective_at")
-                                     or (iso_utc(cand.effective_at) if cand.effective_at else None)
-                                     or event["occurred_at"])
-            fact_time = event["effective_at"]
-            trust_tier = event.get("trust_tier") or _trust_for_source(
-                event.get("source_type", "external")
-            )
-            sensitivity = self._candidate_sensitivity(
-                conn, event.get("sensitivity", "normal"), cand.derived_from
-            )
-            if recompute:
-                # Trusted internal regeneration path: never accepted from model
-                # JSON or a public payload.  The fixed target and its expected
-                # revision are authoritative, so ordinary declaration duplicate
-                # absorption must not turn this into a NOOP.
-                if not cand.memory_id or cand.expected_revision is None:
-                    raise DomainError(
-                        400, "recompute requires memory_id and expected_revision"
-                    )
-                target = self._candidate_target(conn, cand, conditions)
-                assert target is not None
-                if "conditions" not in cand.model_fields_set:
-                    conditions = _json_loads(target["conditions"], {}) or {}
-                invalidated_roots = {
-                    str(row["root_source_id"])
-                    for row in conn.execute(
-                        "SELECT root_source_id FROM sources WHERE memory_id=? "
-                        "AND invalidated_at IS NOT NULL",
-                        (target["memory_id"],),
-                    )
-                }
-                derived_from = [
-                    reference
-                    for reference in cand.derived_from
-                    if reference not in invalidated_roots
-                    and f"memory:{reference}" not in invalidated_roots
-                ]
-                invalid_roots = {f"memory:{target['memory_id']}"}
-                invalid_roots.update(
-                    self._related_event_ids(conn, target["memory_id"])
-                )
-                invalid_roots.update(
-                    str(row["root_source_id"])
-                    for row in conn.execute(
-                        "SELECT root_source_id FROM sources WHERE memory_id=?",
-                        (target["memory_id"],),
-                    )
-                )
-                target_rank = TRUST_RANK.get(str(target["trust_tier"]), 5)
-                incoming_rank = TRUST_RANK.get(trust_tier, 5)
-                new_trust = (
-                    target["trust_tier"]
-                    if target_rank < incoming_rank
-                    else trust_tier
-                )
-                updated_id = self._revise_memory(
-                    conn,
-                    target,
-                    event,
-                    body=body,
-                    kind=cand.kind,
-                    fact_key=fact_key
-                    if fact_key is not None
-                    else target["fact_key"],
-                    conditions=conditions,
-                    sensitivity=self._effective_sensitivity(
-                        str(target["sensitivity"]), sensitivity
-                    ),
-                    trust_tier=str(new_trust),
-                    confidence=cand.confidence,
-                    status="active",
-                    model_id=model_id,
-                    reason="candidate_recompute",
-                    decision="UPDATE",
-                    decision_reason="trusted derived recompute",
-                    derived_from=derived_from,
-                    effective_at=iso_utc(cand.effective_at) if cand.effective_at else self._fact_time(target),
-                )
-                self._recount_evidence(conn, updated_id)
-                refreshed = conn.execute(
-                    "SELECT evidence_count FROM memories WHERE memory_id=?",
-                    (updated_id,),
-                ).fetchone()
-                if refreshed is None or int(refreshed["evidence_count"] or 0) <= 0:
-                    self._set_memory_status(conn, updated_id, "retracted")
-                self._invalidate_dependents(conn, updated_id, invalid_roots)
-                memory = self._memory_detail_by_id(conn, updated_id)
-                return {
-                    "event_id": event_id,
-                    "action": "UPDATE",
-                    "memory": memory,
-                    "decision": "UPDATE",
-                    "reason": "candidate_recompute",
-                    "revision_no": memory["revision_no"] if memory else None,
-                }
+            if refreshed is None or int(refreshed["evidence_count"] or 0) <= 0:
+                self._set_memory_status(conn, updated_id, "retracted")
+            self._invalidate_dependents(conn, updated_id, invalid_roots)
+            memory = self._memory_detail_by_id(conn, updated_id)
+            return {
+                "event_id": event_id,
+                "action": "UPDATE",
+                "memory": memory,
+                "decision": "UPDATE",
+                "reason": "candidate_recompute",
+                "revision_no": memory["revision_no"] if memory else None,
+            }
 
-            injection_ids = (event.get("metadata") or {}).get("injection_ids") or []
-            if (
-                event.get("source_type") == "injection_reference"
-                or injection_ids
-            ):
-                self._add_injection_references(conn, event)
+        injection_ids = (event.get("metadata") or {}).get("injection_ids") or []
+        if (
+            event.get("source_type") == "injection_reference"
+            or injection_ids
+        ):
+            self._add_injection_references(conn, event)
+            self._add_decision(
+                conn,
+                None,
+                "noop",
+                "reference-only event never creates memory",
+                evidence_ids=[event_id],
+                trust_tier=trust_tier,
+                confidence=0.0,
+                model_id=model_id,
+                occurred_at=event["occurred_at"],
+            )
+            return {
+                "event_id": event_id,
+                "action": "NOOP",
+                "memory": None,
+                "decision": "NOOP",
+                "reason": "reference_only",
+            }
+
+        # A T1 declaration already produced its immediate memory.  A worker
+        # distill pass must never create a duplicate for that event, unless
+        # the candidate explicitly reconciles a different authoritative
+        # memory with this declaration event.
+        if event.get("source_type") == "user_declaration":
+            existing = self._memory_for_event(conn, event_id)
+            if existing is not None:
+                if (
+                    not cand.memory_id
+                    or cand.memory_id == existing["memory_id"]
+                ):
+                    self._add_decision(
+                        conn,
+                        existing["memory_id"],
+                        "NOOP",
+                        "event already produced a declaration memory",
+                        evidence_ids=[event_id],
+                        trust_tier="T1",
+                        confidence=1.0,
+                        model_id=model_id,
+                        occurred_at=event["occurred_at"],
+                    )
+                    return {
+                        "event_id": event_id,
+                        "action": "NOOP",
+                        "memory": self._memory_detail(conn, existing),
+                        "decision": "NOOP",
+                        "reason": "already_declared",
+                    }
+                if cand.action != "ADD":
+                    # The explicit candidate target now owns this claim.
+                    # Retire the duplicate declaration memory so it cannot
+                    # remain as a second active result for the same fact.
+                    self._set_memory_status(
+                        conn, existing["memory_id"], "retracted"
+                    )
+                    self._add_decision(
+                        conn,
+                        existing["memory_id"],
+                        "UPDATE",
+                        "declaration memory reconciled by explicit candidate target",
+                        evidence_ids=[event_id, cand.memory_id],
+                        trust_tier="T1",
+                        confidence=1.0,
+                        model_id=model_id,
+                        occurred_at=event["occurred_at"],
+                    )
+
+        target = self._candidate_target(conn, cand, conditions)
+        if target is not None and "conditions" not in cand.model_fields_set:
+            conditions = _json_loads(target["conditions"], {}) or {}
+        action = cand.action
+
+        if trust_tier == "T4" or action == "QUARANTINE":
+            quarantined = self._find_quarantined(
+                conn, body, cand.kind, fact_key, conditions
+            )
+            if quarantined is not None:
+                self._add_event_sources(
+                    conn, quarantined["memory_id"], event, cand.derived_from
+                )
                 self._add_decision(
                     conn,
-                    None,
-                    "noop",
-                    "reference-only event never creates memory",
+                    quarantined["memory_id"],
+                    "QUARANTINE",
+                    "untrusted rule or candidate already isolated",
                     evidence_ids=[event_id],
                     trust_tier=trust_tier,
-                    confidence=0.0,
+                    confidence=cand.confidence,
                     model_id=model_id,
                     occurred_at=event["occurred_at"],
                 )
-                return {
-                    "event_id": event_id,
-                    "action": "NOOP",
-                    "memory": None,
-                    "decision": "NOOP",
-                    "reason": "reference_only",
-                }
-
-            # A T1 declaration already produced its immediate memory.  A worker
-            # distill pass must never create a duplicate for that event, unless
-            # the candidate explicitly reconciles a different authoritative
-            # memory with this declaration event.
-            if event.get("source_type") == "user_declaration":
-                existing = self._memory_for_event(conn, event_id)
-                if existing is not None:
-                    if (
-                        not cand.memory_id
-                        or cand.memory_id == existing["memory_id"]
-                    ):
-                        self._add_decision(
-                            conn,
-                            existing["memory_id"],
-                            "NOOP",
-                            "event already produced a declaration memory",
-                            evidence_ids=[event_id],
-                            trust_tier="T1",
-                            confidence=1.0,
-                            model_id=model_id,
-                            occurred_at=event["occurred_at"],
-                        )
-                        return {
-                            "event_id": event_id,
-                            "action": "NOOP",
-                            "memory": self._memory_detail(conn, existing),
-                            "decision": "NOOP",
-                            "reason": "already_declared",
-                        }
-                    if cand.action != "ADD":
-                        # The explicit candidate target now owns this claim.
-                        # Retire the duplicate declaration memory so it cannot
-                        # remain as a second active result for the same fact.
-                        self._set_memory_status(
-                            conn, existing["memory_id"], "retracted"
-                        )
-                        self._add_decision(
-                            conn,
-                            existing["memory_id"],
-                            "UPDATE",
-                            "declaration memory reconciled by explicit candidate target",
-                            evidence_ids=[event_id, cand.memory_id],
-                            trust_tier="T1",
-                            confidence=1.0,
-                            model_id=model_id,
-                            occurred_at=event["occurred_at"],
-                        )
-
-            target = self._candidate_target(conn, cand, conditions)
-            if target is not None and "conditions" not in cand.model_fields_set:
-                conditions = _json_loads(target["conditions"], {}) or {}
-            action = cand.action
-
-            if trust_tier == "T4" or action == "QUARANTINE":
-                quarantined = self._find_quarantined(
-                    conn, body, cand.kind, fact_key, conditions
-                )
-                if quarantined is not None:
-                    self._add_event_sources(
-                        conn, quarantined["memory_id"], event, cand.derived_from
-                    )
-                    self._add_decision(
-                        conn,
-                        quarantined["memory_id"],
-                        "QUARANTINE",
-                        "untrusted rule or candidate already isolated",
-                        evidence_ids=[event_id],
-                        trust_tier=trust_tier,
-                        confidence=cand.confidence,
-                        model_id=model_id,
-                        occurred_at=event["occurred_at"],
-                    )
-                    memory = self._memory_detail(conn, quarantined)
-                else:
-                    memory_id = self._insert_memory(
-                        conn,
-                        event,
-                        body=body,
-                        kind=cand.kind,
-                        fact_key=fact_key,
-                        conditions=conditions,
-                        sensitivity=sensitivity,
-                        trust_tier="T4",
-                        confidence=cand.confidence,
-                        status="quarantined",
-                        model_id=model_id,
-                        reason="quarantine",
-                        derived_from=cand.derived_from,
-                        decision="QUARANTINE",
-                        decision_reason="untrusted source or explicit quarantine",
-                    )
-                    memory = self._memory_detail_by_id(conn, memory_id)
-                return {
-                    "event_id": event_id,
-                    "action": "QUARANTINE",
-                    "memory": memory,
-                    "decision": "QUARANTINE",
-                    "reason": "untrusted_source",
-                }
-
-            if target is not None:
-                incoming_rank = TRUST_RANK.get(trust_tier, 5)
-                target_rank = TRUST_RANK.get(str(target["trust_tier"]), 5)
-                comparable = incoming_rank == target_rank or max(incoming_rank, target_rank) <= 2
-                same_claim = (
-                    body == target["body"]
-                    and cand.kind == target["kind"]
-                    and _canonical(_json_loads(target["conditions"], {}) or {})
-                    == _canonical(conditions)
-                )
-                if same_claim:
-                    # Only an identical claim is supporting proof for the target.
-                    self._add_event_sources(
-                        conn, target["memory_id"], event, cand.derived_from
-                    )
-                    if incoming_rank <= target_rank or comparable:
-                        confirmation = max(fact_time, self._fact_time(target)) if comparable else fact_time
-                        self._confirm_fact_time(conn, target, confirmation)
-                        if (trust_tier in ("T1", "T2") and target["status"] == "disputed"
-                                and fact_time > self._fact_time(target)):
-                            self._set_memory_status(conn, target["memory_id"], "active")
-                            self._queue_embed(conn, target["memory_id"], int(target["revision_no"]))
-                    promoted = self._maybe_promote_independent(
-                        conn, target["memory_id"], model_id=model_id
-                    )
-                    self._add_decision(
-                        conn,
-                        target["memory_id"],
-                        "NOOP",
-                        "candidate reinforced the current claim",
-                        evidence_ids=[event_id],
-                        trust_tier=trust_tier,
-                        confidence=cand.confidence,
-                        model_id=model_id,
-                        occurred_at=event["occurred_at"],
-                    )
-                    self._resolve_older_disputes(
-                        conn, target["memory_id"], event, model_id=model_id, confidence=cand.confidence,
-                    )
-                    return {
-                        "event_id": event_id,
-                        "action": "NOOP",
-                        "memory": self._memory_detail_by_id(conn, target["memory_id"]),
-                        "decision": "NOOP",
-                        "reason": "promoted" if promoted else "duplicate_claim",
-                    }
-
-                if incoming_rank > target_rank and not comparable:
-                    # A weaker source must never overwrite or dispute higher
-                    # authority.  Keep the target authoritative and retain the
-                    # contrary claim as its own lower-trust memory.
-                    self._add_decision(
-                        conn,
-                        target["memory_id"],
-                        "NOOP",
-                        "lower-trust contrary claim retained separately",
-                        evidence_ids=[event_id],
-                        trust_tier=trust_tier,
-                        confidence=cand.confidence,
-                        model_id=model_id,
-                        occurred_at=event["occurred_at"],
-                    )
-                    split_id = self._insert_memory(
-                        conn,
-                        event,
-                        body=body,
-                        kind=cand.kind,
-                        fact_key=fact_key,
-                        conditions=conditions,
-                        sensitivity=sensitivity,
-                        trust_tier=trust_tier,
-                        confidence=cand.confidence,
-                        status=_status_for_trust(trust_tier),
-                        model_id=model_id,
-                        reason="lower_trust_split",
-                        derived_from=cand.derived_from,
-                        decision="ADD",
-                        decision_reason="lower-trust contrary claim",
-                    )
-                    self._maybe_promote_independent(
-                        conn, split_id, model_id=model_id
-                    )
-                    return {
-                        "event_id": event_id,
-                        "action": "NOOP",
-                        "memory": self._memory_detail(conn, target),
-                        "decision": "NOOP",
-                        "reason": "lower_trust_retained",
-                        "conflicting_memory_id": split_id,
-                    }
-
-                if comparable and fact_time < self._fact_time(target):
-                    self._add_decision(
-                        conn, target["memory_id"], "NOOP", "older_fact",
-                        evidence_ids=[event_id], trust_tier=trust_tier,
-                        confidence=cand.confidence, model_id=model_id,
-                        occurred_at=event["occurred_at"],
-                    )
-                    return {"event_id": event_id, "action": "NOOP", "decision": "NOOP",
-                            "reason": "older_fact", "memory": self._memory_detail(conn, target)}
-                if comparable and fact_time == self._fact_time(target) and action != "NOOP":
-                    action = "DISPUTE"
-                if (comparable and fact_time > self._fact_time(target)
-                        and (action in ("ADD", "UPDATE") or (action == "DISPUTE" and incoming_rank <= 2))):
-                    action = "UPDATE"
-
-                if action == "NOOP":
-                    # A no-change report with a different body must not add
-                    # evidence to the authoritative claim.
-                    self._add_decision(
-                        conn,
-                        target["memory_id"],
-                        "NOOP",
-                        "contrary no-change candidate added no proof",
-                        evidence_ids=[event_id],
-                        trust_tier=trust_tier,
-                        confidence=cand.confidence,
-                        model_id=model_id,
-                        occurred_at=event["occurred_at"],
-                    )
-                    return {
-                        "event_id": event_id,
-                        "action": "NOOP",
-                        "memory": self._memory_detail(conn, target),
-                        "decision": "NOOP",
-                        "reason": "contrary_noop",
-                    }
-
-                if action == "DISPUTE" or (
-                    action == "ADD" and incoming_rank >= target_rank
-                ):
-                    conflicting_id = self._dispute_claim(
-                        conn, target, event, body=body, kind=cand.kind, fact_key=fact_key,
-                        conditions=conditions, sensitivity=sensitivity, trust_tier=trust_tier,
-                        confidence=cand.confidence, model_id=model_id, derived_from=cand.derived_from,
-                    )
-                    return {
-                        "event_id": event_id,
-                        "action": "DISPUTE",
-                        "memory": self._memory_detail_by_id(conn, target["memory_id"]),
-                        "decision": "DISPUTE",
-                        "reason": "unresolved_conflict",
-                        "conflicting_memory_id": conflicting_id,
-                    }
-
-                # Equal or higher authority may revise the current claim.
-                new_status = (
-                    "active"
-                    if target["status"] == "active"
-                    else _status_for_trust(trust_tier)
-                )
-                new_trust = (
-                    target["trust_tier"]
-                    if target_rank < incoming_rank
-                    else trust_tier
-                )
-                invalid_roots = {f"memory:{target['memory_id']}"}
-                invalid_roots.update(
-                    self._related_event_ids(conn, target["memory_id"])
-                )
-                invalid_roots.update(
-                    str(row["root_source_id"])
-                    for row in conn.execute(
-                        "SELECT root_source_id FROM sources WHERE memory_id=? "
-                        "AND invalidated_at IS NULL",
-                        (target["memory_id"],),
-                    )
-                )
-                updated_id = self._revise_memory(
+                memory = self._memory_detail(conn, quarantined)
+            else:
+                memory_id = self._insert_memory(
                     conn,
-                    target,
                     event,
                     body=body,
                     kind=cand.kind,
-                    fact_key=fact_key
-                    if fact_key is not None
-                    else target["fact_key"],
+                    fact_key=fact_key,
                     conditions=conditions,
-                    sensitivity=self._effective_sensitivity(
-                        str(target["sensitivity"]), sensitivity
-                    ),
-                    trust_tier=str(new_trust),
+                    sensitivity=sensitivity,
+                    trust_tier="T4",
                     confidence=cand.confidence,
-                    status=new_status,
+                    status="quarantined",
                     model_id=model_id,
-                    reason="candidate_update",
-                    decision="UPDATE",
-                    decision_reason="model candidate update",
+                    reason="quarantine",
                     derived_from=cand.derived_from,
+                    decision="QUARANTINE",
+                    decision_reason="untrusted source or explicit quarantine",
                 )
-                self._maybe_promote_independent(
-                    conn, updated_id, model_id=model_id
+                memory = self._memory_detail_by_id(conn, memory_id)
+            return {
+                "event_id": event_id,
+                "action": "QUARANTINE",
+                "memory": memory,
+                "decision": "QUARANTINE",
+                "reason": "untrusted_source",
+            }
+
+        if target is not None:
+            incoming_rank = TRUST_RANK.get(trust_tier, 5)
+            target_rank = TRUST_RANK.get(str(target["trust_tier"]), 5)
+            comparable = incoming_rank == target_rank or max(incoming_rank, target_rank) <= 2
+            same_claim = (
+                body == target["body"]
+                and cand.kind == target["kind"]
+                and _canonical(_json_loads(target["conditions"], {}) or {})
+                == _canonical(conditions)
+            )
+            if same_claim:
+                # Only an identical claim is supporting proof for the target.
+                self._add_event_sources(
+                    conn, target["memory_id"], event, cand.derived_from
+                )
+                if incoming_rank <= target_rank or comparable:
+                    confirmation = max(fact_time, self._fact_time(target)) if comparable else fact_time
+                    self._confirm_fact_time(conn, target, confirmation)
+                    if (trust_tier in ("T1", "T2") and target["status"] == "disputed"
+                            and fact_time > self._fact_time(target)):
+                        self._set_memory_status(conn, target["memory_id"], "active")
+                        self._queue_embed(conn, target["memory_id"], int(target["revision_no"]))
+                promoted = self._maybe_promote_independent(
+                    conn, target["memory_id"], model_id=model_id
+                )
+                self._add_decision(
+                    conn,
+                    target["memory_id"],
+                    "NOOP",
+                    "candidate reinforced the current claim",
+                    evidence_ids=[event_id],
+                    trust_tier=trust_tier,
+                    confidence=cand.confidence,
+                    model_id=model_id,
+                    occurred_at=event["occurred_at"],
                 )
                 self._resolve_older_disputes(
-                    conn, updated_id, event, model_id=model_id, confidence=cand.confidence,
+                    conn, target["memory_id"], event, model_id=model_id, confidence=cand.confidence,
                 )
-                self._invalidate_dependents(conn, updated_id, invalid_roots)
                 return {
                     "event_id": event_id,
-                    "action": "UPDATE",
-                    "memory": self._memory_detail_by_id(conn, updated_id),
-                    "decision": "UPDATE",
-                    "reason": "candidate_update",
+                    "action": "NOOP",
+                    "memory": self._memory_detail_by_id(conn, target["memory_id"]),
+                    "decision": "NOOP",
+                    "reason": "promoted" if promoted else "duplicate_claim",
                 }
 
-            if action == "NOOP":
+            if incoming_rank > target_rank and not comparable:
+                # A weaker source must never overwrite or dispute higher
+                # authority.  Keep the target authoritative and retain the
+                # contrary claim as its own lower-trust memory.
                 self._add_decision(
                     conn,
-                    None,
+                    target["memory_id"],
                     "NOOP",
-                    "worker reported no change without a target",
+                    "lower-trust contrary claim retained separately",
                     evidence_ids=[event_id],
                     trust_tier=trust_tier,
                     confidence=cand.confidence,
                     model_id=model_id,
                     occurred_at=event["occurred_at"],
                 )
-                return {
-                    "event_id": event_id,
-                    "action": "NOOP",
-                    "memory": None,
-                    "decision": "NOOP",
-                    "reason": "no_change",
-                }
-
-            if action == "DISPUTE":
-                memory_id = self._insert_memory(
+                split_id = self._insert_memory(
                     conn,
                     event,
                     body=body,
@@ -2985,22 +2892,160 @@ class Store:
                     sensitivity=sensitivity,
                     trust_tier=trust_tier,
                     confidence=cand.confidence,
-                    status="disputed",
+                    status=_status_for_trust(trust_tier),
                     model_id=model_id,
-                    reason="dispute",
+                    reason="lower_trust_split",
                     derived_from=cand.derived_from,
-                    decision="DISPUTE",
-                    decision_reason="unresolved conflict",
+                    decision="ADD",
+                    decision_reason="lower-trust contrary claim",
+                )
+                self._maybe_promote_independent(
+                    conn, split_id, model_id=model_id
+                )
+                return {
+                    "event_id": event_id,
+                    "action": "NOOP",
+                    "memory": self._memory_detail(conn, target),
+                    "decision": "NOOP",
+                    "reason": "lower_trust_retained",
+                    "conflicting_memory_id": split_id,
+                }
+
+            if comparable and fact_time < self._fact_time(target):
+                self._add_decision(
+                    conn, target["memory_id"], "NOOP", "older_fact",
+                    evidence_ids=[event_id], trust_tier=trust_tier,
+                    confidence=cand.confidence, model_id=model_id,
+                    occurred_at=event["occurred_at"],
+                )
+                return {"event_id": event_id, "action": "NOOP", "decision": "NOOP",
+                        "reason": "older_fact", "memory": self._memory_detail(conn, target)}
+            if comparable and fact_time == self._fact_time(target) and action != "NOOP":
+                action = "DISPUTE"
+            if (comparable and fact_time > self._fact_time(target)
+                    and (action in ("ADD", "UPDATE") or (action == "DISPUTE" and incoming_rank <= 2))):
+                action = "UPDATE"
+
+            if action == "NOOP":
+                # A no-change report with a different body must not add
+                # evidence to the authoritative claim.
+                self._add_decision(
+                    conn,
+                    target["memory_id"],
+                    "NOOP",
+                    "contrary no-change candidate added no proof",
+                    evidence_ids=[event_id],
+                    trust_tier=trust_tier,
+                    confidence=cand.confidence,
+                    model_id=model_id,
+                    occurred_at=event["occurred_at"],
+                )
+                return {
+                    "event_id": event_id,
+                    "action": "NOOP",
+                    "memory": self._memory_detail(conn, target),
+                    "decision": "NOOP",
+                    "reason": "contrary_noop",
+                }
+
+            if action == "DISPUTE" or (
+                action == "ADD" and incoming_rank >= target_rank
+            ):
+                conflicting_id = self._dispute_claim(
+                    conn, target, event, body=body, kind=cand.kind, fact_key=fact_key,
+                    conditions=conditions, sensitivity=sensitivity, trust_tier=trust_tier,
+                    confidence=cand.confidence, model_id=model_id, derived_from=cand.derived_from,
                 )
                 return {
                     "event_id": event_id,
                     "action": "DISPUTE",
-                    "memory": self._memory_detail_by_id(conn, memory_id),
+                    "memory": self._memory_detail_by_id(conn, target["memory_id"]),
                     "decision": "DISPUTE",
                     "reason": "unresolved_conflict",
+                    "conflicting_memory_id": conflicting_id,
                 }
 
-            new_status = _status_for_trust(trust_tier)
+            # Equal or higher authority may revise the current claim.
+            new_status = (
+                "active"
+                if target["status"] == "active"
+                else _status_for_trust(trust_tier)
+            )
+            new_trust = (
+                target["trust_tier"]
+                if target_rank < incoming_rank
+                else trust_tier
+            )
+            invalid_roots = {f"memory:{target['memory_id']}"}
+            invalid_roots.update(
+                self._related_event_ids(conn, target["memory_id"])
+            )
+            invalid_roots.update(
+                str(row["root_source_id"])
+                for row in conn.execute(
+                    "SELECT root_source_id FROM sources WHERE memory_id=? "
+                    "AND invalidated_at IS NULL",
+                    (target["memory_id"],),
+                )
+            )
+            updated_id = self._revise_memory(
+                conn,
+                target,
+                event,
+                body=body,
+                kind=cand.kind,
+                fact_key=fact_key
+                if fact_key is not None
+                else target["fact_key"],
+                conditions=conditions,
+                sensitivity=self._effective_sensitivity(
+                    str(target["sensitivity"]), sensitivity
+                ),
+                trust_tier=str(new_trust),
+                confidence=cand.confidence,
+                status=new_status,
+                model_id=model_id,
+                reason="candidate_update",
+                decision="UPDATE",
+                decision_reason="model candidate update",
+                derived_from=cand.derived_from,
+            )
+            self._maybe_promote_independent(
+                conn, updated_id, model_id=model_id
+            )
+            self._resolve_older_disputes(
+                conn, updated_id, event, model_id=model_id, confidence=cand.confidence,
+            )
+            self._invalidate_dependents(conn, updated_id, invalid_roots)
+            return {
+                "event_id": event_id,
+                "action": "UPDATE",
+                "memory": self._memory_detail_by_id(conn, updated_id),
+                "decision": "UPDATE",
+                "reason": "candidate_update",
+            }
+
+        if action == "NOOP":
+            self._add_decision(
+                conn,
+                None,
+                "NOOP",
+                "worker reported no change without a target",
+                evidence_ids=[event_id],
+                trust_tier=trust_tier,
+                confidence=cand.confidence,
+                model_id=model_id,
+                occurred_at=event["occurred_at"],
+            )
+            return {
+                "event_id": event_id,
+                "action": "NOOP",
+                "memory": None,
+                "decision": "NOOP",
+                "reason": "no_change",
+            }
+
+        if action == "DISPUTE":
             memory_id = self._insert_memory(
                 conn,
                 event,
@@ -3011,24 +3056,50 @@ class Store:
                 sensitivity=sensitivity,
                 trust_tier=trust_tier,
                 confidence=cand.confidence,
-                status=new_status,
+                status="disputed",
                 model_id=model_id,
-                reason="candidate_add",
+                reason="dispute",
                 derived_from=cand.derived_from,
-                decision="ADD",
-                decision_reason="model candidate add",
+                decision="DISPUTE",
+                decision_reason="unresolved conflict",
             )
-            self._maybe_promote_independent(
-                conn, memory_id, model_id=model_id
-            )
-            effective_action = "ADD" if action == "ADD" else "UPDATE"
             return {
                 "event_id": event_id,
-                "action": effective_action,
+                "action": "DISPUTE",
                 "memory": self._memory_detail_by_id(conn, memory_id),
-                "decision": effective_action,
-                "reason": "candidate_add",
+                "decision": "DISPUTE",
+                "reason": "unresolved_conflict",
             }
+
+        new_status = _status_for_trust(trust_tier)
+        memory_id = self._insert_memory(
+            conn,
+            event,
+            body=body,
+            kind=cand.kind,
+            fact_key=fact_key,
+            conditions=conditions,
+            sensitivity=sensitivity,
+            trust_tier=trust_tier,
+            confidence=cand.confidence,
+            status=new_status,
+            model_id=model_id,
+            reason="candidate_add",
+            derived_from=cand.derived_from,
+            decision="ADD",
+            decision_reason="model candidate add",
+        )
+        self._maybe_promote_independent(
+            conn, memory_id, model_id=model_id
+        )
+        effective_action = "ADD" if action == "ADD" else "UPDATE"
+        return {
+            "event_id": event_id,
+            "action": effective_action,
+            "memory": self._memory_detail_by_id(conn, memory_id),
+            "decision": effective_action,
+            "reason": "candidate_add",
+        }
 
     def promote_due(self, now: str | None = None) -> dict:
         current = _normalize_now(now)
@@ -3822,35 +3893,39 @@ class Store:
             }
 
     def finish_job(self, job_id: str) -> None:
-        job_id = str(job_id)
         with self._write() as conn:
-            now = now_iso()
-            conn.execute(
-                "UPDATE jobs SET status='done', last_error=NULL, updated_at=?, "
-                "finished_at=? WHERE job_id=?",
-                (now, now, job_id),
-            )
+            self._finish_job(conn, str(job_id))
+
+    def _finish_job(self, conn: sqlite3.Connection, job_id: str) -> None:
+        now = now_iso()
+        conn.execute(
+            "UPDATE jobs SET status='done', last_error=NULL, updated_at=?, "
+            "finished_at=? WHERE job_id=?",
+            (now, now, job_id),
+        )
 
     def fail_job(self, job_id: str, error: str) -> None:
-        job_id = str(job_id)
         with self._write() as conn:
-            row = conn.execute(
-                "SELECT * FROM jobs WHERE job_id=?", (job_id,)
-            ).fetchone()
-            if row is None:
-                return
-            attempts = int(row["attempts"] or 0)
-            exponent = min(max(0, attempts - 1), 60)
-            backoff = min(
-                JOB_BACKOFF_MAX, JOB_BACKOFF_BASE * (2 ** exponent)
-            )
-            available = iso_utc(datetime.now(UTC) + timedelta(seconds=backoff))
-            sanitized = redact(str(error or ""))[:1000]
-            conn.execute(
-                "UPDATE jobs SET status='failed', last_error=?, available_at=?, "
-                "updated_at=? WHERE job_id=?",
-                (sanitized, available, now_iso(), job_id),
-            )
+            self._fail_job(conn, str(job_id), error)
+
+    def _fail_job(self, conn: sqlite3.Connection, job_id: str, error: str) -> None:
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE job_id=?", (job_id,)
+        ).fetchone()
+        if row is None:
+            return
+        attempts = int(row["attempts"] or 0)
+        exponent = min(max(0, attempts - 1), 60)
+        backoff = min(
+            JOB_BACKOFF_MAX, JOB_BACKOFF_BASE * (2 ** exponent)
+        )
+        available = iso_utc(datetime.now(UTC) + timedelta(seconds=backoff))
+        sanitized = redact(str(error or ""))[:1000]
+        conn.execute(
+            "UPDATE jobs SET status='failed', last_error=?, available_at=?, "
+            "updated_at=? WHERE job_id=?",
+            (sanitized, available, now_iso(), job_id),
+        )
 
     # ------------------------------------------------------------------
     # Maintenance

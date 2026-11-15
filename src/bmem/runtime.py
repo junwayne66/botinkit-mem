@@ -2574,7 +2574,8 @@ class Worker:
             status, extra, error_message = self._handle_job(job_data, kind)
         except Exception as error:
             status, extra, error_message = "failed", {}, _sanitize_error(error)
-        if job_id:
+        job_finalized = extra.pop("job_finalized", False)
+        if job_id and not job_finalized:
             try:
                 if status == "failed":
                     self.store.fail_job(job_id, error_message or "job failed")
@@ -2762,6 +2763,19 @@ class Worker:
                 },
                 None,
             )
+        job_id = str(job.get("job_id") or "").strip()
+        held = self.store.hold_distill_retry(job_id, event_id)
+        if held is not None:
+            return (
+                "failed",
+                {
+                    "event_id": event_id,
+                    "review_required": True,
+                    "review_reason": held.get("review_reason"),
+                    "job_finalized": True,
+                },
+                held.get("error") or "distill retry requires review",
+            )
         body = str(event_data.get("body") or "")
         event_metadata = _as_dict(event_data.get("metadata"))
         source_ids = [
@@ -2879,29 +2893,7 @@ class Worker:
             getattr(self.runtime, "model_id", None)
             or f"{DISTILL_MODEL}@{PINNED_OLLAMA_VERSION}"
         )
-        applied: list[dict[str, Any]] = []
-        confirmed_revisions: dict[str, int] = {}
-        for candidate in candidates:
-            memory_id = candidate.get("memory_id")
-            targeted = candidate.get("action") in {"UPDATE", "NOOP", "DISPUTE"}
-            if targeted and memory_id in confirmed_revisions:
-                candidate["expected_revision"] = confirmed_revisions[memory_id]
-            result = self.store.apply_candidate(event_id, candidate, model_id)
-            result_data = _as_dict(result)
-            memory = _as_dict(result_data.get("memory"))
-            if targeted and memory.get("memory_id") == memory_id:
-                revision = _memory_revision(memory)
-                if revision is not None:
-                    # Only this job's successful CAS can advance a later target.
-                    confirmed_revisions[memory_id] = revision
-            applied.append(
-                {
-                    "action": candidate.get("action", "ADD"),
-                    "memory_id": result_data.get("memory_id")
-                    or _as_dict(result_data.get("memory")).get("memory_id"),
-                    "duplicate": bool(result_data.get("duplicate")),
-                }
-            )
+        applied = self.store.apply_distill_batch(job_id, event_id, candidates, model_id)
         return (
             "done",
             {
@@ -2909,6 +2901,7 @@ class Worker:
                 "candidates": len(candidates),
                 "applied": applied,
                 "skipped_candidates": [],
+                "job_finalized": True,
                 **({"consolidation": True} if consolidated else {}),
             },
             None,

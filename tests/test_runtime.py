@@ -317,26 +317,18 @@ def test_distill_noop_keeps_revision_for_next_update(distill_batch, monkeypatch)
 def test_distill_batch_still_rejects_external_revision(distill_batch, monkeypatch):
     store, runtime, worker, target, candidate = distill_batch
     candidates = [candidate, {**candidate, "body": "batch later", "effective_at": "2026-03-01T00:00:00Z"}]
-    monkeypatch.setattr(runtime, "_generate_json", lambda *_args, **_kwargs: {"candidates": candidates})
-    apply = store.apply_candidate
-    inserted_external = False
 
-    def apply_with_external_write(event_id, item, model_id):
-        nonlocal inserted_external
-        result = apply(event_id, item, model_id)
-        if not inserted_external:
-            inserted_external = True
-            store.declare({"body": "batch external", "memory_id": target["memory_id"],
-                           "expected_revision": result["memory"]["revision_no"],
-                           "effective_at": "2026-04-01T00:00:00Z"})
-        return result
+    def generate(*_args, **_kwargs):
+        store.declare({"body": "batch external", "memory_id": target["memory_id"],
+                       "expected_revision": 1, "effective_at": "2026-04-01T00:00:00Z"})
+        return {"candidates": candidates}
 
-    monkeypatch.setattr(store, "apply_candidate", apply_with_external_write)
+    monkeypatch.setattr(runtime, "_generate_json", generate)
     result = worker.run_once()
     assert result["status"] == "failed"
     assert "revision conflict" in result["error"]
     current = store.get_memory(target["memory_id"])
-    assert current["revision_no"] == 3
+    assert current["revision_no"] == 2
     assert current["body"] == "batch external"
 
 
@@ -355,5 +347,5 @@ def test_untargeted_add_does_not_rebase_snapshot(distill_batch, monkeypatch):
     assert result["status"] == "failed"
     assert "revision conflict" in result["error"]
     current = store.get_memory(target["memory_id"])
-    assert current["revision_no"] == 3
-    assert current["body"] == added["body"]
+    assert current["revision_no"] == 2
+    assert current["body"] == "batch external"
