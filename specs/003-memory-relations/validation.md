@@ -253,3 +253,24 @@ git diff --check
 本补丁基于c62c22a，事务正确性验证无法证明输出限制的真实模型质量。c62c22a仍缺完整真实配对，建议维持待部署状态。
 
 历史候选未保存，保护仅能确认event已有模型应用，不能推断哪些剩余事实尚未完成，命中的旧重试进入待核对。重算采用原有独立入口，其正常回归已通过，本次未为该入口实施事务变更。提交后中断通过SystemExit模拟，未执行操作系统强杀、断电或生产故障注入。真实失败恢复及c62c22a输出约束的完整实模配对仍待验证。
+
+# 模型HTTP失败的脱敏诊断
+
+2026-11-16，T020实现、隔离验证与独立复审通过，补丁处于未部署状态。
+
+模型HTTP失败记录stage、实际num_predict、最终prompt字符串的Python字符数、单调时钟elapsed_ms及固定error_category，错误继续通过原job/event记录关联。阶段区分durability_gate、candidate_generation与candidate_retry，扩预算标记由既有800到3200递归显式传递。耗时按每轮生成调用计算，包含该轮排队及既有think兼容请求。固定类别覆盖token_repeat_limit、model_not_installed、http_error、transport_error及HTTP200响应内的model_error。未知上游文本和传输异常原文采用固定说明，异常链展示抑制已验证。
+
+```sh
+nice -n 15 .venv/bin/python -m pytest tests/test_generation_diagnostics.py -q -p no:cacheprovider --tb=short --basetemp <隔离临时目录>
+BMEM_OLLAMA_URL=http://127.0.0.1:1 nice -n 15 .venv/bin/python -m pytest tests/test_generation_diagnostics.py tests/test_runtime.py tests/test_generation_bounds.py tests/test_distill_transactions.py -q -p no:cacheprovider --tb=short --basetemp <隔离临时目录>
+nice -n 15 uv build --wheel --out-dir <隔离构建目录>
+git diff --check
+```
+
+2b06768基线使用合成HTTP及真实Store/Worker确认作业失败并保留证据，但阶段字段断言失败。新增11项回归通过，0.51秒。作者定向63 passed，13.72秒。独立复核执行diagnostics/runtime两模块，33 passed，4.55秒，未发现阻塞问题。构建及差异检查通过。
+
+OCR委托完成1/1项源码审阅，测试及两份规格文档已补充人工复核。独立子agent未参与本轮应用实现，审查及测试结果单独记录。
+
+用例核对64/800/3200实际预算、三阶段、完整prompt字符数、30ms合成延迟及耗时下界、HTTP500精确分类与反例、404提示、未知HTTP与传输异常隐私、HTTP200错误传播、失败job及原事件/证据保留。合法HTTP200对照完成一条fact落库。请求次数和参数核对覆盖既有重试行为。
+
+验证使用合成HTTP端点或MockTransport、真实临时Store/Worker。本轮真实模型请求及生产数据操作为0。实际价值是后续自然失败可直接按阶段、预算和耗时定位，历史失败的缺失字段仍无法回溯。部署前需要单独服务切换批准，获准后还需核对自然失败元数据。c62c22a完整实模配对及真实生成故障恢复仍待验证。

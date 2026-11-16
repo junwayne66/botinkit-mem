@@ -1918,6 +1918,8 @@ Use only kind method|decision, action ADD, and derived_from from the listed memo
         prompt: str,
         schema: dict[str, Any] | None = None,
         num_predict: int = 800,
+        *,
+        retry: bool = False,
     ) -> Any:
         """Single bounded local generation returning the parsed JSON object."""
         endpoint = self._endpoint()
@@ -1936,6 +1938,10 @@ Use only kind method|decision, action ADD, and derived_from from the listed memo
                 "seed": 42,
             },
         }
+        stage = "candidate_retry" if retry else "candidate_generation"
+        if "durable" in payload["format"].get("properties", {}):
+            stage = "durability_gate"
+        started = time.monotonic()
         try:
             with self._http(httpx.Timeout(connect=5, read=180, write=30, pool=5)) as client:
                 response = client.post(
@@ -1949,21 +1955,34 @@ Use only kind method|decision, action ADD, and derived_from from the listed memo
                     response = client.post(
                         self._url("/api/generate", endpoint), json=payload
                     )
-        except httpx.HTTPError as error:
-            raise RuntimeError(
-                f"local generation endpoint unavailable at {endpoint}: "
-                f"{_sanitize_error(error)}"
-            ) from error
-        if response.status_code == 404:
-            raise RuntimeError(
-                f"generation model {DISTILL_MODEL} is not installed "
-                f"(local endpoint {endpoint}); run runtime install"
+        except httpx.HTTPError:
+            details = _generation_failure_metadata(
+                stage, num_predict, len(prompt), started, "transport_error"
             )
+            # Transport exception text can contain request data.
+            raise RuntimeError(
+                f"local generation endpoint unavailable {details}"
+            ) from None
         if response.status_code >= 400:
-            raise RuntimeError(
+            category = "http_error"
+            message = "upstream HTTP error"
+            repeat_error = "prediction aborted, token repeat limit reached"
+            if response.status_code == 500 and _response_error(response) == repeat_error:
+                category = "token_repeat_limit"
+                message = repeat_error
+            failure = (
                 f"generation model {DISTILL_MODEL} failed with HTTP "
-                f"{response.status_code}: {_response_error(response)}"
+                f"{response.status_code}: {message}"
             )
+            if response.status_code == 404:
+                category = "model_not_installed"
+                failure = (
+                    f"generation model {DISTILL_MODEL} is not installed; run runtime install"
+                )
+            details = _generation_failure_metadata(
+                stage, num_predict, len(prompt), started, category
+            )
+            raise RuntimeError(f"{failure} {details}")
         try:
             body = response.json()
         except ValueError as error:
@@ -1975,7 +1994,12 @@ Use only kind method|decision, action ADD, and derived_from from the listed memo
                 f"generation model {DISTILL_MODEL} returned invalid JSON"
             )
         if body.get("error"):
-            raise RuntimeError(f"{DISTILL_MODEL}: {_sanitize_error(body['error'])}")
+            details = _generation_failure_metadata(
+                stage, num_predict, len(prompt), started, "model_error"
+            )
+            raise RuntimeError(
+                f"generation model {DISTILL_MODEL} returned an error {details}"
+            )
         raw = body.get("response")
         if raw is None and isinstance(body.get("message"), dict):
             raw = body["message"].get("content")
@@ -1990,7 +2014,7 @@ Use only kind method|decision, action ADD, and derived_from from the listed memo
         )
         if parsed is None or incomplete:
             if body.get("done_reason") == "length" and num_predict == 800:
-                return self._generate_json(prompt, schema, num_predict=3200)
+                return self._generate_json(prompt, schema, num_predict=3200, retry=True)
             reason = body.get("done_reason")
             if reason not in ("length", "stop", "load", "unload"):
                 reason = "unknown"
@@ -3972,6 +3996,16 @@ def _tail(path: Path, limit: int) -> str:
     except OSError:
         return ""
     return data[-limit:].decode("utf-8", errors="replace")
+
+
+def _generation_failure_metadata(
+    stage: str, num_predict: int, prompt_chars: int, started: float, category: str
+) -> str:
+    elapsed_ms = round((time.monotonic() - started) * 1000)
+    return (
+        f"(stage={stage}, num_predict={num_predict}, prompt_chars={prompt_chars}, "
+        f"elapsed_ms={elapsed_ms}, error_category={category})"
+    )
 
 
 def _response_error(response: httpx.Response) -> str:
