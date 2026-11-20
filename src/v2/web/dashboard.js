@@ -16,15 +16,54 @@ window.MemoryDashboard = (() => {
     minute: '2-digit',
     hour12: false
   });
+  const clock = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   let days = 7;
   let summaryRequest = 0;
-  let graphRequest = 0;
-  let unmountGraph;
+  let pollTimer = 0;
+  // 预览与完整星图各自持有挂载状态：切换视图只刷新进入的一方，另一方保持挂载。
+  const atlas = {
+    preview: { request: 0, unmount: null },
+    full: { request: 0, unmount: null }
+  };
+
+  // 服务 CSP 为 default-src 'self'：内联 <style> / style 属性会被拦截，
+  // 因此保底高度与行按钮样式一律走 CSSOM 赋值（不受 style-src 限制）。
+  const ROW_BUTTON_STYLE = {
+    fontFamily: 'inherit',
+    background: 'transparent',
+    border: '0',
+    borderTop: '1px solid var(--divider)',
+    width: '100%',
+    textAlign: 'start',
+    cursor: 'pointer'
+  };
+  function rowButton(className, title, kids, inheritColor) {
+    const button = el('button', { type: 'button', class: className, title }, kids);
+    Object.assign(button.style, ROW_BUTTON_STYLE);
+    if (inheritColor) button.style.color = 'inherit';
+    return button;
+  }
+  function skeleton(kind, height, margin) {
+    const node = el('div', { class: 'placeholder skeleton-' + kind });
+    node.style.height = height;
+    node.style.marginTop = margin;
+    return node;
+  }
 
   function svgElement(tag, attrs) {
     const shape = document.createElementNS('http://www.w3.org/2000/svg', tag);
     for (const [name, value] of Object.entries(attrs)) shape.setAttribute(name, value);
     return shape;
+  }
+
+  // 柱状图与图例共用同一 --series token，经 getComputedStyle 解析，颜色不再两处硬编码。
+  function seriesTone(className, fallbackColor) {
+    const probe = el('span', { class: className });
+    probe.style.display = 'none';
+    document.body.append(probe);
+    const tone = getComputedStyle(probe).getPropertyValue('--series').trim();
+    probe.remove();
+    return tone || fallbackColor;
   }
 
   function activity(rows) {
@@ -34,6 +73,8 @@ window.MemoryDashboard = (() => {
       el('strong', { text: numbers.format(total) }),
       el('span', { text: '条写入' })
     ]);
+    const statementTone = seriesTone('series-statement', '#61dec0');
+    const eventTone = seriesTone('series-assistant_message', '#72a6e1');
     const plot = svgElement('svg', {
       viewBox: '0 0 300 76',
       preserveAspectRatio: 'none',
@@ -57,8 +98,8 @@ window.MemoryDashboard = (() => {
       const x = step * (i + 0.5) - bar / 2;
       let bottom = 67;
       for (const [key, color] of [
-        ['events', '#72a6e1'],
-        ['statements', '#61dec0']
+        ['events', eventTone],
+        ['statements', statementTone]
       ]) {
         const h = (58 * row[key]) / peak;
         if (!h) continue;
@@ -143,6 +184,22 @@ window.MemoryDashboard = (() => {
     );
   }
 
+  // 声明行可经 /v2/statements 把 statement_id 解析成 fact_id，直达历史与出处；
+  // 尚未形成事实（待归并）时退回记忆库。事件行没有可按 id 打开的视图，保持纯展示。
+  async function openStatementHistory(statementId, button) {
+    busy(button, true, '正在定位事实…');
+    const res = await api('GET', '/v2/statements');
+    busy(button, false);
+    if (!res.ok) {
+      toast(errorHeadline(res), 'err');
+      return;
+    }
+    const items = res.data && Array.isArray(res.data.statements) ? res.data.statements : [];
+    const fact = items.find((item) => item && item.statement_id === statementId);
+    if (fact && fact.fact_id) openHistory(fact.fact_id);
+    else navigate('statements');
+  }
+
   function recent(rows) {
     const list = $('#recent-feed');
     list.replaceChildren();
@@ -151,14 +208,39 @@ window.MemoryDashboard = (() => {
       return;
     }
     for (const row of rows) {
-      list.append(
-        el('div', { class: 'feed-row series-' + row.kind }, [
-          el('span', { class: 'feed-dot', 'aria-hidden': 'true' }),
-          el('span', { class: 'feed-title', text: row.label, title: row.label }),
-          el('span', { class: 'feed-type', text: kinds[row.kind] }),
-          el('time', { datetime: row.at, text: stamp.format(new Date(row.at)), title: row.at })
-        ])
-      );
+      const kids = [
+        el('span', { class: 'feed-dot', 'aria-hidden': 'true' }),
+        el('span', { class: 'feed-title', text: row.label, title: row.label }),
+        el('span', { class: 'feed-type', text: kinds[row.kind] }),
+        el('time', { datetime: row.at, text: stamp.format(new Date(row.at)), title: row.at })
+      ];
+      if (row.kind === 'statement' && row.id) {
+        const button = rowButton('feed-row series-' + row.kind, '查看这条声明的历史与出处', kids, true);
+        button.addEventListener('click', () => openStatementHistory(row.id, button));
+        list.append(button);
+      } else {
+        list.append(el('div', { class: 'feed-row series-' + row.kind }, kids));
+      }
+    }
+  }
+
+  // 首次进入 / 失败清空后展示骨架屏；刷新与轮询保留既有内容，成功时整体替换。
+  function prepareOverview() {
+    const fill = (host, kids) => {
+      if (host && !host.childElementCount) host.replaceChildren(...kids);
+    };
+    fill($('#activity-chart'), [
+      skeleton('line', '14px', '12px'),
+      skeleton('chart', '96px', '12px'),
+      skeleton('line', '14px', '12px')
+    ]);
+    fill($('#distribution-chart'), [skeleton('chart', '96px', '12px')]);
+    fill($('#recent-feed'), [1, 2, 3].map(() => skeleton('row', '34px', '10px')));
+    fill($('#job-summary'), [1, 2].map(() => skeleton('row', '34px', '10px')));
+    if (!$('#overview-updated')) {
+      const updated = el('p', { id: 'overview-updated', class: 'hint-sm overview-updated', hidden: true });
+      updated.style.fontVariantNumeric = 'tabular-nums';
+      $('#view-overview .view__head > div')?.append(updated);
     }
   }
 
@@ -167,19 +249,25 @@ window.MemoryDashboard = (() => {
     const host = $('#view-overview');
     const res = await api('GET', '/v2/overview?days=' + days);
     if (request !== summaryRequest || host.hidden) return;
+    const data = res.data;
+    const valid =
+      res.ok && data && data.counts &&
+      Array.isArray(data.activity) && Array.isArray(data.distribution) &&
+      Array.isArray(data.recent) && Array.isArray(data.jobs);
     const error = $('#overview-error');
-    error.hidden = res.ok;
-    if (!res.ok) {
+    error.hidden = !!valid;
+    if (!valid) {
       error.textContent =
         res.status === 401
           ? '当前页面没有所有者会话。在终端运行 bmem web 重新打开。'
-          : '总览读取失败，请检查本机服务并刷新。';
+          : res.ok
+            ? '总览读取失败：服务返回了无法解析的内容。'
+            : '总览读取失败，请检查本机服务并刷新。';
       for (const id of ['activity-chart', 'distribution-chart', 'recent-feed', 'job-summary'])
         $('#' + id).replaceChildren();
       for (const node of host.querySelectorAll('.metric strong')) node.textContent = '—';
       return;
     }
-    const data = res.data;
     for (const [name, count] of Object.entries(data.counts)) {
       const metric = $('#metric-' + name);
       if (metric) metric.textContent = numbers.format(count);
@@ -189,49 +277,93 @@ window.MemoryDashboard = (() => {
     recent(data.recent);
     const queue = $('#job-summary');
     queue.replaceChildren(
-      ...data.jobs.map((job) =>
-        el('div', { class: 'queue-row' }, [
+      ...data.jobs.map((job) => {
+        const button = rowButton('queue-row', '查看后台作业', [
           jobNames[job.status] || job.status,
           el('b', { text: numbers.format(job.count) })
-        ])
-      )
+        ]);
+        button.addEventListener('click', () => navigate('jobs'));
+        return button;
+      })
     );
     if (!data.jobs.length)
       queue.append(el('p', { class: 'chart-empty', text: '暂无后台作业。导入获准的事件后可在此查看进度。' }));
+    const updated = $('#overview-updated');
+    if (updated) {
+      updated.hidden = false;
+      setText(updated, '更新于 ' + clock.format(new Date()));
+    }
+  }
+
+  // 仅在总览可见且页面可见时轮询总览数据；隐藏即暂停，不触碰星图。
+  function startPoll() {
+    stopPoll();
+    pollTimer = setInterval(() => {
+      if (document.hidden || $('#view-overview').hidden) return;
+      summary();
+    }, 15000);
+  }
+  function stopPoll() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = 0;
   }
 
   function leave() {
-    graphRequest++;
     summaryRequest++;
-    unmountGraph?.();
-    unmountGraph = null;
+    stopPoll();
+    // switchView 先更新 hash 再调用 leave：overview↔graph 互切时保留双方挂载，
+    // 离开这两个视图才整体 teardown（与 handleRoute 的解析保持一致）。
+    const slug = location.hash.replace(/^#\/?/, '').split('?')[0];
+    const next = Object.hasOwn(routes, slug) ? routes[slug] : Object.hasOwn(views, slug) ? slug : 'overview';
+    if (next === 'overview' || next === 'graph') return;
+    for (const slot of [atlas.preview, atlas.full]) {
+      slot.request++;
+      slot.unmount?.();
+      slot.unmount = null;
+    }
   }
 
   async function graph(preview) {
-    const request = ++graphRequest;
+    const slot = preview ? atlas.preview : atlas.full;
+    const request = ++slot.request;
     const host = $(preview ? '#atlas-preview' : '#atlas-full');
+    // 已有挂载时保留旧图直到新数据到达；首次加载给出中文读取提示，不留空面板。
+    if (!slot.unmount) setLoading(host, '正在读取星图…');
     const [res] = await Promise.all([api('GET', '/v2/graph?limit=' + (preview ? 40 : 120)), loadFeature('atlas')]);
-    if (request !== graphRequest) return;
-    unmountGraph?.();
-    unmountGraph = null;
-    if (!res.ok) {
+    if (request !== slot.request) return;
+    slot.unmount?.();
+    slot.unmount = null;
+    if (!res.ok || !res.data || !Array.isArray(res.data.nodes)) {
       unavailableNote(host, res, '星图');
       return;
     }
-    unmountGraph = window.MemoryAtlas.mount(host, res.data, {
+    slot.unmount = window.MemoryAtlas.mount(host, res.data, {
       preview,
       onHistory: openHistory
     });
   }
 
   function enter(view) {
-    if (view === 'overview') summary();
-    graph(view === 'overview').catch((error) =>
-      showFeatureError($(view === 'overview' ? '#atlas-preview' : '#atlas-full'), error)
-    );
+    const preview = view === 'overview';
+    if (preview) {
+      prepareOverview();
+      summary();
+      startPoll();
+    }
+    graph(preview).catch((error) => {
+      const slot = preview ? atlas.preview : atlas.full;
+      slot.request++;
+      slot.unmount?.();
+      slot.unmount = null;
+      showFeatureError($(preview ? '#atlas-preview' : '#atlas-full'), error, () => enter(view));
+    });
   }
 
   function bind() {
+    // 保底高度：星图宿主与图表盒在读取期间不塌陷，成功后内容自然撑开。
+    for (const id of ['atlas-preview', 'atlas-full']) $('#' + id).style.minHeight = '320px';
+    $('#activity-chart').style.minHeight = '168px';
+    $('#distribution-chart').style.minHeight = '112px';
     $('#refresh-overview').onclick = () => {
       enter('overview');
       readConnection();
@@ -243,6 +375,10 @@ window.MemoryDashboard = (() => {
         for (const b of $$('button[data-days]')) b.setAttribute('aria-pressed', String(b === button));
         summary();
       });
+    // 页面重新可见时立即补一次总览，不必等下一个轮询周期。
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && !$('#view-overview').hidden) summary();
+    });
   }
   return { enter, leave, bind };
 })();

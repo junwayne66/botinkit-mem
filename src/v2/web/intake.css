@@ -42,6 +42,31 @@
 .intake-grant .resultline:not(:empty) {margin-top:10px;}
 .intake-grant .resultline .intake-actions {margin-top:8px;}
 
+/* 首屏骨架：微光占位条，reduced-motion 由 app.css 统一静止 */
+.intake-skeleton { gap: 10px; }
+.intake-skeleton .placeholder { width: 100%; }
+.intake-skeleton .placeholder:nth-child(1) { width: 62%; height: 16px; }
+.intake-skeleton .placeholder:nth-child(2) { width: 90%; }
+.intake-skeleton .placeholder:nth-child(3) { width: 45%; }
+
+/* 授权影响预览对话框（复用 app.css 的 .dialog / .dialog-card / .dialog-actions） */
+.intake-grant-preview { display: grid; gap: 10px; min-width: 0; }
+.intake-grant-preview .intake-meta { grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); }
+.intake-grant-preview .hint-sm { color: var(--muted, #adbccb); font-size: .8rem; overflow-wrap: anywhere; margin: 0; }
+.intake-grant-warn {
+  display: grid; gap: 8px; min-width: 0; padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn, #e8b341) 55%, var(--border, #283847));
+  border-left: 3px solid var(--warn, #e8b341);
+  border-radius: var(--radius, 8px);
+  background: color-mix(in srgb, var(--warn, #e8b341) 10%, var(--surface, #111b28));
+}
+.intake-grant-warn strong { color: var(--warn, #e8b341); font-size: .9rem; }
+.intake-grant-notice:empty { display: none; }
+.intake-grant-notice .resultline { margin: 0; }
+.intake-grant-notice .empty--warn { margin: 0; }
+.intake-grant-notice .btn { margin-top: 8px; }
+.dialog .intake-grant-notice .diagnostic pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+
 .intake-integration-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

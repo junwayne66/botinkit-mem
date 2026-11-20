@@ -153,6 +153,7 @@
         </div>
       </header>
       <main id="main" class="main" tabindex="-1">
+        <div id="session-banner" class="banner banner--session" role="status" hidden></div>
         <section id="view-overview" class="view" aria-labelledby="h-overview" tabindex="-1" hidden>
           <div class="view__head">
             <div>
@@ -412,7 +413,7 @@
         <section id="view-settings" class="view" aria-labelledby="h-settings" tabindex="-1" hidden>
           <div class="view__head">
             <div>
-              <h1 id="h-settings">设置</h1>
+              <h1 id="h-settings">工作区设置</h1>
               <p class="settings-lead">在这里管理本机记忆的存储、检索和模型。更改会同步到 <code>bmem</code>。</p>
             </div>
             <div class="head-actions">
@@ -675,6 +676,7 @@
       </main>
     </div>
     <div id="sr-live" class="sr-only" role="status" aria-live="polite"></div>
+    <div id="toast-host" class="toast-host" role="status" aria-live="polite" aria-label="通知"></div>
     <script src="/dashboard.js" defer></script>
     <script src="/app.js" defer></script>
   </body>

@@ -15,6 +15,7 @@
     close: 'm6 6 12 12M18 6 6 18'
   };
   const golden = Math.PI * (3 - Math.sqrt(5));
+  let hintSeq = 0;
 
   function element(tag, className, text) {
     const item = document.createElement(tag);
@@ -174,6 +175,7 @@
     let labelHits = [];
     let width = 0,
       height = 0,
+      pixelRatio = 0,
       model,
       timer = 0,
       raf = 0;
@@ -217,6 +219,10 @@
     const tip = element('div', 'atlas-tooltip');
     tip.hidden = true;
     stage.append(base, fx, note, notice, tip, meter, toolbar);
+    // 常驻操作提示：缩放 / 平移 / 键盘快捷键不再只藏在图标按钮的 title 里。
+    const hint = element('p', 'atlas-hint', '拖动平移 · Ctrl+滚轮缩放 · +/− 缩放 · 0 复位 · Esc 取消选择');
+    hint.id = 'atlas-hint-' + (++hintSeq);
+    base.setAttribute('aria-describedby', hint.id);
     const legend = element('div', 'atlas-legend');
     const controls = element('div', 'atlas-controls');
     const community = selectField('筛选社区', '全部社区'),
@@ -229,7 +235,7 @@
     const detail = element('div', 'atlas-inspector');
     detail.setAttribute('aria-live', 'polite');
     detail.hidden = true;
-    root.append(stage, legend, explorer, detail);
+    root.append(stage, hint, legend, explorer, detail);
     container.replaceChildren(root);
     const signal = new AbortController(),
       listen = { signal: signal.signal };
@@ -292,7 +298,7 @@
       if (capped) cut.textContent = graph.shown_records + ' / ' + graph.total_records + ' 条记录';
       link.textContent = sample ? '隐藏示例' : '查看示例';
       notice.hidden = !empty || sample;
-      toolbar.hidden = meter.hidden = explorer.hidden = !data.nodes.length;
+      toolbar.hidden = meter.hidden = explorer.hidden = hint.hidden = !data.nodes.length;
       legend.hidden = !data.communities.length;
       syncPause();
     }
@@ -361,10 +367,12 @@
       const rect = stage.getBoundingClientRect();
       const w = Math.round(rect.width),
         h = Math.round(rect.height);
-      if (w <= 0 || h <= 0 || (w === width && h === height)) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // DPR 变化（缩放 / 换屏）时即使 CSS 尺寸不变也要重建 backing store，否则画布发虚。
+      if (w <= 0 || h <= 0 || (w === width && h === height && dpr === pixelRatio)) return;
       width = w;
       height = h;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      pixelRatio = dpr;
       for (const [canvas, context] of [
         [base, ctx],
         [fx, glow]
@@ -374,6 +382,17 @@
         context.setTransform(canvas.width / w, 0, 0, canvas.height / h, 0, 0);
       }
       rebuildLayout();
+    }
+    let dprQuery = null;
+    function dprChanged() {
+      resize();
+      watchDpr();
+    }
+    function watchDpr() {
+      // resolution 媒体查询只对当前 DPR 生效，每次变化后按新 DPR 重新挂监听。
+      dprQuery?.removeEventListener('change', dprChanged);
+      dprQuery = matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)');
+      dprQuery.addEventListener('change', dprChanged, listen);
     }
     function project(c) {
       c.translate(width / 2 + panX, height / 2 + panY);
@@ -480,7 +499,9 @@
       const font = '600 12px system-ui, "PingFang SC", sans-serif';
       ctx.font = font;
       ctx.textBaseline = 'middle';
-      for (const g of model.groups.slice(0, width < 400 ? 4 : preview ? 6 : 12)) {
+      // 放大到 150% 以上时标注全部可见枢纽，碰撞与视口检查仍然生效。
+      const cap = zoom > 1.5 ? model.groups.length : width < 400 ? 4 : preview ? 6 : 12;
+      for (const g of model.groups.slice(0, cap)) {
         const p = point(g),
           label = Array.from(g.label);
         const text = label.length > 12 ? label.slice(0, 11).join('') + '…' : g.label;
@@ -609,6 +630,8 @@
       if (drag) {
         const dx = p.x - drag.x,
           dy = p.y - drag.y;
+        // touch-action: pan-y 下纵向手势属于页面滚动；触摸只在横向意图明确时平移。
+        if (event.pointerType === 'touch' && !drag.moved && Math.abs(dy) >= Math.abs(dx)) return;
         if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
         if (drag.moved) {
           panX = drag.initialX + dx;
@@ -707,6 +730,7 @@
     observer.observe(stage);
     rebuildControls();
     resize();
+    watchDpr();
     setCamera();
     return () => {
       destroyed = true;

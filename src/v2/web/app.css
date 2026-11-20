@@ -82,7 +82,21 @@ button {
 }
 button:disabled {
   opacity: 0.55;
-  cursor: wait;
+  cursor: not-allowed;
+}
+/* 忙碌态：全局进度光标；提交按钮在 busy 期间不接收点击，防重复提交 */
+body.is-busy {
+  cursor: progress;
+}
+body.is-busy button[type='submit'] {
+  pointer-events: none;
+  opacity: 0.65;
+  cursor: progress;
+}
+button.is-busy,
+.btn.is-busy {
+  cursor: progress;
+  opacity: 0.85;
 }
 a:focus-visible,
 button:focus-visible,
@@ -720,12 +734,13 @@ kbd {
   font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
 }
 
 .block-title {
-  font-size: 14px;
+  font-size: 15px;
   text-transform: none;
-  color: var(--muted);
+  color: #d2dce6;
   margin: 22px 0 8px;
   font-weight: 600;
 }
@@ -838,13 +853,18 @@ summary:focus-visible {
 }
 
 .btn {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: 7px;
+  min-height: 37px;
   padding: 8px 13px;
 }
 .btn:hover {
@@ -857,6 +877,8 @@ summary:focus-visible {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+  font-weight: 630;
+  box-shadow: 0 2px 9px #43ddb116;
 }
 .btn--primary:hover {
   filter: brightness(1.05);
@@ -878,7 +900,11 @@ summary:focus-visible {
 
 /* 结果行 / 标记 */
 .resultline {
-  margin-top: 10px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.resultline:empty {
+  display: none;
 }
 .result {
   display: inline-flex;
@@ -1001,6 +1027,10 @@ summary:focus-visible {
 .kv__v {
   word-break: break-anywhere;
   overflow-wrap: anywhere;
+  min-width: 0;
+}
+.card__body .kv {
+  min-width: 0;
 }
 .row-actions {
   display: flex;
@@ -1034,10 +1064,14 @@ summary:focus-visible {
 .empty {
   color: var(--muted);
   font-size: 14px;
-  padding: 8px 0;
+  padding: 14px;
 }
 .empty--warn {
   color: var(--warn);
+}
+.empty__cta {
+  margin-inline-start: 12px;
+  vertical-align: middle;
 }
 
 .receipt {
@@ -1109,23 +1143,6 @@ summary:focus-visible {
       border-color 0.12s ease;
   }
 }
-.btn {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  gap: 7px;
-  border-radius: 7px;
-  min-height: 37px;
-  font-size: 13px;
-}
-.btn--primary {
-  font-weight: 630;
-  box-shadow: 0 2px 9px #43ddb116;
-}
-.block-title {
-  color: #d2dce6;
-  font-size: 15px;
-}
 .field input,
 .field select,
 .field textarea {
@@ -1137,13 +1154,6 @@ summary:focus-visible {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-}
-.resultline:empty {
-  display: none;
-}
-.resultline {
-  font-size: 13px;
-  margin: 8px 0;
 }
 .result-ok {
   color: var(--ok);
@@ -1157,17 +1167,6 @@ summary:focus-visible {
   overflow-wrap: anywhere;
   max-height: 16rem;
   overflow: auto;
-}
-.seq {
-  font-family: var(--mono);
-}
-.empty {
-  padding: 14px;
-}
-.card__body .kv,
-.kv__v {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 @media (min-width: 1500px) {
   .main {
@@ -1505,5 +1504,209 @@ summary:focus-visible {
   }
   .mix-panel .legend {
     gap: 10px;
+  }
+}
+
+/* ============ 共享反馈组件（toast / dialog / busy / skeleton） ============ */
+
+/* 按钮转轮：busy() 与 setLoading() 复用 */
+.btn__spin {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.7s linear infinite;
+}
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.loading-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.loading-line .btn__spin {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+}
+
+/* 骨架屏占位：微光扫过；reduced-motion 下静止 */
+.placeholder {
+  display: block;
+  min-height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, #1e2c3d 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: placeholder-shimmer 1.4s ease infinite;
+}
+@keyframes placeholder-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* 右下角 toast：宿主常驻 live region，最多 3 条堆叠 */
+.toast-host {
+  position: fixed;
+  z-index: 60;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: 0 8px 28px #00000066;
+}
+.toast--warn {
+  border-left-color: var(--warn);
+}
+.toast--err {
+  border-left-color: var(--err);
+}
+.toast--info {
+  border-left-color: var(--info);
+}
+.toast__msg {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.toast__action {
+  flex: none;
+}
+.toast__close {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.toast__close:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .toast {
+    animation: toast-in 0.18s ease-out both;
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* 通用确认对话框（confirmDialog） */
+.dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0;
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  box-shadow: 0 18px 60px #00000080;
+}
+.dialog::backdrop {
+  background: #030810b8;
+}
+.dialog-card {
+  display: grid;
+  gap: 12px;
+  padding: 20px 22px;
+}
+.dialog-title {
+  font-size: 17px;
+  font-weight: 650;
+}
+.dialog--danger .dialog-title {
+  color: var(--err);
+}
+.dialog-desc {
+  color: var(--muted);
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+.dialog-type {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.dialog-input {
+  background: #0e1620;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* 会话 / 连接一次性横幅 */
+.banner--session {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  border-left-color: var(--err);
+}
+.banner--session .btn {
+  margin-top: 0;
+  margin-left: auto;
+}
+
+/* 搜索入口载入失败的可见警示态 */
+.search-launch--err {
+  border-color: color-mix(in srgb, var(--err) 55%, var(--border));
+  color: var(--err);
+}
+
+/* 备份预检阻止原因里的原始 code */
+.archive-inner output code {
+  margin-inline-start: 8px;
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .placeholder {
+    animation: none;
+  }
+  .btn__spin {
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.5;
   }
 }

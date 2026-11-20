@@ -43,8 +43,8 @@
 }
 .atlas-base, .atlas-fx { width: 100%; height: 100%; position: absolute; inset: 0; display: block; }
 .atlas-fx { pointer-events: none; }
-.atlas-base { touch-action: none; cursor: grab; }
-.atlas-preview .atlas-base { touch-action: pan-y; }
+/* 与预览一致：纵向手势交还页面滚动，横向拖动平移星图，完整星图不再拦截触摸滚动。 */
+.atlas-base { touch-action: pan-y; cursor: grab; }
 .atlas-base.atlas-over-node { cursor: pointer; }
 .atlas-base.atlas-panning { cursor: grabbing; }
 .atlas-base:focus-visible { outline-offset: -4px; }
@@ -99,6 +99,10 @@
 .atlas-empty {
   position: absolute; inset: 45% 0 auto; text-align: center; color: var(--atlas-quiet);
   pointer-events: none; font-size: 14px;
+}
+.atlas-hint {
+  margin: 0; padding: 7px 2px 0; font-size: 11px; line-height: 1.7;
+  color: var(--atlas-quiet); letter-spacing: .02em; overflow-wrap: break-word;
 }
 .atlas-legend {
   display: flex; flex-wrap: wrap; align-items: center; gap: 1px 16px;

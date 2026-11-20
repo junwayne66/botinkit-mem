@@ -23,8 +23,12 @@
 .ms-modes { gap: 4px; align-self: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
 .ms-modes button[aria-pressed="true"] { color: var(--accent); background: var(--ok-bg); border-color: var(--border); }
 #ms-status, .ms-hit small { font-size: .83rem; color: var(--muted); overflow-wrap: anywhere; }
-#ms-results { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+#ms-results { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; transition: opacity .12s ease; }
 #ms-results:empty { display: none; }
+/* 有内容时保底高度，避免逐键刷新时对话框高度脉冲；旧结果在新响应到达前轻微变暗。 */
+#ms-results:not(:empty) { min-height: 96px; }
+#ms-results.ms-stale { opacity: .55; }
+.ms-retry { margin-top: 10px; }
 .ms-hit { display: grid; gap: 7px; padding: 12px 3px; border-top: 1px solid var(--divider); }
 .ms-hit-head { flex-wrap: wrap; }
 .ms-hit-head strong { overflow-wrap: anywhere; font-size: .94rem; }
@@ -36,4 +40,4 @@
   .ms-dialog { inset-block-start: max(12px, env(safe-area-inset-top)); max-height: calc(100dvh - 24px); }
   .ms-close, .ms-modes button, .ms-dialog .btn { min-height: 44px; }
 }
-@media (prefers-reduced-motion: reduce) { .ms-dialog[open] { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .ms-dialog[open] { animation: none; } #ms-results { transition: none; } }
