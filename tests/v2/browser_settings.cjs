@@ -47,6 +47,20 @@ async function verifyLiveSettings(page, cli) {
   assert.equal(cli('model', 'list').models.find(model => model.name === name).endpoint, endpoint + '/v1');
   cli('model', 'configure', name, '--model-id', 'synthetic-updated');
   await row.getByText('synthetic-updated', { exact: true }).waitFor({ timeout: 12000 });
+  // 回归：CLI 改向量开关后，键控增量刷新须原位更新嵌入测试的禁用态与 title，
+  // 模型行本身未变也不能停留在旧门禁（无需整页重载）；来回翻转并还原现场。
+  const waitProbeGate = (disabled, title) => page.waitForFunction(({ modelName, disabled, title }) => {
+    const card = [...document.querySelectorAll('#models-list .card')]
+      .find(node => node.querySelector('.card__head strong')?.textContent === modelName);
+    const btn = card?.querySelector('[data-probe="embed"]');
+    return !!btn && btn.disabled === disabled && btn.getAttribute('title') === title;
+  }, { modelName: name, disabled, title }, { timeout: 12000 });
+  const vectorOn = cli('config', 'get').vector_search.enabled;
+  await waitProbeGate(!vectorOn, vectorOn ? null : '先开启向量相似检索');
+  cli('config', 'set', 'vector_search.enabled', String(!vectorOn));
+  await waitProbeGate(vectorOn, vectorOn ? '先开启向量相似检索' : null);
+  cli('config', 'set', 'vector_search.enabled', String(vectorOn));
+  await waitProbeGate(!vectorOn, vectorOn ? null : '先开启向量相似检索');
   if (!await page.locator('#model-editor').evaluate(editor => editor.open)) {
     await page.locator('#model-editor summary').click();
   }
