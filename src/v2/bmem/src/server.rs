@@ -826,6 +826,23 @@ fn dispatch(
                 _ => None,
             };
             let preview = path.ends_with("/preview");
+            // Readiness must be honest before asking the owner to confirm:
+            // an extract/embed allow preview without a bound, tested model
+            // fails with the same 409 the confirm path returns.
+            if preview
+                && route.is_none()
+                && body["kind"].as_str() == Some("change_grant")
+                && body["source_id"].as_str().is_some()
+                && body["allow"].as_bool() == Some(true)
+                && matches!(body["purpose"].as_str(), Some("extract" | "embed"))
+            {
+                let message = if body["purpose"].as_str() == Some("embed") {
+                    "请先开启向量检索，再测试并绑定本机嵌入模型。"
+                } else {
+                    "请先在模型设置中测试并绑定提炼模型，可使用服务器 API 或本地 Ollama。"
+                };
+                return Err(Error::new(409, "model_not_ready", message));
+            }
             let fingerprint = route.as_ref().map(|(_, _, id)| id.as_str());
             let mut result = retrieval::operate(
                 &mut *lock(&app.database)?,

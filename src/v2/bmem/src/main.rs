@@ -904,7 +904,11 @@ fn operation(
     }
     if let Some(preview_id) = confirm {
         payload["preview_id"] = json!(preview_id);
-        post(client, "/v2/operations", &payload, None)
+        // Deterministic per-preview key: a lost-receipt retry of the same
+        // --confirm replays the stored governance ticket instead of minting
+        // a fresh key that could never match the original operation.
+        let key = format!("grant-confirm-{preview_id}");
+        post(client, "/v2/operations", &payload, Some(&key))
     } else {
         Err(Error::invalid(
             "first use --preview, then --confirm with the returned preview ID",

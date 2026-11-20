@@ -307,6 +307,239 @@ fn field<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
         .ok_or_else(|| Error::invalid(format!("missing {key}")))
 }
 
+/// Target-scoped state snapshot bound into a governance preview. Only the
+/// rows the confirmed operation reads or writes are bound, so background
+/// sync on other sources, unrelated governance traffic, task/client
+/// registrations and declaration commits cannot invalidate a pending
+/// preview. The confirm-time compare stays byte-exact: a genuine change to
+/// the bound target state (the grant rows themselves, the approved model
+/// destination, the forget target's own watermark or revision) still
+/// returns 409 revision_changed. Global counters, other sources' cursors
+/// and full task/client lists are deliberately not bound.
+fn preview_footprint(
+    db: &Connection,
+    kind: &str,
+    command: &Value,
+    model_route: Option<&str>,
+) -> Result<Value> {
+    match kind {
+        "change_grant" => grant_footprint(db, command, model_route),
+        "forget" => {
+            if let Some(statement) = command["target"]["statement_id"].as_str() {
+                statement_footprint(db, statement)
+            } else if let Some(source_id) = command["target"]["source_id"].as_str() {
+                source_footprint(db, source_id)
+            } else {
+                Ok(json!({}))
+            }
+        }
+        // stop/resume confirm without a preview compare; the stored snapshot
+        // only documents the previewed target and never adds a conflict.
+        "stop_capture" | "resume_capture" => match command["source_id"].as_str() {
+            Some(source_id) => source_footprint(db, source_id),
+            None => Ok(json!({})),
+        },
+        _ => Err(Error::missing("governance action is unavailable")),
+    }
+}
+
+fn grant_footprint(db: &Connection, command: &Value, model_route: Option<&str>) -> Result<Value> {
+    if let Some(source_id) = command["source_id"].as_str() {
+        let mut snapshot = json!({ "source_exists": source_exists(db, source_id)? });
+        match command["purpose"].as_str() {
+            Some("extract") => {
+                // Bind the grant row itself: source-side grant writes do not
+                // advance policy_version, so the version alone is not enough.
+                snapshot["extract_enabled"] = json!(grant_active(db, source_id, "extract")?);
+                snapshot["source_model_route"] =
+                    json!(route_fingerprint(db, "ing_model_routes", source_id)?);
+                // The destination being approved; a rebind before confirm must conflict.
+                snapshot["model_route"] = json!(model_route);
+            }
+            Some("embed") => {
+                snapshot["source_vector_route"] =
+                    json!(route_fingerprint(db, "ing_vector_routes", source_id)?);
+                snapshot["model_route"] = json!(model_route);
+            }
+            Some("task_delivery") => {
+                let client_id = command["client_id"].as_str().unwrap_or_default();
+                snapshot["client_exists"] = json!(client_exists(db, client_id)?);
+                snapshot["recall_grant"] = json!(db.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM recall_grants WHERE source_id=?1 AND client_id=?2)",
+                    params![source_id, client_id],
+                    |r| r.get::<_, bool>(0),
+                )?);
+            }
+            _ => {}
+        }
+        return Ok(snapshot);
+    }
+    let client_id = command["client_id"].as_str().unwrap_or_default();
+    let mut snapshot = json!({ "client_exists": client_exists(db, client_id)? });
+    if command["share_statements"].as_bool().is_some() {
+        snapshot["shared_statements"] = json!(
+            db.query_row(
+                "SELECT shared FROM context_clients WHERE id=?1",
+                [client_id],
+                |r| r.get::<_, bool>(0),
+            )
+            .optional()?
+        );
+    } else if let Some(task_id) = command["task_id"].as_str() {
+        snapshot["task_access"] = json!(db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM context_task_access WHERE task_id=?1 AND client_id=?2)",
+            params![task_id, client_id],
+            |r| r.get::<_, bool>(0),
+        )?);
+    }
+    Ok(snapshot)
+}
+
+/// Statement identity plus its own revisions and the current head revision
+/// of every fact it touches: revocation or a superseding correction of the
+/// target changes the snapshot, while unrelated declarations do not.
+fn statement_footprint(db: &Connection, statement_id: &str) -> Result<Value> {
+    let statement = db
+        .query_row(
+            "SELECT id,owner,project,share,effective,known,corrects_revision,corrects_attempt,revoked,original
+             FROM authority_statements WHERE id=?1",
+            [statement_id],
+            |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?,
+                    "owner": r.get::<_, String>(1)?,
+                    "project": r.get::<_, String>(2)?,
+                    "share": r.get::<_, String>(3)?,
+                    "effective": r.get::<_, String>(4)?,
+                    "known": r.get::<_, String>(5)?,
+                    "corrects_revision": r.get::<_, Option<String>>(6)?,
+                    "corrects_attempt": r.get::<_, Option<String>>(7)?,
+                    "revoked": r.get::<_, bool>(8)?,
+                    "original": r.get::<_, Option<String>>(9)?,
+                }))
+            },
+        )
+        .optional()?;
+    let mut revisions = Vec::new();
+    let mut facts = BTreeSet::new();
+    let mut query = db.prepare(
+        "SELECT id,fact_id,value,previous,seq,state FROM authority_revisions WHERE statement_id=?1 ORDER BY seq,id",
+    )?;
+    for row in query.query_map([statement_id], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, Option<String>>(3)?,
+            r.get::<_, i64>(4)?,
+            r.get::<_, String>(5)?,
+        ))
+    })? {
+        let (id, fact, value, previous, seq, state) = row?;
+        facts.insert(fact.clone());
+        revisions.push(
+            json!({"id":id,"fact_id":fact,"value":value,"previous":previous,"seq":seq,"state":state}),
+        );
+    }
+    let mut heads = Vec::new();
+    for fact in facts {
+        let head = db
+            .query_row(
+                "SELECT r.id FROM authority_revisions r JOIN authority_statements s ON s.id=r.statement_id
+                 WHERE r.fact_id=?1 ORDER BY s.effective DESC, r.seq DESC, r.id DESC LIMIT 1",
+                [&fact],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?;
+        heads.push(json!({"fact_id":fact,"head_revision":head}));
+    }
+    Ok(json!({"statement":statement,"revisions":revisions,"fact_heads":heads}))
+}
+
+/// Source identity, its OWN committed cursor/watermark and its grant state.
+/// New objects on the same source legitimately change a forget cleanup scope
+/// (re-preview required); other sources' cursors and the global change_seq
+/// are not bound. `updated_at` bookkeeping is excluded. The accepted-page
+/// watermark covers pages that commit objects without moving the cursor
+/// (`next_cursor == cursor` is a valid acceptance): every newly committed
+/// page inserts exactly one `ing_ingests` row, including same-cursor and
+/// duplicate-only pages, while idempotent replays commit nothing and insert
+/// nothing. Ingest rows are never deleted, so MAX(rowid) only advances.
+fn source_footprint(db: &Connection, source_id: &str) -> Result<Value> {
+    let source = db
+        .query_row(
+            "SELECT source_id,kind,account,namespace,categories,cursor,created_at
+             FROM ing_sources WHERE source_id=?1",
+            [source_id],
+            |r| {
+                Ok(json!({
+                    "source_id": r.get::<_, String>(0)?,
+                    "kind": r.get::<_, String>(1)?,
+                    "account": r.get::<_, String>(2)?,
+                    "namespace": r.get::<_, String>(3)?,
+                    "categories": r.get::<_, String>(4)?,
+                    "cursor": r.get::<_, String>(5)?,
+                    "created_at": r.get::<_, String>(6)?,
+                }))
+            },
+        )
+        .optional()?;
+    let mut grants = Vec::new();
+    let mut query =
+        db.prepare("SELECT purpose,active FROM ing_grants WHERE source_id=?1 ORDER BY purpose")?;
+    for row in query.query_map([source_id], |r| {
+        Ok(json!({"purpose":r.get::<_,String>(0)?,"active":r.get::<_,bool>(1)?}))
+    })? {
+        grants.push(row?);
+    }
+    let accepted_pages = db.query_row(
+        "SELECT COALESCE(MAX(rowid),0) FROM ing_ingests WHERE source_id=?1",
+        [source_id],
+        |r| r.get::<_, i64>(0),
+    )?;
+    Ok(json!({
+        "source": source,
+        "grants": grants,
+        "accepted_page_watermark": accepted_pages,
+        "source_model_route": route_fingerprint(db, "ing_model_routes", source_id)?,
+        "source_vector_route": route_fingerprint(db, "ing_vector_routes", source_id)?,
+    }))
+}
+
+fn source_exists(db: &Connection, source_id: &str) -> Result<bool> {
+    Ok(db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM ing_sources WHERE source_id=?1)",
+        [source_id],
+        |r| r.get(0),
+    )?)
+}
+
+fn client_exists(db: &Connection, client_id: &str) -> Result<bool> {
+    Ok(db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM context_clients WHERE id=?1)",
+        [client_id],
+        |r| r.get(0),
+    )?)
+}
+
+fn grant_active(db: &Connection, source_id: &str, purpose: &str) -> Result<bool> {
+    Ok(db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM ing_grants WHERE source_id=?1 AND purpose=?2 AND active=1)",
+        params![source_id, purpose],
+        |r| r.get(0),
+    )?)
+}
+
+fn route_fingerprint(db: &Connection, table: &str, source_id: &str) -> Result<Option<String>> {
+    Ok(db
+        .query_row(
+            &format!("SELECT fingerprint FROM {table} WHERE source_id=?1"),
+            [source_id],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
 pub fn operate(
     db: &mut Connection,
     preview: bool,
@@ -354,13 +587,7 @@ fn operate_committed(
             };
         }
     }
-    let footprint = match kind {
-        "change_grant" => json!({"clients":context::clients(db)?,"tasks":context::tasks(db)?,"sources":ingestion::list(db,None)?,
-            "operations":db.query_row("SELECT COUNT(*) FROM governance_operations", [], |r|r.get::<_,i64>(0))?,
-            "model_route":if matches!(command["purpose"].as_str(),Some("extract"|"embed")) { model_route } else { None }}),
-        "stop_capture" | "resume_capture" | "forget" => json!({"sources":ingestion::list(db,None)?,"statements":authority::current(db,None,None,None,false)?["change_seq"]}),
-        _ => return Err(Error::missing("governance action is unavailable")),
-    }.to_string();
+    let footprint = preview_footprint(db, kind, &command, model_route)?.to_string();
     if preview {
         let id = Uuid::new_v4().to_string();
         db.execute(
