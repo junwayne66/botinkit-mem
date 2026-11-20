@@ -1,0 +1,51 @@
+{
+  "claude-code": {
+    "session_start": {
+      "hook_event_name": "SessionStart",
+      "session_id": "claude-session-fixture",
+      "source": "startup",
+      "cwd": "/workspace/fixture"
+    },
+    "user_prompt": {
+      "hook_event_name": "UserPromptSubmit",
+      "session_id": "claude-session-fixture",
+      "prompt_id": "claude-turn-fixture",
+      "prompt": "I plan to retest import.",
+      "cwd": "/workspace/fixture"
+    },
+    "tool_result": {
+      "hook_event_name": "PostToolUse",
+      "session_id": "claude-session-fixture",
+      "prompt_id": "claude-turn-fixture",
+      "tool_use_id": "claude-shell-fixture",
+      "tool_name": "Bash",
+      "tool_input": {"command": "printf BMEM-SYNTHETIC-RECEIPT"},
+      "tool_response": {"stdout": "BMEM-SYNTHETIC-RECEIPT", "stderr": "", "interrupted": false}
+    }
+  },
+  "codex": {
+    "session_start": {
+      "hook_event_name": "SessionStart",
+      "session_id": "codex-session-fixture",
+      "source": "startup",
+      "model": "example-codex",
+      "cwd": "/workspace/fixture"
+    },
+    "user_prompt": {
+      "hook_event_name": "UserPromptSubmit",
+      "session_id": "codex-session-fixture",
+      "turn_id": "codex-turn-fixture",
+      "prompt": "I plan to retest import.",
+      "cwd": "/workspace/fixture"
+    },
+    "tool_result": {
+      "hook_event_name": "PostToolUse",
+      "session_id": "codex-session-fixture",
+      "turn_id": "codex-turn-fixture",
+      "tool_use_id": "codex-shell-fixture",
+      "tool_name": "Bash",
+      "tool_input": {"command": "printf BMEM-SYNTHETIC-RECEIPT"},
+      "tool_response": "BMEM-SYNTHETIC-RECEIPT"
+    }
+  }
+}

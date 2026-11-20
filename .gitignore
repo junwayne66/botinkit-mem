@@ -1,21 +1,46 @@
-.archify/
+# ---- Rust / Cargo ----
+/target/
+**/target/
+*.pdb
+
+# ---- Python（集成测试运行环境）----
 __pycache__/
-*.pyc
-.DS_Store
-node_modules/
-.hallmark/
-.venv/
-dist/
+*.py[cod]
 *.egg-info/
 .pytest_cache/
+.venv/
 .uvcache/
-.env*
+
+# ---- Node（浏览器测试运行环境）----
+node_modules/
+npm-debug.log*
+
+# ---- 本地数据与运行时产物 ----
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite3-shm
+*.sqlite3-wal
 /.botinkit-mem/
 /backups/
 /evidence/
 /runtime/
 /connections/
+/dist/
+
+# ---- 密钥与本地环境 ----
+.env
+.env.*
+!.env.example
+
+# ---- 操作系统 / 编辑器 ----
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ---- 本地工具生成产物（按需保留目录本身的忽略规则）----
+.archify/
+.hallmark/
 /docs/assets/ui-refs/

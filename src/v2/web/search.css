@@ -1,0 +1,39 @@
+.ms-dialog {
+  width: min(660px, calc(100% - 28px)); max-width: none; max-height: min(78dvh, 720px);
+  inset: max(18px, 10dvh) 0 auto; margin: 0 auto; padding: 0; border-radius: 16px;
+  border: 1px solid var(--border); color: var(--text); background: var(--surface);
+  box-shadow: 0 22px 65px #0009; overflow: hidden;
+}
+.ms-dialog::backdrop { background: #030710bb; }
+.ms-dialog[open] { animation: ms-enter .16s ease-out; }
+.ms-panel { display: flex; flex-direction: column; max-height: inherit; padding: clamp(16px, 4vw, 25px); gap: 13px; }
+.ms-heading, .ms-form, .ms-hit-head, .ms-modes { display: flex; align-items: center; gap: 9px; }
+.ms-heading { justify-content: space-between; }
+.ms-heading h2 { font-size: 1.25rem; }
+.ms-close, .ms-modes button {
+  min-height: 40px; padding: 3px 12px; border: 1px solid transparent; border-radius: 7px;
+  font: inherit; font-size: .84rem; color: var(--muted); background: transparent;
+}
+.ms-close:hover, .ms-modes button:hover { background: var(--surface-2); color: var(--text); }
+.ms-form input {
+  min-width: 0; flex: 1; min-height: 44px; padding: 9px 12px; margin: 0;
+  border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 16px;
+  color: var(--text); background: var(--bg); caret-color: var(--accent);
+}
+.ms-modes { gap: 4px; align-self: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+.ms-modes button[aria-pressed="true"] { color: var(--accent); background: var(--ok-bg); border-color: var(--border); }
+#ms-status, .ms-hit small { font-size: .83rem; color: var(--muted); overflow-wrap: anywhere; }
+#ms-results { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+#ms-results:empty { display: none; }
+.ms-hit { display: grid; gap: 7px; padding: 12px 3px; border-top: 1px solid var(--divider); }
+.ms-hit-head { flex-wrap: wrap; }
+.ms-hit-head strong { overflow-wrap: anywhere; font-size: .94rem; }
+.ms-hit-head button { margin-left: auto; }
+.ms-value { color: var(--text); overflow-wrap: anywhere; }
+.ms-original { max-height: 45dvh; overflow: auto; padding: 12px; margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+@keyframes ms-enter { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
+@media (max-width: 600px) {
+  .ms-dialog { inset-block-start: max(12px, env(safe-area-inset-top)); max-height: calc(100dvh - 24px); }
+  .ms-close, .ms-modes button, .ms-dialog .btn { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .ms-dialog[open] { animation: none; } }

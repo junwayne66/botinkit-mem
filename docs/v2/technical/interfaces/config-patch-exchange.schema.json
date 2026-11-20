@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bmem:v2:config-patch:exchange",
+  "title": "config.patch request and HTTP 200 receipt",
+  "type": "object",
+  "required": ["request", "response"],
+  "additionalProperties": false,
+  "properties": {
+    "request": { "$ref": "urn:bmem:v2:config-patch:input" },
+    "response": { "$ref": "urn:bmem:v2:config-patch:output" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "request": { "properties": { "patch": { "required": ["models"] } } } } },
+      "then": { "properties": { "response": { "required": ["model_result"] } } },
+      "else": { "properties": { "response": { "not": { "required": ["model_result"] } } } }
+    },
+    {
+      "if": { "properties": { "request": { "properties": { "patch": { "required": ["bindings"] } } } } },
+      "then": { "properties": { "response": { "required": ["bindings"] } } },
+      "else": { "properties": { "response": { "not": { "required": ["bindings"] } } } }
+    },
+    {
+      "if": { "properties": { "request": { "properties": { "patch": { "required": ["connectors"] } } } } },
+      "then": { "properties": { "response": { "required": ["connector_result"] } } },
+      "else": { "properties": { "response": { "not": { "required": ["connector_result"] } } } }
+    }
+  ]
+}

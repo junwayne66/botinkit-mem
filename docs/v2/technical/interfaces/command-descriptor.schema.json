@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "bmem V2 command descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "command_id", "contract_version", "kind", "stage", "cli", "web", "http",
+    "input_schema", "output_schema", "authority", "concurrency", "handler"
+  ],
+  "properties": {
+    "command_id": { "$ref": "#/$defs/commandId" },
+    "contract_version": { "type": "integer", "minimum": 1 },
+    "kind": { "enum": ["query", "action", "workflow", "local"] },
+    "stage": { "enum": ["P0", "P1", "P2"] },
+    "cli": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/text" } },
+    "web": { "oneOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+    "http": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "path"],
+          "properties": {
+            "method": { "enum": ["GET", "POST", "PATCH", "PUT", "DELETE"] },
+            "path": { "type": "string", "pattern": "^/v2/" },
+            "selector": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } }
+          }
+        }
+      ]
+    },
+    "input_schema": { "$ref": "#/$defs/payloadSchema" },
+    "output_schema": { "$ref": "#/$defs/payloadSchema" },
+    "authority": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "enum": ["owner", "bound_client", "source_adapter", "verifier", "local_user"] }
+    },
+    "concurrency": { "enum": ["read", "idempotent", "compare_revision", "preview_commit", "per_step", "platform"] },
+    "handler": { "$ref": "#/$defs/text" },
+    "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/commandId" } }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": { "enum": ["action", "workflow"] },
+          "authority": { "contains": { "const": "owner" } }
+        }
+      },
+      "then": {
+        "properties": { "cli": { "minItems": 1 }, "web": { "$ref": "#/$defs/text" } }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "workflow" } } },
+      "then": {
+        "required": ["steps"],
+        "properties": { "http": { "type": "null" }, "concurrency": { "const": "per_step" } }
+      },
+      "else": { "not": { "required": ["steps"] } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "local" } } },
+      "then": { "properties": { "http": { "type": "null" }, "concurrency": { "const": "platform" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "enum": ["query", "action"] } } },
+      "then": { "properties": { "http": { "type": "object" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "query" } } },
+      "then": { "properties": { "concurrency": { "const": "read" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "action" } } },
+      "then": {
+        "properties": {
+          "concurrency": { "enum": ["idempotent", "compare_revision", "preview_commit"] },
+          "http": { "properties": { "method": { "enum": ["POST", "PATCH", "PUT", "DELETE"] } } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "text": { "type": "string", "minLength": 1 },
+    "commandId": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$" },
+    "payloadSchema": { "$ref": "https://json-schema.org/draft/2020-12/schema", "type": "object" }
+  }
+}

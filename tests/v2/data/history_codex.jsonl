@@ -1,0 +1,4 @@
+{"timestamp":"2026-11-19T13:00:00Z","type":"session_meta","payload":{"id":"history-fixture"}}
+{"timestamp":"2026-11-19T13:00:01Z","type":"event_msg","payload":{"type":"user_message","turn_id":"turn-history","message":"准备检查合成来源的历史续读。"}}
+{"timestamp":"2026-11-19T13:00:01Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"This metadata is not evidence."}]}}
+{"timestamp":"2026-11-19T13:00:03Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-history","output":"Historical fixture returned 200."}}

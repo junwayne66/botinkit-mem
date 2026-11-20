@@ -1,0 +1,230 @@
+{
+  "excluded": {
+    "abstention": 30
+  },
+  "groups": {
+    "all": {
+      "bmem_session": {
+        "all5": 374,
+        "feasible_all5": 467,
+        "hit1": 395,
+        "hit5": 447,
+        "n": 470
+      },
+      "bmem_turn": {
+        "all5": 377,
+        "feasible_all5": 467,
+        "hit1": 395,
+        "hit5": 444,
+        "n": 470
+      },
+      "raw_session": {
+        "all5": 392,
+        "feasible_all5": 467,
+        "hit1": 408,
+        "hit5": 458,
+        "n": 470
+      },
+      "recent": {
+        "all5": 27,
+        "feasible_all5": 467,
+        "hit1": 21,
+        "hit5": 112,
+        "n": 470
+      }
+    },
+    "knowledge-update": {
+      "bmem_session": {
+        "all5": 68,
+        "feasible_all5": 72,
+        "hit1": 67,
+        "hit5": 71,
+        "n": 72
+      },
+      "bmem_turn": {
+        "all5": 69,
+        "feasible_all5": 72,
+        "hit1": 70,
+        "hit5": 72,
+        "n": 72
+      },
+      "raw_session": {
+        "all5": 70,
+        "feasible_all5": 72,
+        "hit1": 68,
+        "hit5": 72,
+        "n": 72
+      },
+      "recent": {
+        "all5": 1,
+        "feasible_all5": 72,
+        "hit1": 7,
+        "hit5": 31,
+        "n": 72
+      }
+    },
+    "multi-session": {
+      "bmem_session": {
+        "all5": 71,
+        "feasible_all5": 121,
+        "hit1": 101,
+        "hit5": 116,
+        "n": 121
+      },
+      "bmem_turn": {
+        "all5": 74,
+        "feasible_all5": 121,
+        "hit1": 95,
+        "hit5": 115,
+        "n": 121
+      },
+      "raw_session": {
+        "all5": 77,
+        "feasible_all5": 121,
+        "hit1": 105,
+        "hit5": 118,
+        "n": 121
+      },
+      "recent": {
+        "all5": 1,
+        "feasible_all5": 121,
+        "hit1": 3,
+        "hit5": 37,
+        "n": 121
+      }
+    },
+    "single-session-assistant": {
+      "bmem_session": {
+        "all5": 56,
+        "feasible_all5": 56,
+        "hit1": 56,
+        "hit5": 56,
+        "n": 56
+      },
+      "bmem_turn": {
+        "all5": 56,
+        "feasible_all5": 56,
+        "hit1": 55,
+        "hit5": 56,
+        "n": 56
+      },
+      "raw_session": {
+        "all5": 56,
+        "feasible_all5": 56,
+        "hit1": 56,
+        "hit5": 56,
+        "n": 56
+      },
+      "recent": {
+        "all5": 8,
+        "feasible_all5": 56,
+        "hit1": 1,
+        "hit5": 8,
+        "n": 56
+      }
+    },
+    "single-session-preference": {
+      "bmem_session": {
+        "all5": 21,
+        "feasible_all5": 30,
+        "hit1": 11,
+        "hit5": 21,
+        "n": 30
+      },
+      "bmem_turn": {
+        "all5": 20,
+        "feasible_all5": 30,
+        "hit1": 9,
+        "hit5": 20,
+        "n": 30
+      },
+      "raw_session": {
+        "all5": 26,
+        "feasible_all5": 30,
+        "hit1": 15,
+        "hit5": 26,
+        "n": 30
+      },
+      "recent": {
+        "all5": 4,
+        "feasible_all5": 30,
+        "hit1": 3,
+        "hit5": 4,
+        "n": 30
+      }
+    },
+    "single-session-user": {
+      "bmem_session": {
+        "all5": 64,
+        "feasible_all5": 64,
+        "hit1": 58,
+        "hit5": 64,
+        "n": 64
+      },
+      "bmem_turn": {
+        "all5": 64,
+        "feasible_all5": 64,
+        "hit1": 61,
+        "hit5": 64,
+        "n": 64
+      },
+      "raw_session": {
+        "all5": 63,
+        "feasible_all5": 64,
+        "hit1": 61,
+        "hit5": 63,
+        "n": 64
+      },
+      "recent": {
+        "all5": 9,
+        "feasible_all5": 64,
+        "hit1": 3,
+        "hit5": 9,
+        "n": 64
+      }
+    },
+    "temporal-reasoning": {
+      "bmem_session": {
+        "all5": 94,
+        "feasible_all5": 124,
+        "hit1": 102,
+        "hit5": 119,
+        "n": 127
+      },
+      "bmem_turn": {
+        "all5": 94,
+        "feasible_all5": 124,
+        "hit1": 105,
+        "hit5": 117,
+        "n": 127
+      },
+      "raw_session": {
+        "all5": 100,
+        "feasible_all5": 124,
+        "hit1": 103,
+        "hit5": 123,
+        "n": 127
+      },
+      "recent": {
+        "all5": 4,
+        "feasible_all5": 124,
+        "hit1": 4,
+        "hit5": 23,
+        "n": 127
+      }
+    }
+  },
+  "input": 500,
+  "paired_all5": {
+    "session=0,turn=0": 78,
+    "session=0,turn=1": 18,
+    "session=1,turn=0": 15,
+    "session=1,turn=1": 359
+  },
+  "winning_turns": {
+    "all_gold_sessions_in_top5": 369,
+    "all_winning_turns_marked": 203,
+    "any_winning_turn_marked": 317,
+    "n": 438
+  }
+}

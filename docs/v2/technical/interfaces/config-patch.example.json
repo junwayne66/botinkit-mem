@@ -1,0 +1,171 @@
+{
+  "command_id": "config.patch",
+  "contract_version": 1,
+  "kind": "action",
+  "stage": "P0",
+  "cli": [
+    "bmem config set <key> <value>",
+    "bmem model add <name>",
+    "bmem model configure <name>",
+    "bmem model remove <name>",
+    "bmem model use <name> --for <purpose>",
+    "bmem model unbind --for <purpose>"
+  ],
+  "web": "设置 / 保存",
+  "http": { "method": "PATCH", "path": "/v2/config" },
+  "input_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:bmem:v2:config-patch:input",
+    "type": "object", "additionalProperties": false,
+    "required": ["expected_revision", "patch"],
+    "properties": {
+      "expected_revision": { "type": "integer", "minimum": 0 },
+      "patch": {
+        "type": "object", "minProperties": 1, "additionalProperties": false,
+        "properties": {
+          "profile": { "enum": ["data", "balanced", "high"] },
+          "vector_search": {
+            "type": "object", "additionalProperties": false, "required": ["enabled"],
+            "properties": { "enabled": { "type": "boolean" } }
+          },
+          "models": {
+            "oneOf": [
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["op", "name", "protocol", "endpoint", "model_id"],
+                "not": { "required": ["api_key", "credential_ref"] },
+                "properties": {
+                  "op": { "const": "add" }, "name": { "$ref": "#/$defs/text" },
+                  "protocol": { "$ref": "#/$defs/protocol" }, "endpoint": { "$ref": "#/$defs/endpoint" },
+                  "model_id": { "$ref": "#/$defs/text" }, "credential_ref": { "$ref": "#/$defs/credential" },
+                  "api_key": { "$ref": "#/$defs/modelApiKey" }
+                }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["op", "id", "changes"],
+                "properties": {
+                  "op": { "const": "update" }, "id": { "$ref": "#/$defs/id" },
+                  "changes": {
+                    "type": "object", "minProperties": 1, "additionalProperties": false,
+                    "not": { "required": ["api_key", "credential_ref"] },
+                    "properties": {
+                      "name": { "$ref": "#/$defs/text" }, "protocol": { "$ref": "#/$defs/protocol" },
+                      "endpoint": { "$ref": "#/$defs/endpoint" }, "model_id": { "$ref": "#/$defs/text" },
+                      "credential_ref": { "$ref": "#/$defs/credential" },
+                      "api_key": { "$ref": "#/$defs/modelApiKey" }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["op", "id"],
+                "properties": { "op": { "const": "remove" }, "id": { "$ref": "#/$defs/id" } }
+              }
+            ]
+          },
+          "bindings": {
+            "type": "object", "minProperties": 1, "additionalProperties": false,
+            "properties": {
+              "extract": { "$ref": "#/$defs/idOrNull" },
+              "embed": { "$ref": "#/$defs/idOrNull" }
+            }
+          },
+          "connectors": {
+            "type": "object", "additionalProperties": false, "required": ["source_id", "settings"],
+            "properties": {
+              "source_id": { "$ref": "#/$defs/id" },
+              "settings": {
+                "type": "object", "minProperties": 1, "additionalProperties": false,
+                "properties": {
+                  "display_name": { "$ref": "#/$defs/text" },
+                  "page_size": { "type": ["integer", "null"], "minimum": 1 },
+                  "credential_ref": { "$ref": "#/$defs/credential" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "$defs": {
+      "text": { "type": "string", "minLength": 1, "pattern": "\\S" },
+      "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+      "idOrNull": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+      "protocol": { "enum": ["openai_chat", "anthropic_messages", "openai_embeddings", "ollama"] },
+      "endpoint": { "type": "string", "format": "uri", "pattern": "^https?://[^/?#@\\s]+(?:/[^?#\\s]*)?$" },
+      "modelApiKey": {
+        "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[!-~]{1,8192}$" }],
+        "writeOnly": true
+      },
+      "credential": {
+        "oneOf": [
+          { "type": "null" },
+          {
+            "type": "object", "additionalProperties": false, "required": ["backend", "id"],
+            "properties": { "backend": { "const": "system" }, "id": { "type": "string", "pattern": "^cred_[A-Za-z0-9_-]+$" } }
+          },
+          {
+            "type": "object", "additionalProperties": false, "required": ["backend", "name"],
+            "properties": { "backend": { "const": "env" }, "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" } }
+          }
+        ]
+      }
+    }
+  },
+  "output_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:bmem:v2:config-patch:output",
+    "type": "object", "additionalProperties": false, "required": ["config_revision", "profile", "vector_search"],
+    "properties": {
+      "config_revision": { "type": "integer", "minimum": 1 },
+      "profile": { "enum": ["data", "balanced", "high"] },
+      "vector_search": {
+        "type": "object", "additionalProperties": false, "required": ["enabled"],
+        "properties": { "enabled": { "type": "boolean" } }
+      },
+      "model_result": {
+        "oneOf": [
+          {
+            "type": "object", "additionalProperties": false, "required": ["op", "id", "name", "protocol", "endpoint", "model_id", "credential_configured"],
+            "properties": {
+              "op": { "enum": ["add", "update"] }, "id": { "$ref": "#/$defs/id" }, "name": { "type": "string", "minLength": 1 },
+              "protocol": { "enum": ["openai_chat", "anthropic_messages", "openai_embeddings", "ollama"] },
+              "endpoint": { "type": "string", "format": "uri", "pattern": "^https?://[^/?#@\\s]+(?:/[^?#\\s]*)?$" },
+              "model_id": { "type": "string", "minLength": 1 }, "credential_configured": { "type": "boolean" }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false, "required": ["op", "id"],
+            "properties": { "op": { "const": "remove" }, "id": { "$ref": "#/$defs/id" } }
+          }
+        ]
+      },
+      "bindings": {
+        "type": "object", "additionalProperties": false, "required": ["extract", "embed"],
+        "properties": { "extract": { "$ref": "#/$defs/idOrNull" }, "embed": { "$ref": "#/$defs/idOrNull" } }
+      },
+      "connector_result": {
+        "type": "object", "additionalProperties": false, "required": ["source_id", "display_name", "credential_configured"],
+        "properties": {
+          "source_id": { "$ref": "#/$defs/id" }, "display_name": { "type": "string", "minLength": 1 },
+          "page_size": { "type": ["integer", "null"], "minimum": 1 }, "credential_configured": { "type": "boolean" }
+        }
+      },
+      "activity": {
+        "type": "object", "minProperties": 1, "additionalProperties": false,
+        "properties": {
+          "extract": { "enum": ["pending_model", "pending_test", "ready", "degraded"] },
+          "embed": { "enum": ["disabled", "pending_model", "pending_test", "local_model_required", "building", "ready", "degraded"] },
+          "repack": { "enum": ["idle", "pending", "running"] }
+        }
+      }
+    },
+    "$defs": {
+      "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+      "idOrNull": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] }
+    }
+  },
+  "authority": ["owner"],
+  "concurrency": "compare_revision",
+  "handler": "settings::patch"
+}

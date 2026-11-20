@@ -1,5 +1,21 @@
-# Generated architecture viewers contain bundled upstream code.
-docs/assets/overview.html linguist-generated=true -whitespace
-docs/assets/phase1-architecture.html linguist-generated=true -whitespace
-docs/assets/phase1-data-model.html linguist-generated=true -whitespace
-docs/assets/phase2-topology.html linguist-generated=true -whitespace
+# Normalize line endings: text files follow the repository convention,
+# shell scripts always use LF so they stay executable on macOS/Linux.
+* text=auto
+*.sh text eol=lf
+
+# Treat generated lockfiles and JSON fixtures as text for meaningful diffs.
+Cargo.lock text
+*.json text
+
+# Binary assets: never convert line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary

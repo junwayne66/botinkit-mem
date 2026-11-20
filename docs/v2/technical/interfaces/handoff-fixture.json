@@ -1,0 +1,51 @@
+{
+  "fixture_version": 1,
+  "case_id": "creek-handoff",
+  "initial": {
+    "profile": "balanced",
+    "vector_search": { "enabled": false },
+    "project": "溪桥",
+    "task_anchor": "import-fixture@3",
+    "other_task_anchor": "import-fixture@4",
+    "routes": {
+      "writer": ["share_statement", "read_statement_original", "read_task", "expand_task"],
+      "reader": ["share_statement", "read_task", "expand_task"],
+      "restricted": ["share_statement"]
+    }
+  },
+  "inputs": [
+    {
+      "label": "declare_initial", "kind": "owner_statement", "scope": "global",
+      "text": "所有助手的报告用中文，先列行动项。"
+    },
+    {
+      "label": "declare_correct", "kind": "owner_statement", "scope": "global",
+      "text": "以后报告先写结论。"
+    },
+    {
+      "label": "plan", "kind": "user_message", "native_object": "m8", "version": "1",
+      "at": "2026-11-19T10:00:00+08:00", "task_anchor": "import-fixture@3",
+      "text": "准备复验解析与入库。"
+    },
+    {
+      "label": "run", "kind": "tool_result", "native_object": "r9", "version": "1",
+      "at": "2026-11-19T10:02:00+08:00", "task_anchor": "import-fixture@3",
+      "checks": { "parse": "passed", "write": "timeout" }
+    },
+    {
+      "label": "control", "kind": "tool_result", "native_object": "r10", "version": "1",
+      "at": "2026-11-19T10:03:00+08:00", "task_anchor": "import-fixture@4",
+      "checks": { "write": "passed" }
+    }
+  ],
+  "expectations": [
+    { "at": "after_correction", "route": "reader", "unchanged": ["report.language"], "replaced": ["report.opening"], "values": { "report.language": "zh", "report.opening": "conclusion" }, "may_read_statement_original": false },
+    { "at": "after_page_replay", "input": ["plan", "run", "control"], "new_versions_on_replay": 0, "new_jobs_on_replay": 0, "cursor_unchanged": true },
+    { "at": "after_extraction", "route": "reader", "task_anchor": "import-fixture@3", "support": { "planned": ["plan"], "parse.passed": ["run"], "write.timeout": ["run"] }, "exclude": ["control"], "forbid_claims": ["write.passed"] },
+    { "at": "after_extraction", "route": "restricted", "task_items": 0, "evidence_handles": 0 },
+    { "at": "after_provided_only", "delivery": "reader_handoff", "observed": ["provided"], "unobserved": ["loaded", "used", "passed"] },
+    { "at": "after_revoke_run", "revoked": ["run"], "old_handle": "not_available", "old_handle_http_status": 404, "still_readable": ["plan", "control"] },
+    { "at": "restore_old_archive_only", "normal_reads_enabled": false },
+    { "at": "restore_with_current_revocations", "route": "reader", "forbid": ["run"], "still_readable": ["plan", "control"] }
+  ]
+}

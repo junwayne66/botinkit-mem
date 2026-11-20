@@ -1,0 +1,6 @@
+{
+  "command": "printf BMEM-SYNTHETIC-RECEIPT",
+  "receipt": "BMEM-SYNTHETIC-RECEIPT",
+  "finished": "Synthetic run complete.",
+  "prompt": "Synthetic bmem native hook test. Use the tool to print the fixed synthetic receipt and then answer OK."
+}

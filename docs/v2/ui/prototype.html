@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Botinkit Memory · 当前声明</title>
+  <link rel="stylesheet" href="prototype.css">
+  <script defer src="prototype.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到主内容</a>
+<div class="shell">
+  <header class="rail">
+    <div class="brand"><span aria-hidden="true" class="logo"></span>Botinkit Memory</div>
+    <p class="rail-title">个人记忆工作台</p>
+    <button type="button" id="menu" aria-expanded="false" aria-controls="navigation">展开导航</button>
+    <nav id="navigation" aria-label="工作台页面">
+      <a href="#statements">当前声明</a><a href="#receipts">装入回执</a><a href="#handoff">任务接手</a>
+      <span class="nav-section">资料管理</span><a href="#sources">来源与用途</a><a href="#governance">撤回与恢复</a><span class="nav-section">扩展设计预览</span><a href="#evaluation">评测与发布</a>
+    </nav>
+    <div class="rail-foot"><strong>离线演示</strong><span>虚构样本 · 刷新复位</span></div>
+  </header>
+  <main id="main" tabindex="-1"><div class="screenbar"><span>离线设计原型</span><span>本机管理台 · 所有者</span></div>
+    <div id="view"></div>
+    <footer><span>演示操作仅作用于当前页面</span><button type="button" data-action="reset">从空白声明开始</button></footer>
+  </main>
+</div>
+<div id="status" role="status" aria-live="polite" aria-atomic="true"></div>
+<dialog id="dialog" aria-labelledby="dialog-title"><div id="dialog-body"></div></dialog>
+<noscript>请启用 JavaScript 体验离线交互；完整流程可阅读同目录的 README.md。</noscript>
+</body>
+</html>

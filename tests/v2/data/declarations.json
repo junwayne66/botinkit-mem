@@ -1,0 +1,11 @@
+{
+  "initial": "所有助手的报告用中文，先列行动项",
+  "correction": "以后报告先写结论",
+  "project_override": "以后报告先列行动项",
+  "project_id": "creek",
+  "language_key": "report.language",
+  "opening_key": "report.opening",
+  "language": "zh",
+  "initial_opening": "actions",
+  "corrected_opening": "conclusion"
+}

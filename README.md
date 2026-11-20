@@ -1,373 +1,210 @@
-# botinkit-mem · 统一个人记忆中心
+# Botinkit Memory
 
-一个在本机运行的个人长期记忆服务，让 Claude Code、Codex、DeepSeek Harness（下文简称 DSH）等编码工具共用同一份记忆。系统集中保存要求、决定与验证过的经验，其他工具通过自动召回或主动检索取用。事实纠正带有版本和来源，供后续召回使用。
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](src/v2/bmem/Cargo.toml)
+[![Status](https://img.shields.io/badge/status-P0%20%E5%8F%AF%E7%94%A8%2F%E5%8F%91%E5%B8%83%E9%AA%8C%E8%AF%81%E4%B8%AD-yellow.svg)](specs/004-bmem-v2/validation.md)
 
-## 用途与设计要点
+> 面向个人工作站的本地长期记忆服务。一个原生程序 `bmem`，同时提供命令行与 Web 工作台，让 Codex、Claude Code、DeepSeek Harness（DSH）等编码助手与已授权的飞书账号共享同一份可追溯、可撤回、可恢复的个人记忆。
 
-| 设计要点 | 内容 |
+Botinkit Memory 在本机用户目录（默认 `~/.bmem`）维护一份个人记忆库：它从各助手的会话与工具回执中采集资料，对**明确获准**的内容调用你自己配置的模型提炼为带原文出处的记忆，并在后续任务中把当前声明与相关证据投递给获准助手。所有数据默认留在本机，外发范围逐项授权、可预览、可撤回。
+
+## 功能特性
+
+- **单一原生程序**：Rust 编写，CLI、本地 HTTP 服务、后台 worker 与内嵌 Web 工作台编译为同一个可执行文件，无外部运行时依赖（SQLite 经 rusqlite bundled 静态编入）。
+- **本人声明与跨助手装入**：用自然语言追加或纠正偏好声明，获准助手在下一次可控调用中即可拿到新值，不依赖模型停机或索引重建；逐维度保留修订历史与原话证据。
+- **自动提炼、出处可查**：普通对话和工具回执经获准模型提炼为记忆候选，自动裁决或人工确认，每条记忆都可回查原文片段与来源。
+- **多来源采集**：支持 Codex、Claude Code、DSH 会话文件（Hook / MCP / 插件接入）以及经官方 `lark-cli` 授权的飞书会话，带持久游标断点续传。
+- **权限分级与隐私治理**：采集、模型提炼、向量嵌入按来源 × 用途分别授权；模型接收端变更需重新确认；支持来源暂停、单条/来源级撤回（`bmem forget`）与隔离恢复。
+- **词法检索 + 可选向量检索**：默认启用 SQLite FTS5 词法检索，向量相似检索默认关闭，显式开启后可接服务器 Embedding API 或本机 Ollama（如 `bge-m3`）。
+- **三档压缩与备份恢复**：`data` / `balanced` / `high` 三档同时作用于磁盘编码与模型上下文；支持受管备份（`bmem backup`）与恢复预览校验。
+- **仅监听回环地址**：服务只绑定 `127.0.0.1`，浏览器访问带本地会话授权，密钥仅存引用、不落明文日志。
+
+## 技术栈
+
+| 层 | 技术 |
 |---|---|
-| 记忆统一存储 | 记忆不按项目、角色或工具分区，项目与设备作为来源标签和相关性线索 |
-| 权威与派生分离 | 事件、事实、版本和来源是权威数据，全文与向量索引可以随时重建 |
-| 先落盘后调模型 | 模型不可用时，声明、存储和关键词检索照常工作 |
-| 双通路接入 | Hooks 或原生插件负责自动召回与采集，MCP 工具提供主动检索、保存、纠正和遗忘 |
-| 纠正可追踪 | 事实带版本、来源和适用条件，带事实键的声明可以确定地更新当前事实 |
-| 单人本机部署 | 第一期使用本机 SQLite，服务只监听回环地址，面向单个用户的工作站 |
-
-## 架构总览
-
-![botinkit-mem 架构总览](docs/assets/overview.png)
-
-[交互版架构图（可缩放，支持明暗主题）](docs/assets/overview.html)
-
-| 组件 | 职责 |
-|---|---|
-| `bmemd` | 常驻后台的记忆服务，提供 HTTP API、MCP 端点、后台提炼和管理界面 |
-| SQLite 主库 | 保存事件、记忆、版本、来源与仲裁记录，使用 WAL 模式 |
-| 证据目录 | 按内容哈希保存会话原文与导入到的原始证据 |
-| 模型端点 | 本机托管的 Ollama 运行时，提供 bge-m3 向量化和 qwen3:4b-instruct-2507-q4_K_M 提炼模型 |
-
-## 环境要求
-
-- Python 3.12 及以上
-- 包管理工具 [uv](https://docs.astral.sh/uv/)
-- 首次安装依赖、运行时和模型需要联网
-- macOS 为主要验证平台，Linux systemd 服务已有实现但实机覆盖仍待补充验证，Windows 暂未提供系统服务支持
-
-在 macOS 或 Linux 的终端中安装 uv。
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-也可以使用 [uv 官方安装文档](https://docs.astral.sh/uv/getting-started/installation/) 中的其他方法。安装后重新打开终端，必要时执行 `uv python install 3.12`。
-
-## 获取源码与安装
-
-克隆仓库，在项目根目录安装。
-
-```bash
-git clone https://github.com/junwayne66/botinkit-mem.git
-cd botinkit-mem
-
-# 安装为本机工具
-uv tool install --python 3.12 .
-bmem --version
-```
-
-如果 `bmem` 不在 PATH 中，执行 `uv tool update-shell` 并重新打开终端。当前通过源码运行和本地构建的 wheel 分发。
-
-安装为本机工具后，下文命令可直接使用 `bmem`。开发环境在项目根目录执行 `uv sync --locked --extra dev`，并通过 `uv run bmem` 运行当前源码。
+| 核心程序 | Rust 2024 edition，单 Cargo 包、按领域拆分的 20 个模块 |
+| 服务与接口 | axum（回环 HTTP）、clap（CLI）、rmcp（MCP 服务端） |
+| 存储 | SQLite（WAL 模式 + FTS5，rusqlite bundled）、zstd 压缩 |
+| 模型访问 | reqwest（rustls），兼容 OpenAI 风格服务器 API 与本机 Ollama |
+| Web 工作台 | 原生 HTML / CSS / JavaScript，编译期 `include_str!` 内嵌，无前端构建步骤 |
+| 集成测试 | Python 3 `unittest`（端到端 CLI/HTTP）、Node.js（真实浏览器 Playwright 用例） |
 
 ## 快速开始
 
-### 初始化
+### 环境要求
 
-```bash
-bmem init
+- 稳定版 Rust 工具链（stable，含 Cargo）与本机 C 工具链（编译 rusqlite bundled 需要）
+- 运行集成测试另需 Python 3.10+、Node.js 18+
+- 模型为可选项：任意 OpenAI 兼容 API，或本机 [Ollama](https://ollama.com/)
+
+### 从源码构建安装
+
+```sh
+# 从仓库根目录执行
+cargo install --locked --path src/v2/bmem --force
+
+# 确认命令指向 V2（应输出 bmem 0.2.x）
+bmem --version
+command -v bmem          # macOS / Linux；Windows PowerShell 用 Get-Command bmem
 ```
 
-`init` 会创建数据目录与数据库，安装托管的 Ollama 运行时和两个默认模型，注册当前用户的 macOS launchd 或 Linux systemd 服务并尝试加载。两个模型合计约 3.65GB，另需运行时体积。模型未就绪时声明、关键词检索和管理台仍可使用，后台提炼失败的任务会保留并等待重试。
+确保 Cargo 的可执行文件目录（通常为 `~/.cargo/bin`）在 `PATH` 中。
 
-- `--skip-models` 跳过运行时与模型安装
-- `--skip-service` 跳过系统服务注册
+### 初始化与启动工作台
 
-两个开关独立生效。仅指定 `--skip-models` 时仍会执行服务注册，纯数据初始化可同时使用两个开关。
-
-服务是否真正可用以 `init` 输出的 `registered`、`loaded`、`active` 字段，以及 `bmem doctor`、`bmem status` 的检查结果为准。设置隔离的 `BMEM_CONFIG_ROOT` 时只写入服务定义文件并跳过加载。
-
-初始化完成后，继续执行 `connect` 与 `import` 接入 Harness 并导入历史。
-
-### 检查状态
-
-```bash
-bmem doctor     # 检查服务、数据库、模型、运行时和已接入 Harness
-bmem status     # 服务可用时查询 API，否则读取本地状态
-bmem web        # 在浏览器打开管理台
-bmem backup     # 首次备份
+```sh
+bmem init                # 初始化本机工作区 ~/.bmem（脚本环境可加 --non-interactive）
+bmem web                 # 启动/复用回环服务并打开带授权的 Web 工作台
+bmem status              # 查看服务、数据库与模型状态
+bmem doctor              # 实例定位与配置诊断
 ```
 
-`bmem web` 只打开当前可用服务的地址，服务尚未启动时会提示先运行 `bmem start`。
+使用自定义数据根时，所有命令统一传入同一个绝对路径：`bmem --home /absolute/path/.bmem <command>`。
 
-### 独立演示环境
+### 三步接上记忆能力
 
-试验或调试时可以使用独立的数据目录和端口，避免改动日常数据。
+1. **接入来源**：在工作台「数据来源 → 添加集成」选择 Codex、Claude Code、DSH 或飞书，按引导登记 Hook / MCP / 插件；Codex 的新会话 Hook 还需在 Codex 内审阅并信任。
+2. **配置模型**：在「设置 → 模型服务」填写 Provider、`BASE_URL`、模型名与 API Key（本机 Ollama 可留空 Key），测试通过后绑定到「提炼」用途；需要语义检索时再绑定「嵌入」用途并开启向量开关。
+3. **授权并同步**：在来源卡片授予「自动提炼」权限（授权前可预览模型接收端），随后启用历史同步：
 
-```bash
-bmem --home /tmp/bmem-demo init --skip-models --skip-service
-bmem --home /tmp/bmem-demo start --port 18790
+```sh
+bmem connector list                  # 查看来源与 SOURCE_ID
+bmem connector sync SOURCE_ID       # 立即同步/回填，带持久游标可续跑
+bmem job list                        # 查看后台提炼作业
+bmem job candidates JOB_ID          # 展开候选记忆与原文引用
 ```
 
-服务保持前台常驻。另开终端使用相同的数据目录和服务地址。
+模型暂时不可用时，已受理事件仍在本地保存，提炼任务保留并在恢复后自动补提炼。
 
-```bash
-bmem --home /tmp/bmem-demo --url http://127.0.0.1:18790 declare "记忆中心使用SQLite" --fact-key storage.engine
-bmem --home /tmp/bmem-demo --url http://127.0.0.1:18790 search "SQLite"
+### 声明与检索
+
+```sh
+# 追加一条全局声明（偏好/事实），可指定共享范围与纠正对象
+bmem declare '所有助手的报告用中文，先列行动项' --share authorized_assistants
+
+# 词法检索（默认）；启用向量后可用 --mode vector
+bmem search '报告格式偏好'
+bmem search '季度复盘的数据源' --mode vector
 ```
 
-`bmem start` 默认监听 `127.0.0.1:8790`，可用 `--port` 或环境变量 `BMEM_PORT` 修改端口。数据目录默认是 `~/.botinkit-mem`，可用全局参数 `--home PATH` 或环境变量 `BMEM_HOME` 替换。选择已有服务时使用 `--url URL` 或环境变量 `BMEM_URL`。
+### 备份与撤回
 
-### 快速验证
-
-| 步骤 | 操作 | 预期结果 |
-|---|---|---|
-| 1 | 在终端执行 `bmem declare "记忆中心使用SQLite" --fact-key storage.engine` | 立即保存 T1 事实并返回记忆 ID |
-| 2 | 在已接入的 Claude Code 中询问“记忆中心用什么存储” | 自动召回 SQLite 相关事实及来源 |
-| 3 | 在终端执行 `bmem declare "改用SQLite WAL" --fact-key storage.engine` | 同一事实键被确定地更新为 WAL |
-| 4 | 在已接入的 Codex 中再次询问存储方案 | 得到更新后的口径 |
-
-## Harness 接入
-
-### 接入命令
-
-```bash
-bmem connect claude-code
-bmem connect codex
-bmem connect dsh
+```sh
+bmem backup create                          # 生成受管记忆库备份
+bmem restore preview BACKUP_ID              # 恢复前预览校验
+bmem forget --source SOURCE_ID --preview    # 预览来源级撤回
+bmem forget --source SOURCE_ID --confirm <PREVIEW_ID>
 ```
 
-`connect` 支持 `claude-code`、`codex`、`dsh`、`feishu` 和 `lark`。上面的三个 Harness 接入命令会修改对应工具的配置，并备份或保留原用户配置。接入后重启 Harness 或重新打开会话，使新配置生效。
+## 常用命令速览
 
-| Harness | 自动召回与采集 | MCP | 说明 |
-|---|---|---|---|
-| Claude Code | `SessionStart`、`UserPromptSubmit`、`Stop`、`SessionEnd` hooks | 是 | hooks 与 MCP 一起写入 `~/.claude` 相关配置 |
-| Codex | `UserPromptSubmit`、`Stop` hooks | 是 | 需要在 Codex 中原生信任批准，`doctor` 实测为 trusted 且 enabled 才显示 connected，否则为 partial |
-| DSH | 原生插件 `dsh_plugin.mjs`，prestep 召回与采集 | 是 | 插件随包分发并写入 DSH 配置 |
-
-### 自动与主动两条通路
-
-Hooks 与原生插件按各 Harness 的可用事件自动召回并采集内容，具体事件见适配表。MCP 端点提供下列工具，供模型在需要时主动调用。
-
-| MCP 工具 | 用途 |
+| 命令 | 用途 |
 |---|---|
-| `memory_recall` | 按当前任务组装受预算限制的记忆包 |
-| `memory_search` | 关键词与语义检索 |
-| `memory_expand` | 展开某条记忆的来源与原始证据 |
-| `memory_save` | 显式保存事实、决策或经验 |
-| `memory_declare` | 提交声明或纠正 |
-| `memory_forget` | 遗忘指定记忆并清理派生物 |
-| `memory_status` | 查询记忆库与导入状态 |
+| `bmem init` / `status` / `doctor` | 初始化、状态检查、故障诊断 |
+| `bmem web` / `bmem service run\|start\|stop\|status` | 工作台与后台常驻服务 |
+| `bmem config get\|set` | 读取/修改配置（压缩档位、向量开关等） |
+| `bmem model list\|add\|test\|use\|pull` | 模型登记、探针、用途绑定与本机拉取 |
+| `bmem connector list\|add\|sync\|pause\|resume` | 来源管理与历史同步 |
+| `bmem grant source ... --preview/--confirm` | 来源 × 用途授权（提炼/嵌入） |
+| `bmem declare` / `bmem statement` | 本人声明的追加、纠正与历史 |
+| `bmem search` / `bmem evidence` | 检索与原文证据回查 |
+| `bmem job` / `bmem task` / `bmem delivery` / `bmem operation` | 后台作业、任务接力与投递观察 |
+| `bmem backup` / `bmem restore` / `bmem forget` | 备份、恢复预览与撤回治理 |
+| `bmem capabilities` / `bmem mcp` / `bmem hook` | 能力目录、MCP 与宿主 Hook |
 
-MCP 端点地址为当前服务的 `/mcp`，例如 `http://127.0.0.1:8790/mcp`。接入状态以 `bmem doctor` 的实测结果为准。
+完整的 CLI ↔ Web ↔ HTTP 路由对照见[子命令与 Web 操作契约](docs/v2/technical/command-catalog.md)，所有命令支持 `bmem <组> --help` 与 `--json` 输出。
 
-## 飞书与 Lark 资料接入
+## 项目结构
 
-先启动 bmem 服务，再连接飞书或 Lark。连接使用官方 npm 包 `@larksuite/cli`，命令为 `lark-cli`。已有可用安装会被复用，缺失时由 bmem 托管安装固定版本 `1.0.100`，安装依赖 Node.js 16 及以上版本与 npm。
-
-系统复用匹配品牌的现有 profile，每次调用显式指定该 profile，新增命名 profile 时保留已有默认 profile，首次配置会创建首个 profile。需要配置应用或登录时，按官方浏览器 URL 或二维码完成操作，连接状态会检查用户身份与所选范围的只读权限。
-
-```bash
-bmem connect feishu                         # 首次交互选择历史范围
-bmem connect lark --no-history --no-wait     # 暂不读取历史，后台准备连接
-bmem connect feishu --sources private_chats,documents --sensitivity private --no-wait
-bmem feishu status                          # 查看安装、认证与同步状态
-bmem feishu sync --no-wait                   # 手动同步已保存的范围
-bmem connect lark --sources documents --sensitivity normal --no-wait
 ```
-
-首次交互可多选私聊、群聊、文档，直接回车表示暂不读取。非交互连接使用 `--sources private_chats,group_chats,documents` 指定类别，或用 `--no-history` 明确暂不读取，两者互斥。已有确认的范围可继续复用，后续也可重新选择并保存。
-
-首次敏感级别默认为 `private`，后续沿用已存设置。`--sensitivity normal` 显式允许云端助手召回新导入的资料，`--sensitivity private` 设置为仅供本地检索与注入。私密资料可用 `bmem search "关键词" --target local` 检索。
-
-交互终端默认等待并打开官方授权页面。`--no-wait` 提交后立即返回，通过 `bmem feishu status`、`bmem lark status` 或 Web 来源页继续查看 URL、二维码与进度。`bmem feishu connect` 和 `bmem lark connect` 也支持上述范围、敏感级别与等待参数。
-
-运行 `bmem web`，在“来源”的飞书 / Lark 面板选择品牌、私聊/群聊/文档范围并连接。全部不选即暂不读取。“允许云端助手召回”对应 `normal`，默认使用 `private`。范围保存后可手动同步，设置页提供连接摘要与管理入口，Web 与 CLI 共用配置和状态。
-
-飞书资料以 `external` 来源、T4 信任级别的 `episode` 引用保存，保留账号、对象、时间与出处，供检索时作为外部资料使用，规则候选仍隔离。本连接流程保存可检索的原文引用并跳过额外模型蒸馏。导入进度表示资料采集与落库，普通 Harness 历史的模型提炼进度由 Worker 队列展示。授权日志不写入记忆。
-
-下载或网络中断后可重新执行连接。缺少 Node/npm 时先补齐依赖再重试，缺少读取 scope 时通过同一连接命令继续官方授权流程。文档范围为官方搜索可见的 docx/wiki 结果，逐页读取。当前尚未实现对任意旧消息编辑、撤回的完整跟踪。读到平台返回的编辑或撤回标记时会保存对应版本，先前导入的引用沿现有遗忘流程处理。
-
-完整范围与接口见 [飞书/Lark 规格](specs/002-feishu-memory/spec.md) 和 [接口契约](specs/002-feishu-memory/contracts/interfaces.md)。
-
-## 日常使用
-
-```bash
-bmem declare "记忆中心使用SQLite" --fact-key storage.engine   # 立即写入用户声明事实
-bmem search "SQLite"                                          # 关键词与语义检索
-bmem recall "存储方案" --harness codex --session demo           # 按任务组装记忆包
-bmem forget MEMORY_ID                                         # 遗忘并清理派生物
-bmem status                                                   # 服务与本地状态
-```
-
-### 声明与纠正
-
-`declare` 提交的用户声明会立即落库为 T1 记忆。同一主体的事实键和适用条件相同、可信度相近时，系统采用事实时间较新的内容。`--effective-at` 指定事实发生或生效时间，缺省采用 `--occurred-at` 对应的原事件时间，新实时声明的事件时间默认为当前时间。同值确认可以推进事实时间水位，迟到旧资料保留来源和审计。同时间的相反内容保留争议，用户可通过显式版本纠正消歧。较新的可信事实解决同范围旧争议后，已解决的记录退出当前召回，历史和出处可继续查看。低可信助手推断保留待确认记录，外部规则继续隔离。
-
-也可以在同一记忆上使用 `--memory-id` 配合 `--expected-revision` 做显式纠正。普通自由文本由后台结合当前事实整合，确定的同键更新可使用 `--fact-key`。在 Harness 中以“记住：…”或“记住以后…”开头的输入会经 hook 立即声明。私密内容可以使用 `--sensitivity private`。HTTP、MCP和Web声明支持相同的事实时间字段。旧数据库与备份通过已保存的来源发生时间兼容读取。
-
-声明支持的分类参数为 `--kind episode|fact|decision|method|preference`，还可以附带 `--conditions`、`--project`、`--harness` 与 `--session`。
-
-### 检索与私密目标
-
-`search` 与 `recall` 默认使用 `--target cloud`，只返回可注入云端 Harness 的内容。查询私密记录时需显式加上 `--target local`。本地管理台可以查看私密数据，MCP 工具同样支持目标参数。
-
-### 管理台
-
-![bmem web 概念稿](docs/assets/web-ui-concept.png)
-
-管理台包含记忆星图、记忆库与版本查看、仲裁与注入台账、导入状态，以及语义检索开关和模型安装入口。上图为高保真概念稿，使用示例数据，交互效果见 [概念稿演示](docs/assets/web-ui-concept.html)。设计说明见 [Web UI 文档](docs/03-web-ui/README.md)。
-
-实际星图展示显式派生、共同来源和最近版本替代，节点与连线可打开记忆、历史版本和来源事件。默认优先显示真实关联端点，筛选在节点上限之前执行。完整修订历史可在记忆详情查看，独立资料显示为独立节点。
-
-## 模型与服务
-
-### 托管运行时
-
-`init` 默认安装项目固定的 Ollama 0.40.16 运行时和两个模型。
-
-| 用途 | 模型 | 规格 |
-|---|---|---|
-| 向量化 | `bge-m3`（固定 manifest 的 `bge-m3:latest`） | 1024 维，余弦距离，是当前唯一的 Embedding 模型 |
-| 提炼与仲裁 | `qwen3:4b-instruct-2507-q4_K_M` | 4B 指令微调版量化模型 |
-
-运行时由 bmem 托管，`init` 和 `runtime install` 会探测本机 Ollama，需要时启动其独立的 `serve` 进程。系统服务定义运行 `bmemd`。Ollama 进程退出后可执行 `bmem runtime install` 重新启动。每个 embedding 请求发送留驻参数 `keep_alive=-1`，生成请求使用 `keep_alive=5m`。
-
-```bash
-bmem runtime status                  # 查看运行时与模型状态
-bmem runtime install                # 安装或修复运行时与模型
-bmem runtime install --embedding-only  # 仅安装 bge-m3
-bmem runtime update                 # 更新托管运行时
-```
-
-语义检索可以在管理台设置页开启。模型 ready 表示模型和服务就绪，语义开关是否开启需在设置页确认。
-
-### 系统服务
-
-`init` 默认注册当前用户的系统服务。macOS 使用 launchd，设置 `RunAtLoad` 与 `KeepAlive=true`。Linux 使用 systemd 用户服务，设置 `Restart=on-failure`。正常注册的用户服务会把历史补扫所需的环境变量写入服务定义。修改环境变量后需要重启服务或重新注册，变更才会生效。
-
-## 历史补扫与导入
-
-### 手动导入
-
-```bash
-bmem import --harness all                         # 发现并导入默认位置的 Harness 历史
-bmem import --harness codex /path/to/history.jsonl
-bmem import --harness claude-code /path/to/project/memory
-```
-
-导入支持 Claude Code 与 Codex 的 JSONL 历史、DSH 的 JSONL 与 Zstandard 存储、原生 Markdown 记忆文件（包括 Claude 项目的 memory 目录）。导入会记录来源、维护游标，重复导入保持幂等。
-
-Markdown 记忆的 YAML frontmatter 中 `sensitivity: private` 会保留为私密内容，`status: superseded` 或 `status: expired` 的条目会跳过，默认或其他 status 按兼容方式处理。
-
-聊天历史会进入后台 Worker 分批提炼。来自工具 `external` 内容的历史只归档原始证据。实时任务优先于历史任务，导入命令完成不代表队列中的提炼已完成。
-
-### 后台历史补扫
-
-`BMEM_HISTORY_SYNC` 在前台 `bmem start` 下默认值为 `0`，设为 `1` 后启用补扫。
-
-```bash
-BMEM_HISTORY_SYNC=1 BMEM_HISTORY_INTERVAL=300 bmem start
-```
-
-`BMEM_HISTORY_INTERVAL` 以秒为单位，最小 5 秒。`init` 注册的正常用户服务默认写入 `BMEM_HISTORY_SYNC=1` 与 `BMEM_HISTORY_INTERVAL=300`，显式设置的环境值可以覆盖，隔离的服务定义默认关闭补扫。
-
-### 补扫范围配置
-
-后台补扫读取数据根目录下的 `history-sync.json`。
-
-```json
-{
-  "exclude_paths": ["/path/to/test-history"],
-  "additional_paths": ["/path/to/shared-memory/entries"]
-}
-```
-
-`exclude_paths` 中的路径会被排除，`additional_paths` 可指定文件或目录，额外路径与默认发现位置合并后统一应用排除规则。新增文件会在后续补扫中被发现，未变化的文件快速跳过。该配置由后台 `sync_history` 使用。
-
-## 隐私与 HTTP 边界
-
-- 记忆存储与提炼在本机完成。正常记忆注入云端 Harness 时，对应片段会随该请求发送给该服务。
-- `private` 内容禁止进入 `cloud` 目标，CLI 的 `search`、`recall` 需要显式 `--target local`。
-- 入口通过内置模式匹配脱敏常见凭据形式。
-- 数据以本机 SQLite 和普通文件保存，面向单用户工作站使用。
-- HTTP 服务监听 `127.0.0.1`，默认端口 8790，并检查回环 Host 与浏览器写请求的 Origin。
-
-记忆治理与敏感标签的完整规则见 [自主记忆治理](docs/04-autonomous-memory/README.md)。
-
-## 备份与恢复
-
-```bash
-bmem backup                          # 默认写入数据目录下的 backups/
-bmem backup /path/to/memory-backup.tar.gz
-bmem restore /path/to/memory-backup.tar.gz
-bmem index rebuild                   # 重建全文检索索引
-```
-
-`backup` 以一致性方式打包 `memory.db`、manifest 与证据文件。`restore` 在服务可用时优先通过服务 API 执行，否则回退到本地恢复。本地恢复前应先停止服务。
-
-备份范围为 `memory.db`、manifest 与证据文件。恢复过程会重建全文索引。需要向量回填时，在设置页将语义检索关闭后重新开启，后台 Worker 会重新排队处理当前记忆。模型缺失时用 `runtime install` 修复。
-
-## 开发、测试与构建
-
-```bash
-uv sync --locked --extra dev
-uv run pytest tests -q          # 运行完整测试
-uv build                        # 构建 wheel 与源码包
-uv run bmem --help              # 查看全部命令
-```
-
-构建后可在独立工具环境安装生成的 wheel。
-
-```bash
-uv tool install --python 3.12 dist/botinkit_mem-0.1.0-py3-none-any.whl
-```
-
-构建配置使用 Hatchling，Python 包源码位于 `src/bmem`，可执行入口为 `bmem` 与 `bmemd`。
-
-## 目录结构
-
-```text
 botinkit-mem/
-├── README.md
-├── pyproject.toml               # 依赖、入口与构建配置
-├── uv.lock
-├── src/bmem/
-│   ├── cli.py                   # bmem / bmemd 命令入口
-│   ├── api.py                   # HTTP API、MCP 端点与服务生命周期
-│   ├── models.py                # 公开数据结构与入口脱敏
-│   ├── store.py                 # 事件、记忆版本、召回、治理与备份
-│   ├── runtime.py               # Ollama 托管、模型、向量与后台 Worker
-│   ├── adapters.py              # Harness 配置、回调与历史导入
-│   ├── schema.sql               # SQLite 表结构
-│   ├── static/                  # 内嵌管理台
-│   └── dsh_plugin.mjs           # DSH 原生插件
-├── tests/                       # pytest 测试
-├── docs/                        # 设计文档与图形资产
-├── ui/                          # 设计稿使用的视觉令牌与基础样式
-├── specs/001-personal-memory/   # 规格、计划、任务与验收记录
-├── .specify/                    # Spec Kit 工作流与项目原则
-└── .agents/                     # 开发流程与代理技能
+├── src/
+│   └── v2/
+│       ├── bmem/                 # Rust 原生程序：CLI、回环服务、worker、宿主适配
+│       │   ├── Cargo.toml        # 包定义（name = bmem，version 0.2.x）
+│       │   ├── Cargo.lock        # 锁定依赖（二进制项目提交入仓）
+│       │   └── src/              # 20 个按领域划分的模块（见下）
+│       └── web/                  # 内嵌 Web 工作台（编译期 include_str! 打包）
+├── tests/
+│   └── v2/                       # 集成测试与共用夹具
+│       ├── test_*.py             # Python unittest 端到端用例
+│       ├── browser_*.cjs         # Playwright 真实浏览器用例
+│       ├── native_hosts.py       # Claude Code / Codex 双宿主实测
+│       └── data/                 # 测试夹具（JSON/JSONL）
+├── docs/
+│   └── v2/                       # 冻结设计：产品、技术方案、UI 原型、评审记录
+├── specs/
+│   └── 004-bmem-v2/              # V2 实施规格、任务台账、构建复验与验证记录
+├── research/                     # V2 重建前的架构研究与本地评测证据
+├── .specify/                     # Spec Kit 工作流脚手架（规格模板与脚本）
+├── .agents/skills/               # speckit 技能定义
+├── LICENSE
+├── CONTRIBUTING.md
+└── CHANGELOG.md
 ```
 
-数据目录默认是 `~/.botinkit-mem/`，数据库、证据、备份、运行时和 `history-sync.json` 均写入其中。`BMEM_CONFIG_ROOT` 可指定隔离的 Harness 配置根目录，用于接入测试。
+核心模块（`src/v2/bmem/src/`）按六个领域组织：接入采集（`ingestion` / `host` / `history*` / `feishu` / `integrations` / `platform`）、权威写入（`authority` / `context`）、提炼巩固（`providers` / `analytics`）、检索（`retrieval` / `vector`）、运营治理（`archive` / `settings` / `server` / `client`）与公共基座（`main` / `error`）。模块边界与数据交接见[模块并行实施与集成](docs/v2/technical/module-integration.md)。
 
-## 阶段与系统支持
+## 开发
 
-| 阶段 | 状态 | 内容 |
-|---|---|---|
-| 第一期 M1–M4 | 已实现 | 本机 SQLite 记忆中心，多 Harness 共享，版本与纠正，治理与派生来源，管理台 |
-| 第二期 多电脑共享 | 设计阶段 | 中心服务器与本地代理，设计见 [docs/02-multi-mem](docs/02-multi-mem/README.md) |
+```sh
+# 构建与静态检查（从仓库根目录）
+cargo build --locked --manifest-path src/v2/bmem/Cargo.toml
+cargo fmt --check --manifest-path src/v2/bmem/Cargo.toml
+cargo clippy --locked --manifest-path src/v2/bmem/Cargo.toml -- -D warnings
+cargo test --locked --manifest-path src/v2/bmem/Cargo.toml
 
-多电脑中心同步尚未实现，仅存在于未来设计文档中。
+# 端到端集成测试：先构建出二进制，再通过环境变量指定被测程序
+cargo build --locked --manifest-path src/v2/bmem/Cargo.toml
+BMEM_V2_TEST_BIN="$PWD/src/v2/bmem/target/debug/bmem" \
+  python3 -m unittest discover -s tests/v2 -v
 
-| 平台 | 支持情况 |
-|---|---|
-| macOS | 主要验证平台，使用 launchd 用户服务 |
-| Linux | systemd 用户服务已有实现并通过静态验证，实机覆盖仍待补充 |
-| Windows | 尚未提供对应的系统服务实现 |
+# 浏览器用例（需本机 Chrome 与 Playwright，模块路径通过环境变量传入）
+BMEM_V2_TEST_BIN="$PWD/src/v2/bmem/target/debug/bmem" \
+BMEM_V2_PLAYWRIGHT_MODULE=/path/to/playwright \
+  node tests/v2/browser_smoke.cjs
+```
 
-测试证据与验收范围见 [specs/001-personal-memory/validation.md](specs/001-personal-memory/validation.md)。
+隔离实例技巧：设置 `BMEM_LOCATOR_DIR` 与 `BMEM_DEFAULT_HOME` 指向临时目录，测试不会触碰真实的 `~/.bmem`。完整的隔离构建、双宿主与真实模型复验步骤见[本地构建与复验](specs/004-bmem-v2/quickstart.md)，已执行的验收证据与已知缺口见[验证记录](specs/004-bmem-v2/validation.md)。
 
 ## 文档导航
 
-| 文档 | 内容 |
-|---|---|
-| [第一期 · 个人电脑记忆中心](docs/01-person-mem/README.md) | 组件、数据模型、读写闭环、纠正与防回灌、中文检索与向量化 |
-| [第二期 · 多电脑共享](docs/02-multi-mem/README.md) | 未来设计，拓扑、同步协议、离线与冲突 |
-| [Web UI · bmem web 管理台](docs/03-web-ui/README.md) | 信息架构、视觉系统与交互概念稿 |
-| [自主记忆治理](docs/04-autonomous-memory/README.md) | 信任分级、观察期、防投毒与声明协议 |
-| [规格与验收](specs/001-personal-memory/) | 规格、计划、任务、契约与验收记录 |
-| [docs/assets](docs/assets/) | 架构图、数据模型图、阶段拓扑图与 Web UI 概念稿 |
+| 文档 | 读者 | 内容 |
+|---|---|---|
+| [V2 设计总览](docs/v2/README.md) | 所有人 | 架构冻结说明、首发路径与设计验证结论 |
+| [技术方案](docs/v2/technical/README.md) | 开发者 | 选型决策、六域十八模块、服务边界图 |
+| [产品功能设计](docs/v2/product/README.md) | 产品/开发者 | 功能分期、验收场景、治理与反馈设计 |
+| [UI 交互设计](docs/v2/ui/README.md) | 前端/产品 | 离线原型（`prototype.html` 可直接浏览器打开） |
+| [技术评审记录](docs/v2/reviews/technical/README.md) | 开发者 | 三轮独立评审意见、处理与文件指纹 |
+| [架构研究](research/README.md) | 开发者 | 重建前的模块调研、知识图谱与评测复现 |
+| [实施规格](specs/004-bmem-v2/spec.md) | 开发者 | V2 首发用户故事与成功标准 |
 
-## 许可
+## 从 V1（Python 版）迁移
 
-Apache-2.0 许可方案仍处于提案阶段，当前仓库尚无 `LICENSE` 文件。
+V1 的 Python/FastAPI 实现已退役，V2 从空库起步、工作区格式与 V1 相互独立。迁移要点：
+
+1. 在旧服务可读时先创建本地备份，核对归档中的数据库、证据与撤回记录；
+2. 安装 V2 后执行 `bmem init`，历史回填按 V2 的来源授权重新接入；
+3. 用 `bmem backup create` + `bmem restore preview` 验证 V2 备份链路；
+4. 确认 V2 命令、数据根、来源集成与常驻进程均可用后，再停用 V1 启动项与旧程序。
+
+V1 的完整源码与历史文档可在 git 历史提交 `ae2c06b` 中按仓库路径查阅。
+
+## 路线图
+
+当前状态与后续分期以设计文档为准：
+
+- **P0（进行中/首发日用版）**：本人声明 → 跨助手装入 → 结果回执；普通对话与工具回执自动提炼；撤回、备份与隔离恢复。核心流程 T001–T013、T017–T022 已完成并通过独立复验。
+- **P1**：语义融合检索、跨案例方法归纳、关系社区图谱的收益对照。
+- **P2**：在有获准样本、独立评测与可回退版本时，引入离线学习与受控发布。
+
+剩余的三平台签名成品、Windows 本机运行验收、生产路由校准等门槛见[验证记录「尚待首发验收」](specs/004-bmem-v2/validation.md)。
+
+## 贡献
+
+欢迎提交 Issue 与 Pull Request。开发环境、测试要求、提交规范与评审流程见 [CONTRIBUTING.md](CONTRIBUTING.md)；版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 发布。
