@@ -50,3 +50,47 @@
 | 等待中的作业，40 项 | 0.38 ms | 0.53 ms |
 
 界面截图使用独立合成工作区。此次改版的操作系统和浏览器覆盖为 macOS 上的 Chromium，Windows、Linux 和其他浏览器保留为独立验证项。[界面与交互说明](../../docs/v2/ui/README.md)
+
+## 治理预览与 Web 控制台修复验收
+
+2026-11-20，macOS arm64（cargo/rustc 1.100.0、Node v22.22.3、Python 3.9.6）。分支 `fix/web-ux-grant-preview`，HEAD `ae2c06b` 加工作树未提交改动：治理预览足迹收窄到目标范围（`retrieval.rs`）、forget-source 已接收页水位、预览期模型就绪检查（`server.rs`）、CLI 确认幂等键（`main.rs`）、Web 控制台交互改版及三处评审修复。七道门禁在合并后的工作树上全部通过（all_pass=true）。调试二进制在门禁前后均核验为最新：`target/debug/bmem` mtime Nov 20 18:41（46,258,808 字节），`find src/v2/bmem/src src/v2/web -newer <binary>` 前后均为 0 个文件，Cargo.toml/Cargo.lock 不更新，无需重建；Python 与浏览器用例因此运行在完全相同的代码树上。门禁未改动任何仓库文件，写入仅限 cargo `target/` 产物与 `/tmp/bmem-final-verify-20261120/` 日志（gate1-build 至 gate7-nodecheck）。真实 `~/.bmem` 未被触碰：测试剥离继承的 BMEM_* 环境变量，在 mkdtemp/TemporaryDirectory 新建隔离工作区运行，事后扫描最近 60 分钟 0 个文件被修改。
+
+| 门禁 | 命令或证据 | 结果 |
+|---|---|---|
+| 二进制新鲜度（前置） | `target/debug/bmem` mtime Nov 20 18:41（46,258,808 字节）；`find src/v2/bmem/src src/v2/web -newer binary` | 门禁前后均为 0 个更新文件；Cargo.toml/Cargo.lock 不更新，无需重建 |
+| 1. 构建 | `cargo build --locked` | Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.25s；exit 0（增量，树已最新） |
+| 2. 格式 | `cargo fmt --check` | 无格式差异输出；exit 0 |
+| 3. 静态检查 | `cargo clippy --locked -- -D warnings` | Checking bmem v0.2.0 … Finished `dev` profile in 1.38s；零警告零拒绝；exit 0 |
+| 4. Rust 单元测试 | `cargo test --locked` | unittests src/main.rs：`8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`，finished in 0.56s（history_feishu 4 + history_hosts 3 + 分页线程 1）。单一测试目标，无 doc-tests；exit 0 |
+| 5. 集成测试 | `python3 -m unittest discover -s tests/v2 -v` | `Ran 33 tests in 19.937s — OK (skipped=1)`。分模块：test_governance_preview 13/13（含授权预览绑定、水位/游标用例）、test_integration 14（13 过 + 1 跳过）、test_task_delivery 3/3、test_vectors 1/1、test_workbench 2/2。唯一跳过项 test_real_local_model_processes_fixture_page 需 `BMEM_V2_TEST_REAL_MODEL` 显式启用本机 Ollama，属预期 opt-in 而非失败；exit 0 |
+| 6. 浏览器用例 | `node tests/v2/browser_smoke.cjs`（Playwright，Chrome headless） | 7/7 阶段通过，exit 0；0 pageerror、0 外部请求（见下） |
+| 7. JS 语法 | `node --check src/v2/web/*.js tests/v2/*.cjs` | checked=12 fail=0；exit 0，全部 Web JS 与浏览器测试 CJS 解析通过 |
+
+**浏览器七阶段。**
+
+| 阶段 | 实测覆盖 |
+|---|---|
+| 1 dashboard | 实时指标、图谱导航、可访问控件 |
+| 2 intake | 来源控制、预览期模型就绪、授权对话框预览/确认（确认期间游标实时推进）、修订变化重新预览上限、焦点归还、导入校验/重放/放弃、375px 布局 |
+| 3 workbench | 过期修订 409、档位保存、声明纠正、390px 移动布局 |
+| 4 search | 原生事实检索、关键词回退、按需补读原文 |
+| 5 config failures | 过期草稿保留、503 以同一幂等键与同一请求体重试两次、缺失基线安全报错 |
+| 6 live settings | 跟随 CLI 写入、跨修订独立草稿 |
+| 7 integrations | 3 个隔离宿主安装、轮询下的忙碌状态、GET 失败后轮询存活、飞书设备流/二维码/来源登记 |
+
+末行 `Browser verified settings and declarations against the native CLI.` 仅在 `assert.deepEqual(errors,[])` 与 `assert.deepEqual(external,[])` 之后打印，确认零页面脚本异常、零对外资源请求。
+
+**两轮对抗评审与修复。**
+
+- 第一轮（后端治理语义）：复现同游标页缺口——`ingestion::accept_in` 只校验 `page.cursor` 等于已提交游标，`next_cursor == cursor` 的页仍会提交新对象而游标不动；forget-source 预览若只绑游标会漏掉这类页，确认时清理范围可能大于预览范围。修复：来源足迹增绑 `accepted_page_watermark = COALESCE(MAX(rowid),0) FROM ing_ingests WHERE source_id`（每个新提交页无条件插一行，含同游标页与纯重复页；幂等回放不插行；该表无 DELETE，rowid 单调）。回归用例 `test_forget_source_same_cursor_page_requires_fresh_preview`。
+- 第二轮（Web 控制台）：三处已复现问题全部修复并复验。① 设置页键控增量刷新以行内容 JSON 作签名，模型卡片的嵌入测试/移除门禁取自全局配置上下文（vectorEnabled/bindings），上下文变化时未变行不重建、门禁长期陈旧；修复为把行包成 `{model, vectorEnabled, bindings}` 让上下文进入签名（settings.js renderModelsList）。② confirmDialog 输入确认只 trim 输入不 trim 目标名，带首尾空白的名称永无法确认；修复为比较与展示标签同用 trim 后的目标，纯空白目标退化为普通确认（app.js）。③ intake.js 每次 open() 重挂都新增 document visibilitychange 监听器，旧闭包滞留已分离视图树；修复为每次挂载一个 AbortController，重开前 abort，监听器与轮询定时器绑定 signal。CDP `DOMDebugger.getEventListeners` 实测 4 轮往返监听器数恒定（sources=5/imports=3）。
+
+**安全语义。**
+
+- 仍返回 `409 revision_changed`：预览与确认之间绑定目标状态的真实变化——目标授权行变化（含同目标并发授权修改）、模型目的地重绑、遗忘目标声明被撤回/取代或自身修订变化、遗忘来源新接收页（游标推进或同游标接收页）。确认时的足迹比对保持逐字节精确，不放松。
+- 不再返回 409：无关活动——其他来源的采集与游标推进、全局声明 change_seq、治理单计数、任务/客户登记及其他治理流量，均不再使待确认预览失效。
+- 预览期 `model_not_ready`：extract/embed 的 allow 预览在无就绪路由时即返回 `409 model_not_ready` 与配置指引（与确认路径同码）；embed 另要求先开启向量检索。
+- 回放：CLI `--confirm` 的幂等键固定派生为 `grant-confirm-{preview_id}`，丢失回执后重试同一预览回放已存治理单（同一 operation_id）；预览确认成功后即被消费、只受理一次，不同意图不共用键。stop/resume capture 无预览确认的行为不变。
+- 回归：`tests/v2/test_governance_preview.py` 13 项覆盖上述绑定、水位、就绪与回放语义。
+
+**冻结界面文档。** `docs/v2/ui/` 为冻结的呈现层设计资料，本轮刻意未改动：Web 改版保留其描述的页面、操作与授权/预览—确认语义，仅演进呈现方式（错误中文化与下一步指引、轻量通知、原生 `<dialog>` 确认含授权影响预览与数据去向警示、忙碌状态、键控增量刷新、请求超时、乐观开关与回滚、自动刷新）。呈现演进以本记录与浏览器用例为证据。

@@ -142,7 +142,7 @@ v2 的本地 HTTP 接口供管理台和宿主适配器调用，CLI 复用同一�
 | `build_dataset`、`train_candidate` | 学习用途、计算环境、来源与任务族范围、截止点/种子；候选训练引用获准的数据集及基线版本 | 受理后可从单据查看清单、排除项、划分和输出工件；评测侧隔离冻结集 |
 | `evaluate`、`activate`、`rollback` | 指定工件/基线、冻结评测、部署范围或已验证目标 | 授权与工件依赖仍有效才可投放，报告当前实际加载的版本和各环节结果 |
 
-预览示例：`POST /v2/operations/preview` 接收 `{"kind":"forget","target":{"root_id":"root_42"}}`。返回 `preview_id`、`policy_version`、目标修订、当前受影响的来源/派生/投递与各位置状态，不要求显示任何无权原文。确认时 `POST /v2/operations` 携带同一命令内容和 `preview_id`；服务在提交事务中对照预览绑定的目标、权限与影响范围。范围发生改变返回 `409 revision_changed` 并重新预览，再由用户确认最新影响。上游主动发来的已认证撤回事件仍通过 `events` 直接禁读。
+预览示例：`POST /v2/operations/preview` 接收 `{"kind":"forget","target":{"root_id":"root_42"}}`。返回 `preview_id`、`policy_version`、目标修订、当前受影响的来源/派生/投递与各位置状态，不要求显示任何无权原文。确认时 `POST /v2/operations` 携带同一命令内容和 `preview_id`；服务在提交事务中对照预览绑定的目标、权限与影响范围。预览足迹只绑定目标范围状态：授权变更取目标授权行与模型目的地，遗忘取目标修订或来源自身游标与已接收页水位，无关活动不使预览失效。范围发生改变返回 `409 revision_changed` 并重新预览，再由用户确认最新影响。上游主动发来的已认证撤回事件仍通过 `events` 直接禁读。
 
 治理命令 `202` 回执含 `operation_id`、`effective`（已提交禁读或控制变更）、`cleanup_state` 及可查询的处理位置。备份、重建、恢复预览排队时只回报已受理，此时 `effective=false`。详情按位置列完成、待处理、失败可重试、系统外不可验证，附最近尝试时间、错误类别和该位置可执行的重试动作；`effective=true` 不推断全部已擦除。
 
