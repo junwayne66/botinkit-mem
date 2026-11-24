@@ -1,0 +1,134 @@
+# Agent 接口与一期收尾 · 统一任务台账
+
+编号接续 [004 台账](../004-bmem-v2/tasks.md)（其未勾项 T014、T015、T016、T038、T039 分别落到 T058+60/T059、T061、T063、T064〔本轮不开工〕）。18 个包号、19 行台账（T049 拆 core/callers 两阶段）＋T064 不开工标记。**【MVP】＝R1 子集**（T044/T045/T046/T047/T049-core/T050/T051a/T052/T053/T057-lite/T063-lite），其余为 R2 或条件包。波次与依赖见 [plan.md §二](plan.md)。
+
+执行体代号：**CC**＝本机 Claude Code 2.1.308 worktree（探针确认路由）、**CX**＝codex-cli 0.171.0 `codex exec --sandbox read-only --skip-git-repo-check`（默认只读评审；写需另过 workspace-write 探针）、**DSH**＝dsh 0.2.2-rc.2 headless（`--permission-mode read-only|workspace-write`，无 --sandbox 参数）、**SUB-opus/SUB-sonnet**＝会话内 Claude 子代理（仅这两档可用；旧 SUB-sol/terra/luna/mini 名作废）、**ASM**＝装配者（本会话单点串行写＋CX 只读复核）。AGY 等待账号恢复本轮不派包。每包派工五列登记见 plan §四；隐私类包（T045/T046/T048/T049-core/T053/T054）走 **opus＋codex＋dsh 三家交叉闸门**。
+
+**通用验收模板（每包必须点名四件事）**：①可执行入口（文件路径＋命令，且被 run_gates.py 收集；`tests/v2/*.rs` 必须写明 `#[cfg(test)]`/`#[path]` 内联宿主模块，先例 5 处已核：context.rs:1385、data_management.rs:163、history_hosts.rs:856、history_feishu.rs:977、history_tasks.rs:1106）；②机器断言（退出码/JSON 字段==期望值）；③工件路径（`tests/v2/artifacts/<pkg>.json`，含装配树 commit＋二进制 sha256＋run_id）；④负对照另附破坏点（变异法，点名实码：bind() 的 revoked_at 判定 context.rs:249、ing_actors 入口判定 ingestion.rs:500-512、recall_grants×task_access 放行 retrieval.rs:249-252、角色白名单 T053 新增）＋可观测断言（status＋错误体不含调用者输入＋关联表零增量）＋清理动作＋红 run id/绿 run id 成对记录。同一有效载荷先以获权身份取真实成功对照，再切换权限/凭据断言具体错误码。「真实/真点通/不再/有代码有测试/一致」等词不得单独作为验收。共享 `tests/v2/authority_harness.rs` 由 T046 交付，波 2 各包只读消费。每包合流时向 `tests/v2/artifacts/manifest.json` 登记 {pkg,artifact_path,schema_version,acceptance_rows[]}，T063 依赖由此机械推导。
+
+## R1 · MVP：P0 首切＋最小可用 agent 接口
+
+### 波 0 · 基线冻结（串行，前置闸门）
+
+- [ ] **T044 提交基线、门禁可执行化、worktree 协议、执行体探针、rmcp 编译预检**【MVP】｜ ASM ｜ 依赖：无 ｜ 文件：全树（仅提交与测试入口）；新 `tests/v2/run_gates.py`、新 `tests/v2/artifacts/`（.gitignore 增 `/tests/v2/artifacts/`、`/target-gate/`、`.worktrees/`）、`tests/v2/native_hosts.py→test_native_hosts.py`、新 `scripts/apply_patch.py`、新 `scripts/cleanup_worktrees.py`、CONTRIBUTING.md:67-73 同步
+  - 按 `git status --porcelain` 脚本输出拆可评审提交（2026-11-23 本人实测 38 条：27 modified＋11 untracked 条目；`-uall` 展开 42 文件，含 specs/005 的 plan/tasks/research-brief/protocol-choice/REVIEW-DECISIONS 五份（REVIEW-DECISIONS.md 晚于原 41 计数新增）；src 与 tests 下同名 data_management/history_tasks 为四个不同文件）。清单带仓库全路径，禁手写计数；不推送远端。
+  - native_hosts **原子改名＋TestCase 化**（同一变更）：import unittest＋class NativeHosts(unittest.TestCase)，check_mcp/check_hook_replay/check_native_redaction/check_cross_host_task_package 与 loaded 断言包成 test_* 方法、逐宿主 subTest，模块级数据加载移入 setUpClass，保留 `__main__` run() 快捷入口；宿主执行经 BMEM_V2_TEST_NATIVE_HOSTS opt-in，未设置→带原因安全跳过。仅改名会收集 0 项静默假绿（现文件 535 行无 unittest/TestCase，本人已核），禁止。
+  - 修三处假绿：6 个 export-only 浏览器模块以 browser_smoke.cjs 为唯一入口；native_hosts 纳入 discover；run_gates.py 按 plan §五 步 0–13 实现（含步 10 对已提交基线校验、步 12 边界对账）。
+  - worktree 协议（depgraph-4）：`.worktrees/T<NNN>-<slug>` 命名＋meta＋cleanup_worktrees.py；`git worktree prune` 掉 /private/tmp/bmem-data-implementation.ONIz66vc/{adapters,history,intake,ledger,status,transfer} 6 个陈旧 worktree（本人 git worktree list 复核，os.walk 实测约 4.5 GiB）。
+  - 执行体探针：claude/codex/dsh 版本＋PONG＋读写模式；codex -m gpt-5.5 与 SUB-opus/SUB-sonnet 逐一探针；codex workspace-write（限 target-gate/artifacts）探针；一次完整 native_hosts 试跑确认 0.171.0 flag 兼容；结果写 artifacts/executors.json，不可用者标 unavailable。
+  - rmcp 编译预检（protocol-choice §5.5）：独立一次性 worktree、时间盒 ≤4h，启用 transport-streamable-http-server＋nest_service＋authenticate middleware＋initialize 冒烟；写 artifacts/rmcp_spike.json；主线 Cargo.toml/Cargo.lock 不改。结果供 T045 签字拍板 T056。
+  - validation.md:9-10 数字由 run_gates.py 注入（现文「0 项/13 项」为 2026-11-19 陈旧值，本人已核），禁手填。
+  - 验收证据：`python3 tests/v2/run_gates.py --profile assembly` 在装配树一条命令复跑全套，写 artifacts/gates.json＋validation_numbers.json；`git status --porcelain` 输出 0 条；all_pass=true；asm 签字。负对照：故意把 native_hosts 只改名不 TestCase 化→步 5 收集数断言必须红（变异点＝移除 TestCase 包装）。
+
+- [ ] **T045 契约冻结：动作、身份分级、写入语义、era 姿态**【MVP】｜ SUB-opus 起草＋CX 只读＋DSH 只读三家交叉复核（A≠B 跨族，探针记录为证）｜ 依赖：T044 ｜ 文件：`specs/005-agent-mcp-interface/spec.md`、`docs/v2/technical/{contracts,extension-contract,command-catalog,authority,cli-and-platform}.md`、新 `tests/v2/artifacts/matrix_schema.json`、新 `patches/schema.json`
+  - 冻结内容：工具↔command_id↔路由↔能力档位四元表＋`release_round` 列（R1/R2/conditional）；三档身份默认授权（host_adapter 含 load_context/observe_loaded/observe_used/verify_outcomes/manage_tasks，agent_writer 含 manage_tasks，agent_reader 仅 search）；「agent 写入只进候选」动作语义；错误码→MCP isError 映射；每主体幂等键作用域。
+  - 新增冻结条文：(1) **角色→actor_kind 白名单**（服务端按已认证身份执行，正文不得指定）；(2) agent 治理动作白名单（见 T054）；(3) limits 结构与语义（plan §八.1）；(4) 撤销/轮换语义：立即＝下一请求，含长驻 MCP 会话与 stdio 进程；(5) token 文件交付（plan §八.2）；(6) **MCP 写工具幂等键来源**：调用方 idempotency_key 入参优先、缺省桥派生 UUID、confirm 键派生自 preview_id（复用 [main.rs:1038](../../src/v2/bmem/src/main.rs#L1038) grant-confirm-{preview_id} 形态，已核）；(7) **era 姿态声明**（legacy-era ≤2025-11-25；新 era 强制头/server/discover 本期不实现；HTTP 传输若非规范自建鉴权须明写、不透传令牌）；(8) **两种 list_changed 路径**；(9) matrix_schema.json（Draft 2020-12）；(10) 装配补丁 patches/<pkg>.json schema；(11) task bootstrap 二选一定死：T054 同包交付 task.create/attempt.start MCP 工具（默认），或明示 bootstrap 仅 owner/HTTP 并改写 grant.change 前置为「task_id∈调用者创建任务∪所有者预授权任务集」。
+  - 顺带修订既有承诺：[authority.md:87](../../docs/v2/technical/authority.md#L87) 未知路由判权、[contracts.md:139-147](../../docs/v2/technical/contracts.md#L139-L147) 已发副本分位置披露、[cli-and-platform.md:68](../../docs/v2/technical/cli-and-platform.md#L68) 系统凭据库（settings.rs:252/262 仅 database/env 两 backend，Keychain 未实装，已核）。
+  - 验收证据：三份复核 JSON 落 `specs/005/reviews/T045-{opus,cx,dsh}.json`，脚本比对结论一致；current.sha256 基线更新在同一受审 diff（21 项 shasum -c 全 OK）；matrix_schema.json 过 Draft 2020-12 离线校验；**用户在 spec.md 签字（含 plan §八.5 三项隐私语义、§八.6 首发口径、§八.7 T056 拍板、§八.10 幂等键来源、§八.11 task bootstrap 二选一）后才开波 1**。
+
+### 波 1 · 授权底座（两段：T046∥T047 先行，T046 合流后 T049-core；热点走装配补丁）
+
+- [ ] **T046 客户端身份分级、能力迁移与可撤销**【MVP】｜ CC 实现＋SUB-opus/CX/DSH 三家交叉复核 ｜ 依赖：T045 ｜ 文件：`context.rs`（判权/注册段）、新 `clients.rs`、`tests/v2/clients.rs`、新 `tests/v2/authority_harness.rs`（含 #[path] 内联宿主声明）｜ 装配补丁：server.rs 路由与 identity 判定、main.rs `client rotate|unbind|configure` 与 register 调用点（去掉 [main.rs:1054](../../src/v2/bmem/src/main.rs#L1054) 写死的 {load_context:true}，已核）、[integrations.rs:222](../../src/v2/bmem/src/integrations.rs#L222) 调用点改走新默认值函数
+  - 身份判定显式化：Owner→owner CLI 全量；Browser→owner-console 集合（保留全量动作，仅显式化隐式代理判定；与 Owner 差异仅在不得创建新 owner 会话；「不得签发 client 凭据」收窄为裸 POST /v2/clients 并豁免 integrations install，plan §八.5c）；Bound→按 role 查能力注册表。owner() 与 capabilities() 的 own 代理改穷尽 match（现状 [server.rs:351](../../src/v2/bmem/src/server.rs#L351) Owner|Browser=>Ok，已核）。
+  - 迁移：context_clients 加 role/credential_version/revoked_at；存量回填 host∈{claude-code,codex,dsh}→host_adapter；context::register 按 role 给默认能力位。
+  - 撤销/轮换：bind() 增 revoked_at IS NULL 与 credential_version 匹配（[context.rs:249](../../src/v2/bmem/src/context.rs#L249) 查询处，已核）；rotate 重写 token_hash 并原子更新 run/clients/<id>.json。
+  - 验收证据：tests/v2/clients.rs 用例 `rotate_rejects_old_token`（轮换后旧 token 401）、`unbind_blocks_candidate_and_receipt`（解绑后写入 403/401 且零候选/回执行）、`cross_subject_same_key_no_replay`、`legacy_host_migration_observe_loaded`（存量迁移后 observe_loaded=true）；逐路由负对照经 authority_harness.rs；变异＝移除 bind() 的 revoked_at 判定后 `revoked_client_next_request_403` 必须红；红/绿 run id 成对写 artifacts/clients.json。authority_harness.rs 被 run_gates 收集。
+
+- [ ] **T047 能力注册表与启动期一致性校验**【MVP】｜ 脚本生成骨架＋CC 接线＋CX 只读审 schema 语义 ｜ 依赖：T045 ｜ 文件：新 `capability_registry.rs`、`tests/v2/capability_registry.rs`、新 `scripts/gen_descriptors.py`（从 command-catalog P0 三表 :16/:68/:94 抽取，已核；实际条目数以脚本输出为准，不写死）｜ 装配补丁：server.rs 表驱动 capabilities()/dispatch
+  - 描述符补齐 contract_version/kind/cli/web/http/input_schema/output_schema/authority/concurrency/stage；handler 只随制品内部登记，公开投影隐藏 handler。未实装动作登记 available=false＋reason（extension-contract.md:20 既有语义）；启动期 handler 存在性校验只作用于 available=true。
+  - 五项启动校验各运行一例负对照：重复「ID＋主版本」、矛盾路由分派、缺失处理函数、未注册向导步骤、循环步骤。bound 客户端不再被硬关在 search 一条（[server.rs:1021-1040](../../src/v2/bmem/src/server.rs#L1021-L1040)，已核）。Bmem-Command-Version 发射移 T049-callers（R2），本包不做。
+  - 验收证据：tests/v2/capability_registry.rs 用例 `duplicate_id_major_version_rejected`、`missing_handler_rejected`、`contradictory_route_rejected`、`unregistered_wizard_step_rejected`、`cyclic_steps_rejected`（各故意注册后启动必须失败）；对账脚本在 run_gates 内 exit 0 写 artifacts/capability_reconcile.json；内部制品与公开投影分别过 Draft 2020-12 离线校验；`bmem capabilities show <id>` 输出与 schema 一致；current.sha256 同 diff 更新。
+
+- [ ] **T049-core 未知路由判权、错误体脱敏与 ConflictKind 定义**【MVP】｜ CC 实现＋SUB-opus 语义复核＋CX/DSH 只读复核 ｜ 依赖：T046（context.rs 串行）｜ 文件：`context.rs` 判权段（含其 7 处 Error::conflict 调用点迁移）、`error.rs`、`ingestion.rs` 错误构造段（仅消息，不改构造器）、`tests/v2/route_authority.rs`
+  - 实现 [authority.md:87](../../docs/v2/technical/authority.md#L87) 共同可见集：路由无法验证时只给该身份所有可能目的地的共同可读字段；目的地集合未知时只供应明确允许任意目的地的数据，其余记 route_restricted。
+  - error.rs 新增 `Error::ConflictKind` 枚举（11 种 409 子码）＋`conflict_kind()` 构造器＋子码文档；三个 From impls（[error.rs:65-81](../../src/v2/bmem/src/error.rs#L65-L81)，io/rusqlite→internal、serde_json→invalid，均直传 to_string()，已核）一律映射通用消息＋request_id，原始串只写服务端有界日志。**conflict() 前缀映射暂保留**（向后兼容，callers 阶段移除）。
+  - 停止反射调用者可控串：[ingestion.rs:493](../../src/v2/bmem/src/ingestion.rs#L493)/[:510](../../src/v2/bmem/src/ingestion.rs#L510)/[:525](../../src/v2/bmem/src/ingestion.rs#L525)/[:529-532](../../src/v2/bmem/src/ingestion.rs#L529-L532) 四处删除 {key}/{actor}/{source_id}/{cursor} 后缀，**消息前缀冻结为契约**（'key_conflict:'/'cursor_mismatch:'/'action_denied: capture is not enabled'/'action_denied: adapter'）——[main.rs:1156](../../src/v2/bmem/src/main.rs#L1156) starts_with 是该消息全仓唯一消费者（本人 rg 复核），[app.js:186](../../src/v2/web/app.js#L186) 按 code 显示，均不破。合流前脚本 rg 复核无其他 starts_with/contains 消费者，有则同段装配补丁归属。
+  - 验收证据：tests/v2/route_authority.rs 用例 `unique_conflict_body_has_no_table_or_constraint_name`、`io_error_body_has_no_absolute_path`、`reflection_suffix_removed_prefix_kept`（断言响应体不含调用者输入且 hook 前缀分支仍绿）、`unknown_route_common_visible_set`（未授权字段不出现在正文/派生标题/计数）；变异＝恢复 value.to_string() 直传后对应用例必须红；红/绿 run id 成对写 artifacts/route_authority.json。「409 子码可区分」验收在 T049-callers，不在本包。
+
+### 波 2 · MCP 工具面（T050 先行，随后 T051a∥T052∥T053 真并行；T057-lite 文件互斥可提前）
+
+- [ ] **T050 工具表由注册表驱动＋幂等键贯通＋reconciler**【MVP】｜ CC 实现＋CX 只读复核 ｜ 依赖：T046、T047、T049-core（W1 合流）｜ 文件：`host.rs`（只留传输与分发）、新 `mcp/tools_*.rs` 骨架、`tests/v2/mcp_surface.rs` ｜ 装配补丁：server.rs dispatch（交付 `reconcile_routes()` 消费所有 route_additions）
+  - 工具定义、inputSchema、annotations（readOnlyHint/destructiveHint/idempotentHint）与可用位全部取自 T047；错误映射为结构化 isError；契约同时写两种 list_changed 路径（plan §六.3），本期实现现 era。
+  - **幂等键贯通**：桥不再传 key=None（[host.rs:122](../../src/v2/bmem/src/host.rs#L122)，已核）；键来源按 T045 冻结（调用方入参优先、缺省桥派生 UUID、confirm 派生自 preview_id，plan §八.10）；server.rs 写路由 `key(headers)?` 形态不改，由桥保证必有值。
+  - **逐请求判权不变量**：每请求 Bearer→bind、每 call_tool 回查 capabilities（现 [host.rs:118-121](../../src/v2/bmem/src/host.rs#L118-L121) 形态，已核）；重构不得把身份缓存为会话授权。
+  - 验收证据：tests/v2/mcp_surface.rs 用例 `tools_list_matches_capabilities_same_identity`（同一身份下集合比对，可用且映射到 MCP 的子集，非空正例，diff 空集写 artifacts/mcp_surface.json）、`disabled_capability_tool_absent_and_call_rejected`、`write_tool_no_422_without_explicit_key`（写工具经 MCP 调用不因缺 Idempotency-Key 而 422）、`explicit_key_conflict_409`（调用方显式传 idempotency_key 与既有记录冲突→409）、`stdio_revoke_after_initialize_403`（initialize 成功后 revoke→下一次 tools/call 403/401）、`stdio_rotate_old_token_401`；变异＝把逐请求 bind 改为 initialize 缓存后撤销用例必须红。native_hosts 的 tools==[search] 断言（:367）由 T052 改能力位驱动，本包不改该文件。
+
+- [ ] **T051 只读面扩到 5 工具（T051a【MVP】）＋resources/prompts（T051b 条件包，默认不开工）**｜ CC ｜ 依赖：T050 ｜ 文件：`mcp/tools_read.rs`（单一包独占）｜ T051a 合流后才开 T051b（若门槛满足）
+  - T051a：search.query、evidence.expand、statement.list、task.handoff（接手卡：计划与实际结果分列）、delivery.ledger.self（只读该客户端自己的投递与回执状态）。
+  - 授权条文：bound 身份的 statement.list 一律走 shared 投影（[authority.rs:354-356](../../src/v2/bmem/src/authority.rs#L354-L356) shared_only 语义：仅 share=authorized_assistants 的现行修订，不含 statement_id/evidence/原文/share 字段，已核）；特定句柄原文仅经 recall_grants＋task_access 放行（[retrieval.rs:249-252](../../src/v2/bmem/src/retrieval.rs#L249-L252)，已核）。新增 client 投影路由（server.rs 装配补丁），不得复用 owner-only GET /v2/statements（server.rs:525-526，已核）。
+  - T051b（条件包）：声明快照/接手卡作为 resource、continue-task 作为 prompt；resource 列表按同一身份裁剪、prompts/get 只返回参数占位符、subscribe 每次通知前重查授权撤销即停发。入口门槛＝已命名 resources-only 客户端实测记录或所有者 T045 签字；门槛未满足前注册表登记 available=false，reason='awaiting named client'。index.html/app.js 状态展示本轮不做，移 R2 T057-full。
+  - 验收证据：tests/v2/mcp_surface.rs 扩展每工具正/负对照 `read_tool_granted_positive`/`read_tool_denied_403_no_body`（无权 handle 展开为无正文 404 语义）、`bound_statement_list_shared_projection_no_evidence`；变异＝把投影切到 shared_only=false 后「agent 响应无 evidence/原文字段」用例必须红；工件 artifacts/mcp_read.json。
+
+- [ ] **T052 回执出站＋宿主真上报（P0 首切闭合点）**【MVP】｜ CC 实现＋CC 写驱动＋DSH 模板填空与装配树复跑＋ASM 真跑 ｜ 依赖：T050、T046 ｜ 文件：`mcp/tools_receipts.rs`、`host.rs` 出站段、`main.rs` 预算与 hook 分支（装配补丁）、`tests/v2/test_native_hosts.py`（T044 重构后本包独占）、`tests/v2/test_integration.py` 台账计数段（:544-553，已核）、`tests/v2/data/native_provider.json`、新 `tests/v2/artifacts/native_receipts.json`
+  - delivery.receipt（loaded/used，能力位 observe_loaded/observe_used）与 attempt.outcome（passed/failed，需 verify_outcomes）。
+  - 同包修两处可达故障：statement_tokens 不再写死 512（[main.rs:1166](../../src/v2/bmem/src/main.rs#L1166)，已核）；deferred 时显式告知宿主「本次声明未完整装入」而非空对象（[host.rs:279-281](../../src/v2/bmem/src/host.rs#L279-L281)，已核）；台账 provided 计数不再把 deferred 计入。:367 tools==[search] 断言改能力位驱动、:525 unknown 反向断言翻转。
+  - provider_mode 双模：loopback_fixture 保留现有夹具与全部负对照。real_local_model：fixture_server 改记录式透传代理，POST 以 SSE 逐块 tee 转发 127.0.0.1:11434；/v1/messages/count_tokens 与 GET /v1/models 由代理本地应答；claude 宿主 ANTHROPIC_BASE_URL 指代理、--model qwen3:4b-instruct-2507-q4_K_M、CLAUDE_CODE_EXTRA_BODY={"thinking":{"type":"disabled"}}；codex 宿主 wire_api=chat（现 :248 为 responses，已核）、base_url 指代理 /v1、-m 同模型。
+  - 回执必须出自本次真实宿主 hook 执行，驱动不得代 POST；宿主运行后读回台账，与捕获的模型请求按同次 client、session/epoch、delivery、snapshot/package、revision 匹配；used 的 evidence_ref 指向宿主转录/工件位置且存在同 model_call_ref 的在先 loaded；outcome 由另一宿主客户端上报（verifier≠attempt 主体）。逐宿主工件 native_receipts.json。
+  - 验收证据：test_native_hosts.py 用例 `test_real_local_model_loaded_observed_both_hosts`（两款宿主同一次运行 loaded_state==observed 且与 wire 捕获互证）、`test_used_model_output_assertion`（至少一款 used_evidence_kind=model_output_assertion）、`test_outcome_verifier_not_attempt_subject`；负对照 `test_receipt_disabled_403_ledger_unknown`、`test_wrong_revision_409`、`test_missing_receipt_unknown`。**红先**：对 T044 基线二进制先跑翻转后的 observed 断言必须红，红/绿 run id 成对写工件。P0 第一步「已提供/已装入」闭合；「已采用/独立结果」仅在真实模型输出断言通过时闭合，否则 T063 对应子步标 partial。
+
+- [ ] **T053 候选写入面＋角色白名单＋每主体限流**【MVP】｜ CC 实现＋SUB-opus/CX/DSH 三家交叉复核 ｜ 依赖：T046、T047、T050 ｜ 文件：新 `agent_intake.rs`、`mcp/tools_intake.rs`、`ingestion.rs` 接入点、`tests/v2/agent_intake.rs` ｜ 装配补丁：server.rs（**条件条款**：仅当用户在 T045 签字选择 HTTP 直连时同包交付 /v2/agent/candidates 路由，共用 agent_intake 入口；默认不触发）
+  - candidate.submit：普通话语与工具回执进入现有摄取管线；沿用 span 门控与凭据双层脱敏；Idempotency-Key 必填且按主体作用域（键来源按 T045 冻结）。
+  - 角色白名单（T045 冻结条文的服务端执行）：actor_kind 由已认证身份推导，正文不得指定；agent_writer 提交 user_message→403 且 ing_event_versions/ing_jobs/authority_observations 新增行数均 0；来源 categories 逐事件执行，越类别 403 整页回滚。
+  - 限流按 T045 冻结结构实现，可注入 Clock。
+  - 验收证据：tests/v2/agent_intake.rs 用例 (1) `agent_writer_user_message_403_zero_rows`（变异＝临时移除角色白名单判定后必须红）；(2) `prose_user_said_x_no_user_observation`（assistant_message 正文写「用户说过 X」不产生 role=user_message 观察）；(3) `cross_category_403_page_rollback`；(4) `body_and_envelope_double_impersonation_rejected`；(5) 限流表驱动四断言 `rate_61st_event_429_retry_after`/`rate_window_advance_recovers`/`byte_limit_triggers`/`other_subject_unaffected`＋在途释放后恢复（变异＝删限流判定必须红）；(6) `unbound_client_candidate_submit_rejected`。红/绿成对写 artifacts/agent_intake.json。
+
+### 波 3 · R1 出口（T057-lite 依赖 T046，可与波 2 并行；T063-lite 聚合）
+
+- [ ] **T057 connector 目录与 generic token（T057-lite【MVP】；T057-full 目录后端为 R2 第二阶段）**｜ CC（Web：intake.js/browser_integrations.cjs；Rust：integrations.rs 另一 worktree，文件互斥）｜ 依赖：T046 ｜ 文件：`integrations.rs`、`intake.{js,css}`、`index.html` 装配补丁、`tests/v2/browser_integrations.cjs`
+  - T057-lite（R1）：install 器仅限 claude-code/codex/dsh（既有后端，[integrations.rs:251-253](../../src/v2/bmem/src/integrations.rs#L251-L253)，已核）＋generic。install() 复用 T046 同一能力策略并升级已有绑定（修 [integrations.rs:215](../../src/v2/bmem/src/integrations.rs#L215) 原样复用旧 client_id，已核）；generic 走 `bmem connector token`：只输出 client_id＋stdio 启动行，凭据写 run/clients/<id>.json（0600 atomic）。agy/Cursor/Zed/Copilot/Hermes/OpenClaw 保留静态候选卡片（[intake.js:82-86](../../src/v2/web/intake.js#L82-L86)，已核）；建 install 器门槛＝本机二进制存在＋官方 MCP 配置格式核实＋真点通可复现，三者齐备并登记后才做。「最近调用」展示本轮删除（全仓无调用日志基础设施，本人 rg 复核零命中），不新建遥测表。
+  - T057-full（R2 第二阶段）：目录后端＋身份档位/能力面只读投影（context_clients）；T049-callers 的 409 子码 DOM 显示适配在此合流；飞书真租户证据按 plan §七 材料门槛单列 blocked_external。
+  - 验收证据：browser_integrations.cjs 新增阶段 `install→capability_readback→unbind→old_token_403` 四步 DOM/API 断言（T046 撤销语义在 install 路径的回归），写 artifacts/browser_integrations.json；`bmem connector list` 与 SQLite 状态一致断言；变异＝install 沿用旧 client_id 不升级能力后能力回读断言必须红。
+
+- [ ] **T063 validation 矩阵（T063-lite【MVP】R1 出口；T063-full R2 出口）**｜ ASM ｜ 依赖：manifest.json 机械推导（禁手工逐包列举；R1 实际聚合 T045/T050/T051a/T052/T053/T057-lite 工件）｜ 文件：`specs/004-bmem-v2/validation.md`＋新 `specs/005-agent-mcp-interface/validation.md`（指针＋005 矩阵段；004 仍唯一总台账，[CONTRIBUTING.md:125](../../CONTRIBUTING.md#L125)，已核）＋新 `tests/v2/build_validation_matrix.py`
+  - 前置契约：matrix_schema.json 在 T045 冻结；T044 runner 产出 gates.json；各包验收追加 schema 合规工件义务。
+  - T063-lite 矩阵行＝P0 第一步子步 1–7＋第二步子步 1–5＋005 R1 面行（search.query/evidence.expand/statement.list/task.handoff/delivery.ledger.self/delivery.receipt/attempt.outcome/candidate.submit 各正对照＋负对照一行，字段自包工件注入）；A01–A08/A12 行沿用 004 既有证据标 carried_forward，无工件的标 pending＋owner 包名。T063-full 补 A01–A08/A12 真实复验＋005 R2 面行（治理白名单/撤销轮换/409 子码/平台/三档）。
+  - 逐样本 19 字段：sample_id,acceptance_row,run_id,started_at,assembly_commit,binary_sha256,host_name,host_version,provider_mode,model_id,identity_role,capability_scope,command_or_tool,input_digest,expected,observed_status,artifact_paths[],evidence_kind,verdict,verdict_reason；receipt_ref/wire_capture_ref 仅宿主/模型类样本必填；negative_control 仅负对照行必填。evidence_kind＝real_host_real_model|real_host_loopback|synthetic_client_real_model|owner_native|fixture_only；需宿主装入/真实提炼的样本 verdict=evidence 必须 real_host_real_model；owner_native 要求真实二进制＋CLI/HTTP 回执；real_host_loopback 与 fixture_only 上限 partial。
+  - 验收证据：build_validation_matrix.py 在装配树 exit 0 并生成 validation.md 矩阵段；schema 校验通过；数字全部自 gates.json/包工件注入禁手改；未登记包对应行强制 pending＋owner，不得留空；ASM 只签字。
+
+## R2 · 一期全量闭合＋治理面（依赖满足且函数级文件互斥后开工）
+
+- [ ] **T048 治理单据补主体与幂等作用域（含迁移与回滚演练）**｜ CC 实现＋SUB-opus/CX/DSH 三家交叉复核 ｜ 依赖：T046 ｜ 工期在原件上 +50% ｜ 文件：`retrieval.rs` 治理段或新 `governance.rs`（含 migrate_governance_operations()）、`tests/v2/governance_actor_scope.rs`
+  - governance_operations 加 client_id/actor_kind/created_at/change_seq（现仅 4 列，[retrieval.rs:26-28](../../src/v2/bmem/src/retrieval.rs#L26-L28)，已核）；request_key 从全局 UNIQUE 改为按（主体, 动作, 键）复合 UNIQUE。SQLite 四步重建在单事务内执行，失败自动回滚；不做双写过渡。
+  - 迁移前备份（depgraph-6）：停服（service.lock 排他）→复制 database.db＋-wal＋-shm 三文件到 backups/T048-migrate-<timestamp>/→sqlite3 PRAGMA integrity_check 必须 ok。加 PRAGMA user_version 版本门：迁移成功即 user_version+1；旧二进制（retrieval.rs:573/:695 单键回放）遇版本不匹配即拒，防跨主体误回放。恢复执行器（T058+60）交付前，回滚为停服换文件手工规程并记台账局限。
+  - 验收证据：tests/v2/governance_actor_scope.rs 用例 `migrate_old_3_rows_new_columns_composite_unique`（迁移前插 3 行旧格式，迁移后断言 4 列存在、复合 UNIQUE 生效、旧行可查询、user_version 递增）、`cross_subject_same_key_independent`、`revoked_identity_replay_rejected`、`preview_one_shot_consumed`、`user_version_gate_blocks_old_binary`；**回滚演练**`migrate_failure_restore_from_backup`（种旧数据→迁移→模拟失败→从备份恢复→断言数据完整）必须真跑一次；test_governance_preview.py 现有 13 项全过（本人 rg 复核 13 个 def test_）；负对照按通用模板④，工件 artifacts/governance_actor_scope.json。
+
+- [ ] **T054 治理动作经 preview→confirm 暴露＋task bootstrap 工具**｜ CC 实现＋SUB-opus/CX/DSH 三家交叉复核 ｜ 依赖：T048、T050 ｜ 文件：`mcp/tools_governance.rs`、`mcp/tools_tasks.rs`（bootstrap）
+  - 默认放开清单＝T045 冻结白名单：grant.change 仅限 purpose=task_delivery 且 source_id∈调用者 accept 绑定来源且 client_id=调用者自身且 task_id∈调用者创建任务；stop/resume_capture 仅限调用者 accept 绑定来源。purpose∈{extract,embed}、share_statements、他人 client 的 task_access、history.import、forget、备份恢复类一律 owner-only（history 路由今天全部 owner-only，[server.rs:727-728](../../src/v2/bmem/src/server.rs#L727-L728)，已核；grant.change 能力极大，retrieval.rs:640-678 可插任意 recall_grants/改他人 share/开 extract，已核）。history.import 若需 agent 发起→请求单＋所有者 preview→confirm（plan §八.5a 签字）。
+  - **同包交付 task.create/attempt.start MCP bootstrap 工具**（HTTP 侧 POST /v2/tasks 已存在 server.rs:598、manage_tasks 门控 context.rs:370，已核；桥接即可）——否则 stdio-only agent 永远满足不了 grant.change 前置（完整性批评者 missing#3）。若 T045 选择另一读法，按冻结条文改写前置。
+  - 无状态形式（protocol-choice §5.2）：显式两个工具＋服务端自铸 preview_id 句柄参数；预览一次性、足迹逐字节比对、confirm 重放走原单据；不得改成协议会话态。
+  - 验收证据：tests/v2/mcp_surface.rs 治理段四组负对照各带变异点：`agent_grant_change_owner_source_403`（recall_grants 行数不变）、`agent_grant_change_other_client_403`、`agent_stop_capture_owner_source_403`、`agent_history_import_403_zero_jobs`（history_task_jobs 行数 0）；每组 403 均断言 governance_operations 与 governance_previews 新增行数 0；正例 `agent_task_create_then_grant_change_succeeds`（bootstrap→grant 链路）；变异＝放开白名单任一限定后对应负对照必须红；工件 artifacts/mcp_governance.json。
+
+- [ ] **T049-callers 409 子码全调用点迁移＋版本头＋显示层**｜ CC 机械迁移＋ASM apply_patch 串行 apply＋CX 只读复核 ｜ 依赖：T049-core、T050 ｜ 合流窗口：R2 各归属包（T058+60/T059/T061/T057-full）合流之后、T063-full 之前 ｜ 文件（函数级＝各 Error::conflict 调用行）：`platform.rs`(21)、`ingestion.rs`(11)、`integrations.rs`(9)、`history_tasks.rs`(5)、`server.rs`(4)、`vector.rs`(2)、`settings.rs`(2)、`retrieval.rs`(1)、`main.rs`(1)、`client.rs`(1)——合计 57 处/10 文件（本人 rg 复核全仓 64 处/11 文件，context.rs 7 处已在 core 迁移）；另 `error.rs`（移除前缀映射）、CLI/Web 显示层适配（装配补丁）
+  - 先脚本产出全调用点清单随包定义冻结；逐处改为 Error::conflict_kind(ConflictKind::Xxx)（sed 脚本＋逐文件 diff）；无主文件 client.rs/vector.rs/settings.rs/history_tasks.rs 显式归本包。移除 error.rs:29-37 前缀映射，子码由构造点显式传 code。
+  - Bmem-Command-Version 发射自 T047 移入本包（CLI 与 Web 开始发送，使 406 分支真正可达；当前全仓零发送方，本人 rg 复核）。
+  - 验收证据：`rg 'Error::conflict\(' src/v2/bmem/src/` 输出 0；tests/v2/route_authority.rs 扩展构造 11 种冲突场景各断言响应体含对应子码（`conflict_kind_<name>_distinguishable`×11）；CLI/Web 正确显示子码；版本不符 406 可达用例 `unsupported_version_406_reachable`；变异＝恢复任意一处 Error::conflict( 直传后该场景用例必须红；工件 artifacts/conflict_callers.json（含逐文件 diff 与清单）。
+
+- [ ] **T058+60 受控恢复执行＋对象保管与独立撤回清单工件**（原 T014 拆出＋T060 并入）｜ CC ｜ 依赖：T053 ｜ 文件：`archive.rs`、`data_management.rs`、`platform.rs`（objects 保管函数段）、`ingestion.rs` 附件段、`tests/v2/data_management.rs`
+  - A06 三组恢复路径与缺件阻断可执行；can_apply 按水位对齐计算（[archive.rs:168](../../src/v2/bmem/src/archive.rs#L168) 现恒 false，已核）；独立撤回水印表与 replay 路径；objects/ 真落盘＋进备份清单（替换 :171 硬编码 0，已核）＋check_objects（:258-263 非空即 unavailable，已核）支持非空目录核验＋可被清理覆盖。restore_apply 兑现 contracts.md:140 承诺。
+  - 验收证据：tests/v2/data_management.rs 用例 `restore_aligned_can_apply_true`/`restore_unaligned_can_apply_false`（双场景断言）、`missing_object_blocks_restore`、`objects_persisted_in_backup_manifest`、`check_objects_nonempty_verified`、`revocation_watermark_replay`；变异＝恢复 can_apply 恒 false 后对齐场景必须红；工件 artifacts/data_management.json。
+
+- [ ] **T059 治理清理作业表与逐位置披露**（原 T014 拆出）｜ CC 实现＋CX 只读复核 ｜ 依赖：T048 ｜ 文件：新 `cleanup.rs`＋`tests/v2/cleanup.rs`＋`retrieval.rs` 治理段（含 [:693](../../src/v2/bmem/src/retrieval.rs#L693) cleanup_state 字面量，已核，原清单漏声明）
+  - A05 暂停→查各出口→恢复可执行；替换固定字符串 logical_effect_applied 为真实逐位置状态；兑现 contracts.md:139-147 分位置披露。
+  - 验收证据：tests/v2/cleanup.rs 用例 `pause_inspect_outlets_resume`、`per_outlet_cleanup_state_real`（真实种入受限标记与合法对照验证逐出口清理）、`disclosure_matches_contract_positions`；变异＝恢复字面量后逐位置断言必须红；工件 artifacts/cleanup.json。
+
+- [ ] **T061 平台 install/update/uninstall/autostart**（原 T015）｜ CC＋DSH 模板填空 ｜ 依赖：T058+60 ｜ 文件：`platform.rs`（适配器段，与 T058+60 objects 段函数级互斥；现状 612 行零 launchd/systemd/schtasks/autostart 命中，本人 rg 复核）、`main.rs` 装配补丁、`tests/v2/test_platform_*.py`
+  - 本轮真验证只限 macOS launchd：本机干净账户＋隔离根真跑 install→登录自启→update→uninstall 全链，discover 收集≥1 项真跑用例。systemd user unit 与 Windows 计划任务：交付适配器代码＋单元级 fixture（evidence_kind=fixture_only，矩阵 verdict 上限 partial）；真验证门槛＝命名可达真机（登记主机名/OS/版本/登录方式），无真机不得宣称真验证。设计依据 cli-and-platform.md:70-72（已核）。
+  - 签名外部材料门槛（清单制，owner=user）：macOS Developer ID＋notarytool 凭据；Windows Authenticode＋signtool；发行渠道定义。未到位前矩阵行 verdict=blocked_external、reason='签名材料未到位'，禁写「待材料」散文。首发口径见 plan §八.6。
+  - 验收证据：tests/v2/test_platform_macos.py `test_launchd_install_autostart_update_uninstall`（真跑）；test_platform_systemd.py/test_platform_schtasks.py fixture 用例（构造与失败处理）；变异＝适配器写入路径丢失 --home 绝对根后重启回读断言必须红；工件 artifacts/platform.json。
+
+- [ ] **T062 三档磁盘路径、真实性能 token 证据（可判定子集）**｜ CC 写脚本＋DSH 复跑 ｜ 依赖：T045（token 语义）、T050（bench 需 MCP 工具表）；token 列消费 T052 工件；**与 T059 并行**（retrieval.rs Zstd 段 :12/:88-92/:161-165/:229 与治理段无共享函数/表，本人核对，depgraph-5）｜ 文件：`retrieval.rs` Zstd 段、新 `tests/v2/bench/`；**providers.rs 本轮不改**（全文无 usage 解析，本人 rg 复核；token 自 T052 wire 捕获解析）
+  - ①证据等价（compression-and-performance.md:102-103，已核）：固定种子语料（中英混排/中文多字节边界/代码缩进/空值/已撤回修订，≥200 样本）三档重放，逐件字节与摘要、抽取字段、修订关系、当前与双时态查询、允许/禁止补读一致；encoding=1 写入/回读字节级覆盖；撤回后新旧表示均禁读、合法对照仍可查。②磁盘与上下文成本（:105 子集）：10k 有效事件工作集（复用 004 validation.md 读接口 30 次串行预热方法）三档整库/WAL/索引占用＋读路径 p50/p95；bench 脚本写 artifacts/bench.json{seed,working_set,tier,disk_bytes,p50_ms,p95_ms,run_id}，禁空跑。③token：从 T052 wire 捕获与 native_receipts.json 关联的同次 model_call 解析响应 usage{prompt_tokens,completion_tokens}；响应无 usage 字段时该列 verdict=gap 并登记 model/endpoint/响应样本路径——不得写「能取则取」。
+  - 推迟项（命名门槛，plan §八.8）：p99/CPU/内存/读放大全量 profile、三系统对比、10 万/100 万语料、准确率配对 lab（紧凑模式启用门槛，未过前高压缩保持保真回退）。
+  - 验收证据：tests/v2/bench/ 用例 `tier_equivalence_200_samples`、`encoding1_roundtrip_bytes`、`revoked_both_representations_denied`、`disk_p50_p95_working_set`、`token_usage_from_wire_or_gap`；变异＝encoding=1 回读走未解压路径后字节级断言必须红；工件 artifacts/bench.json。
+
+## 条件包与不开工项
+
+- [ ] **T056 本机 Streamable HTTP 传输（条件包，待用户拍板，默认不开工）**｜ CC ｜ 依赖：T050；入口门槛＝已命名 HTTP-only 真实客户端（登记名称/版本/官方配置或连接失败实测）＋T044 spike ≤4h 通过（失败改退路 A 独立 hyper 监听再时间盒，皆失败维持 stdio 记 named gap）｜ 文件：`Cargo.toml`（启用 transport-streamable-http-server）、`Cargo.lock`（--locked 同步）、`server.rs` 挂载（装配补丁）、`tests/v2/test_mcp_http.py`
+  - 入口规格（UC-22 条文保留）：/mcp 挂载位于复用 authenticate() 全套的 axum middleware 之后（Host 精确匹配、X-Bmem-Instance、Bearer→bind 含 revoked_at/credential_version），Identity 注入 request extensions；rmcp handler 每请求从 extensions 取身份，禁 service_factory 持静态 Client、禁 initialize 缓存会话授权；stateless 每请求重鉴权；session 模式记录 (client_id,credential_version) 每请求重校验，失配 401/403 终止会话；仅 127.0.0.1；origin validation；按目标 era 分别写强制头（新 era MCP-Protocol-Version/Mcp-Method/Mcp-Name，缺失 400+-32020）；文档明写非规范本机自建鉴权、不实现 RFC 9728、不透传令牌。
+  - 验收证据（若开工）：tests/v2/test_mcp_http.py 真实 HTTP 客户端 initialize→tools/list→call_tool；`no_bearer_401`、`wrong_host_403`、`cross_origin_rejected`、`session_revoke_next_call_403`、`rotate_old_token_401`；变异＝逐请求 bind 改 initialize 缓存后撤销用例必须红。
+
+- [~] **T064 Hermes/OpenClaw 合成夹具与第三方 MCP 试点（原 T038/T039）本轮不开工**（决定见 plan §八.3；SUB-luna 不可用、DSH 占用关键路径、rmcp client 需 reqwest 0.13 新 major 而本仓 0.12）。缺口沿用 [004 validation.md:111](../004-bmem-v2/validation.md#L111)，下一轮凭真实宿主材料再开。
+
+## 验收状态
+
+计划已于 2026-11-24 按 [plan.md §八](plan.md) 的 11 项建议默认值**锁版**（用户指令「全部按建议默认锁版」），T044 开工。仍未完成的闸门有两道：T045 的契约冻结文档要用户在 spec.md 上单独签字，T044 的执行体探针要留档 —— 两者齐备前波 1 不开。
