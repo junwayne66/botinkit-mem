@@ -133,3 +133,28 @@ Claude Code 完成了 Web 勾选界面的初稿，Codex 实现后台任务并审
 | 浏览器 | `node tests/v2/browser_smoke.cjs` 全套通过。验证打开和勾选均不入队，确认后可查看任务、导出和回执。 |
 | 本机部署 | 备份旧程序和 SQLite，安装 release 构建并重启同一实例。Chrome 在 390px 打开飞书、Codex、Claude Code 和 DSH 的实际入口，核对所有类别默认未选中且任务数量没有变化。 |
 | 静态检查 | release 构建、Rust 格式、Clippy、JS 和夹具脚本语法以及 `git diff --check` 通过。 |
+
+## 门禁复跑与三处陈旧记录更正 · 2026-11-24
+
+本机 macOS arm64（cargo/rustc 1.100.0、Python 3.9.6、Node v22.22.3、Chrome via Playwright 1.64.1）。一条命令复跑：`BMEM_V2_TEST_REAL_MODEL=qwen3:4b-instruct-2507-q4_K_M BMEM_V2_TEST_NATIVE_HOSTS=1 BMEM_V2_PLAYWRIGHT_MODULE=<playwright> python3 tests/v2/run_gates.py --profile assembly`。数字取自 `tests/v2/artifacts/validation_numbers.json`（runner 机械写入，禁手填），绑定 HEAD `04da93e8633c`、被测二进制 sha256 `e6e0ee08623c…`。本节只追加，不改写上表的历史时点记录。
+
+| 检查 | 实测结果 |
+|---|---|
+| 构建与静态检查 | `cargo fmt --check` 无 diff；`cargo clippy --locked --all-targets -D warnings` 0 警告（步 2 前 `cargo clean -p bmem` 强制本 crate 重新分析，不再拿缓存诊断冒充新改动）；`cargo build --release --locked` 通过 |
+| Rust | 1 个测试目标 **37 passed / 0 failed / 0 ignored**。计数含 `tests/v2/{context_ledger,data_management,history_feishu,history_hosts,history_tasks,platform}.rs`，它们经 `#[cfg(test)] #[path=…]` 内联进 crate |
+| Python | **146 用例**。基线档 skip=7（6 个双宿主用例＋1 个真实模型用例，与 AST 守卫求得的期望集相符，任何意外 skip 判失败）；全证据档 **146 run / 0 skip / 0 失败 / 123.9s**，含真实 `qwen3:4b-instruct-2507-q4_K_M` 提炼与真实双宿主 |
+| 浏览器 | `tests/v2/browser_smoke.cjs` 为唯一入口（其余 6 个 `browser_*.cjs` 只导出验证函数，逐文件直跑是 0 秒空跑，runner 显式拒绝把它当证据），46.5s 通过，含 data_console 与 integrations 阶段 |
+| 双宿主 | claude 2.1.308 与 codex-cli 0.171.0 实跑，现为 6 个被 `unittest discover` 计数的用例（声明装入 initial／corrected、MCP、hook 重放、原生脱敏、跨宿主接手），不再是「跑过但没进门禁」的一次性脚本 |
+| 台账对账 | 步 12 文件边界 changed=declared、offenders=0；`Error::conflict(` 调用点 64→64 未增（T049 迁移前作为下限哨兵） |
+
+**本轮更正三条陈旧记录**（均在本文档前文，保留原文不改写）：
+
+1. 第 9 行「行为测试在 `tests/v2`，Cargo 内置测试目标运行 0 项」已过时：现 `cargo test` 报告 1 个目标 37 passed，因 `tests/v2/*.rs` 经 `#[path]` 内联进 crate 编译。
+2. 第 10 行「13 项通过」与后续各轮的 15/33/35/37/38 均为当时快照：现全量 discover 为 **146 用例**，其中 `tests/v2/gates/` 是门禁自身的单测。
+3. 「真实模型用例默认 skipped=1」的记法在 assembly 档不再适用：该档要求零跳过，缺 `BMEM_V2_TEST_REAL_MODEL` 时 runner 直接以「缺证据」判失败，而不是静默通过。
+
+**本轮顺带修掉的三个真实缺陷**（原先都被当成"测试不稳"或"外部因素"）：
+
+- **daemon 启动锁竞争（可达产品故障）**：`serve()` 一次性 `try_lock_exclusive` 失败即致命退出，而每次 CLI 活性探针都短暂持同一把排它锁。隔离实测碰撞率 6/140 ≈ 4.3%/次启动（无探针对照 0/60），每轮 discover 约 50 次启动 → 单轮至少一次失败的概率 ≈88%，且失败用例逐轮随机。修为 daemon 侧 20ms×2s 有界重试（`lock_service_for_daemon`），`lock_service`／`discover` 的"一次性、拿到锁即 stopped"语义保持不变并写成测试。
+- **批量历史作业排空顺序随机**：同批三个 job 共用一个 `created_at`，tie-break 落在随机 `task_id` 上，导致消息批次有 1/3 概率排到最后、串行 12.4s 超过调用方 10s 预算。改为 `rowid`（插入序 FIFO），调度序与 `list()` 展示序一致。
+- **宿主与门禁子进程继承 stdin**：非 TTY（nohup／CI）下 stdin 是永不关闭的管道，`codex exec` 打印 `Reading additional input from stdin...` 阻塞到预算耗尽，**曾被误判为第三方 CLI 的耗时尾部**并据污染样本算出 113s 预算。补 `stdin=DEVNULL` 后重测 9 轮 54 次宿主调用零尾部，预算按清洁样本重算为 86s，污染观测从样本剔除并在注释与台账中记录。
