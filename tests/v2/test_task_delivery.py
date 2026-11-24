@@ -254,7 +254,10 @@ class TaskDeliveryTest(unittest.TestCase):
 
         code, jobs = owner.request("/v2/jobs")
         self.assertEqual(code, 200)
-        tool_job = next(job for job in jobs["jobs"] if job["input"]["actor_kind"] == "tool_result")
+        tool_job = next(job for job in jobs["jobs"] if job["actor_kind"] == "tool_result")
+        code, detail = owner.request(f'/v2/jobs/{tool_job["job_id"]}')
+        self.assertEqual(code, 200)
+        self.assertEqual(detail["input"]["actor_kind"], "tool_result")
         candidates_path = f'/v2/jobs/{tool_job["job_id"]}/candidates'
         code, candidates = owner.request(candidates_path)
         self.assertEqual(code, 200)

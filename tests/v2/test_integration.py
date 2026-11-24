@@ -542,6 +542,15 @@ class BmemIntegration(unittest.TestCase):
         [observed] = [item for item in report["deliveries"] if item["delivery_id"] == provided["delivery_id"]]
         self.assertEqual(observed["outcome_state"], "passed")
         self.assertEqual(observed["used_state"], "unknown")
+        status, ledger = browser.request(
+            "/v2/deliveries/ledger?host=fixture-claude&loaded=observed&used=pending&page=1"
+        )
+        self.assertEqual(status, 200, ledger)
+        self.assertEqual(ledger["total"], 1, ledger)
+        self.assertEqual(ledger["deliveries"][0]["delivery_id"], provided["delivery_id"])
+        self.assertEqual(ledger["deliveries"][0]["loaded_state"], "observed")
+        self.assertEqual(ledger["deliveries"][0]["used_state"], "pending")
+        self.assertEqual(ledger["summary"]["used"], 0, ledger)
 
         self.operation(browser, {**grant, "share_statements": False}, "revoke-share")
         revoked = self.post(

@@ -1,5 +1,9 @@
 """Owner workbench projections through the native service and its real write paths."""
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from contextlib import closing
 import datetime
+import sqlite3
+from threading import Event
 import unittest
 
 import test_integration as support
@@ -82,6 +86,8 @@ class WorkbenchTest(unittest.TestCase):
         self.assertEqual(first["jobs"][0]["event_id"], receipt["events"][-1]["event_id"])
         self.assertEqual(second["jobs"][0]["event_id"], receipt["events"][0]["event_id"])
         self.assertEqual(self.get("/v2/jobs?limit=1&status=failed")["jobs"], [])
+        self.assertEqual(self.get("/v2/jobs")["jobs"],
+                         self.get("/v2/jobs?limit=40")["jobs"])
 
         graph = self.get("/v2/graph")
         self.assertEqual(graph["shown_records"], 3)
@@ -112,3 +118,74 @@ class WorkbenchTest(unittest.TestCase):
         self.assertEqual(after["recent"], [])
         self.assertEqual(after["counts"]["events"], 0)
         self.assertEqual(after["counts"]["statements"], 0)
+        self.assertEqual(after["jobs"], [{"status": "cancelled", "count": 2}])
+
+    def test_status_reads_committed_state_while_writer_waits(self):
+        service = self.service
+        case = support.fixture("source_page.json")
+        source = service.post(self.owner, "/v2/sources", case["source"], "source")
+        source_id = source["source_id"]
+        service.operation(self.owner, {"kind": "resume_capture", "source_id": source_id}, "capture")
+        service.post(self.owner, "/v2/events", {
+            **case["page"], "source_id": source_id,
+        }, "page")
+        job_id = self.get("/v2/jobs")["jobs"][0]["job_id"]
+        started = Event()
+
+        def write():
+            started.set()
+            return self.owner.request(f"/v2/jobs/{job_id}/retry", "POST", {})
+
+        with closing(sqlite3.connect(service.root / "data/bmem.sqlite3")) as writer:
+            with writer:
+                writer.execute("UPDATE ing_jobs SET status='failed' WHERE job_id=?", (job_id,))
+            writer.execute("BEGIN IMMEDIATE")
+            with ThreadPoolExecutor(max_workers=6) as executor:
+                pending_write = executor.submit(write)
+                try:
+                    self.assertTrue(started.wait(1))
+                    with self.assertRaises(TimeoutError):
+                        pending_write.result(timeout=0.15)
+                    paths = ("/v2/tasks", "/v2/sources", "/v2/overview", "/v2/jobs",
+                             "/v2/deliveries/ledger")
+                    pending_reads = {p: executor.submit(self.get, p) for p in paths}
+                    results = {p: future.result(timeout=2) for p, future in pending_reads.items()}
+                    self.assertEqual(results["/v2/tasks"]["tasks"], [])
+                    self.assertEqual(results["/v2/overview"]["counts"]["sources"], 1)
+                    self.assertEqual(results["/v2/sources"]["sources"][0]["source_id"], source_id)
+                    self.assertEqual(results["/v2/jobs"]["jobs"][0]["status"], "failed")
+                finally:
+                    writer.rollback()
+                status, job = pending_write.result(timeout=2)
+                self.assertEqual(status, 202, job)
+        self.assertEqual(self.get("/v2/jobs")["jobs"][0]["status"], "pending")
+
+    def test_overview_backfills_existing_records_once(self):
+        service = self.service
+        case = support.fixture("source_page.json")
+        source = service.post(self.owner, "/v2/sources", case["source"], "source")
+        source_id = source["source_id"]
+        service.operation(self.owner, {"kind": "resume_capture", "source_id": source_id}, "capture")
+        service.post(self.owner, "/v2/events", {
+            **case["page"], "source_id": source_id,
+        }, "page")
+        before = self.get("/v2/overview")
+        self.assertEqual(before["counts"]["events"], 2)
+
+        service.stop()
+        with closing(sqlite3.connect(service.root / "data/bmem.sqlite3")) as old_db:
+            with old_db:
+                triggers = old_db.execute(
+                    "SELECT name FROM sqlite_schema WHERE type='trigger' AND name GLOB 'dashboard_*'"
+                ).fetchall()
+                for (name,) in triggers:
+                    old_db.execute("DROP TRIGGER " + name)
+                old_db.execute("DROP TABLE dashboard_counts")
+
+        for _ in range(2):
+            service.start()
+            self.owner, _ = service.web()
+            after = self.get("/v2/overview")
+            for field in ("counts", "distribution", "jobs"):
+                self.assertEqual(after[field], before[field])
+            service.stop()
