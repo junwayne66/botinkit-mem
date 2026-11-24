@@ -67,10 +67,29 @@ BMEM_V2_PLAYWRIGHT_MODULE=/path/to/playwright \
 ### 双宿主测试（涉及接入/协议改动时）
 
 ```sh
-BMEM_V2_TEST_BIN="$PWD/src/v2/bmem/target/debug/bmem" python3 tests/v2/native_hosts.py
+BMEM_V2_TEST_NATIVE_HOSTS=1 BMEM_V2_TEST_BIN="$PWD/src/v2/bmem/target/debug/bmem" \
+  python3 -m unittest discover -s tests/v2 -v
 ```
 
-该用例需要本机安装 Claude Code 与 Codex，以隔离会话验证 Hook、MCP、任务接手与回执。
+只跑这一组时：
+
+```sh
+cd tests/v2 && BMEM_V2_TEST_NATIVE_HOSTS=1 \
+  BMEM_V2_TEST_BIN="$OLDPWD/src/v2/bmem/target/debug/bmem" python3 -m unittest test_native_hosts -v
+```
+
+该检查需要本机安装 Claude Code 与 Codex，以隔离会话验证 Hook、MCP、任务接手与跨宿主证据，现为 6 个被 `unittest discover` 真实计数的用例（声明装入 initial/corrected、MCP、hook 重放、原生脱敏、跨宿主接手），跨宿主部分按宿主与阶段命名 subTest。未设置 `BMEM_V2_TEST_NATIVE_HOSTS` 时整组带原因跳过，门禁基线档把它计入期望跳过；assembly 档要求零跳过。旧入口 `python3 tests/v2/native_hosts.py` 已改为非零退出并提示新命令，避免迁移后静默通过。
+
+外部宿主 CLI 若超出实测预算（`HOST_CALL_TIMEOUT`，依据与公式写在 `tests/v2/native_hosts.py`），会打印 `BMEM_HOST_TIMEOUT host=… phase=… elapsed=… budget=…`、以退出码 3 结束，门禁记 `reason_code=external-host-cli-timeout`；这仍判失败，不降级为警告。
+
+### 一条命令复跑门禁
+
+```sh
+python3 tests/v2/run_gates.py --profile generic    # 不依赖真实模型与宿主
+python3 tests/v2/run_gates.py --profile assembly   # 全证据档：真实模型＋双宿主，要求零跳过
+```
+
+步骤表、判定规则与证据工件见 `specs/005-agent-mcp-interface/plan.md` §五 与 `tests/v2/artifacts/`。
 
 ## 提交规范
 

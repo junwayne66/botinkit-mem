@@ -38,6 +38,54 @@ _RAN = re.compile(r"^Ran (\d+) tests? in ")
 _OK_SKIP = re.compile(r"^OK \(skipped=(\d+)\)\s*$")
 _FAILED_PART = re.compile(r"(failures|errors|skipped)=(\d+)")
 
+# Failure attribution for the Python steps (T044 budget round, 2026-11-24).
+# native_hosts.py prints BMEM_HOST_TIMEOUT when an *installed third-party*
+# host CLI (claude / codex) outlives its measured per-call budget.  That tail
+# belongs to the external CLI, not to bmem, so a reader of gates.json must be
+# able to tell the two apart at a glance.  It deliberately does NOT soften the
+# gate: the step still FAILs (assembly requires zero failures), only the cause
+# is named.  Demoting it to WARN would turn an unproven run into a green one.
+HOST_TIMEOUT_MARKER = "BMEM_HOST_TIMEOUT"
+REASON_EXTERNAL_HOST_TIMEOUT = "external-host-cli-timeout"
+REASON_TEST_FAILURE = "test-failure"
+
+
+# unittest prints one "FAIL: <id>" / "ERROR: <id>" header per failed test (and
+# one per failed subTest).  Splitting on them lets attribution survive the
+# TestCase migration: several test_* methods may now fail in a single run.
+_FAILURE_HEADER = re.compile(r"^(?:FAIL|ERROR): ", re.M)
+
+
+def _failure_blocks(text):
+    # type: (str) -> List[str]
+    starts = [m.start() for m in _FAILURE_HEADER.finditer(text)]
+    blocks = []  # type: List[str]
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(text)
+        blocks.append(text[start:end])
+    return blocks
+
+
+def classify_python_failure(text):
+    # type: (Optional[str]) -> str
+    """Cause code for a Python failure.  Anything without the host-timeout
+    marker is an ordinary test failure (bmem behaviour is the suspect).
+
+    With multiple counted cases the marker alone is not enough: the external
+    tail is only the cause when EVERY failure block carries it.  If any block
+    is a plain assertion/error (a bmem-side defect), the run is classified
+    test-failure even though another case timed out -- tasks.md T044 requires
+    'no other assertion failure in the same output' for the external label.
+    Header-less text (no parseable FAIL/ERROR blocks) falls back to marker
+    presence.  Either way the verdict stays FAIL; this only names the cause."""
+    text = text or ""
+    if HOST_TIMEOUT_MARKER not in text:
+        return REASON_TEST_FAILURE
+    blocks = _failure_blocks(text)
+    if blocks and any(HOST_TIMEOUT_MARKER not in block for block in blocks):
+        return REASON_TEST_FAILURE
+    return REASON_EXTERNAL_HOST_TIMEOUT
+
 
 def parse_unittest_output(text):
     # type: (str) -> Dict
@@ -85,7 +133,12 @@ def parse_unittest_output(text):
                 failed_ids.append(tid)
     return {"tests_run": tests_run, "skipped": skipped, "failures": failures,
             "errors": errors, "skipped_ids": skipped_ids,
-            "failed_ids": failed_ids, "ok": ok}
+            "failed_ids": failed_ids, "ok": ok,
+            # Carried here because run_gates._discover hands the parsed dict to
+            # judge_unittest; the raw text is not passed separately.  The code
+            # is empty for a passing run: there is no failure to attribute.
+            "host_timeout_hits": text.count(HOST_TIMEOUT_MARKER),
+            "reason_code": "" if ok else classify_python_failure(text)}
 
 
 # --------------------------------------------------------------------------
@@ -214,10 +267,15 @@ def expected_skip_ids(collection, env, platform_name):
 
 
 def judge_unittest(parsed, exit_code, collection, env, platform_name,
-                   strict_zero_skips, baseline_min=S.BASELINE_MIN_PY_TESTS):
-    # type: (Dict, Optional[int], Dict, Dict[str, str], str, bool, int) -> Dict
+                   strict_zero_skips, baseline_min=S.BASELINE_MIN_PY_TESTS,
+                   output=None):
+    # type: (Dict, Optional[int], Dict, Dict[str, str], str, bool, int, Optional[str]) -> Dict
     """plan step 5 / step 6 verdicts. Any unexpected skip fails; step 6
-    (full evidence) requires skipped == 0 outright."""
+    (full evidence) requires skipped == 0 outright.
+
+    A FAIL also carries a cause code (external-host-cli-timeout vs
+    test-failure).  `output` is the raw step text when the caller has it;
+    otherwise the marker count carried by parse_unittest_output is used."""
     reasons = []
     if exit_code != 0 or parsed["failures"] or parsed["errors"] or not parsed["ok"]:
         reasons.append("unittest reported failures/errors or non-zero exit")
@@ -248,7 +306,24 @@ def judge_unittest(parsed, exit_code, collection, env, platform_name,
         if unknown and actual & set(unknown):
             reasons.append("skipped tests with unevaluable guards: %s" % sorted(actual & set(unknown)))
     if reasons:
-        return verdict(FAIL, "; ".join(reasons), tests_run=run,
+        if output is not None:
+            code = classify_python_failure(output)
+        elif parsed.get("reason_code"):
+            # parse_unittest_output already ran the block-aware classifier on
+            # the raw text; reuse it so a mixed run (one external timeout plus
+            # one bmem assertion failure) stays test-failure without the caller
+            # having to hand the raw output back in.
+            code = parsed["reason_code"]
+        elif parsed.get("host_timeout_hits"):
+            code = REASON_EXTERNAL_HOST_TIMEOUT
+        else:
+            code = REASON_TEST_FAILURE
+        # run_gates._discover writes res["reason"] into gates.json verbatim and
+        # builds its own fixed `extra` dict, so the code is also prefixed here:
+        # that is the channel that reaches the step record without editing the
+        # runner.  Status stays FAIL for both codes -- attribution, not leniency.
+        return verdict(FAIL, "reason_code=%s; %s" % (code, "; ".join(reasons)),
+                       reason_code=code, tests_run=run,
                        skipped=parsed["skipped"], skipped_ids=sorted(actual))
     return verdict(PASS, "", tests_run=run, skipped=parsed["skipped"],
                    skipped_ids=sorted(actual))

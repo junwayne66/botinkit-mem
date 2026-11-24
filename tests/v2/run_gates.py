@@ -350,6 +350,11 @@ class Runner(object):
         if strict:
             extra["host_versions"] = getattr(self, "_host_versions", None)
             extra["model_id"] = self.base_env.get("BMEM_V2_TEST_REAL_MODEL")
+        # Failures carry a cause code so a reader can tell an external host CLI
+        # tail from a bmem defect without re-reading the log.  The verdict does
+        # not change: both stay FAIL.
+        if res.get("reason_code"):
+            extra["reason_code"] = res["reason_code"]
         return self._record(step, info, res["status"], res["reason"], extra)
 
     def _step_discover_baseline(self, step):

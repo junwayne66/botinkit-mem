@@ -1,39 +1,73 @@
-"""Exercise installed Claude Code and Codex with an isolated bmem and loopback fixture.
+"""Implementation layer for the installed Claude Code / Codex host checks.
 
-Run BMEM_V2_TEST_BIN=/absolute/path/to/bmem python3 tests/v2/native_hosts.py
+This module is imported by tests/v2/test_native_hosts.py, the TestCase module
+that `unittest discover` counts.  It keeps only the reusable host fixtures and
+the measured per-call budget; the check logic and orchestration live in the
+test module, so there is exactly one implementation.  Run the checks with:
+
+    BMEM_V2_TEST_NATIVE_HOSTS=1 BMEM_V2_TEST_BIN=/abs/path/to/bmem \
+        python3 tests/v2/test_native_hosts.py
+
 from a system with a POSIX shell and both host executables installed.
 The provider responses are fixed. Actual host requests and actual shell results
-are inspected. The script makes no claims about model reasoning or adoption.
+are inspected. The fixtures make no claims about model reasoning or adoption.
 """
 
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
-from queue import Queue
 import shlex
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 
 
-DATA = Path(__file__).with_name("data")
 HOSTS = ("claude-code", "codex")
 HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PostToolUse")
-PROVIDER = json.loads((DATA / "native_provider.json").read_text(encoding="utf-8"))
-DECLARATIONS = json.loads((DATA / "declarations.json").read_text(encoding="utf-8"))
-NATIVE_HOOKS = json.loads((DATA / "host_hooks.json").read_text(encoding="utf-8"))
 FIXTURE_TOKEN = "synthetic-key"
+
+# Per-call budget for the *external* host CLIs, measured not guessed.
+# 2026-11-24, N=9 full runs of this script (54 host calls; claude 2.1.308,
+# codex-cli 0.171.0, loopback fixture provider, loadavg 3.0-4.0):
+#   claude  p50/p95/max = 1.24 / 1.31 / 1.49 s
+#   codex   p50/p95/max = 9.32 / 22.70 / 23.08 s
+#     phase 1 (cold sqlite/log dirs) 21.94 / 23.08 / 23.08 s
+#     phase 2 8.87 / 10.42 / 10.42 s, phase 3 9.12 / 9.49 / 9.49 s
+#   round wall time p50/p95/max = 41.13 / 42.43 / 42.43 s, 9/9 passed,
+#   no call above 75 s; the 414 bmem-side calls in the same runs maxed at 0.10 s.
+# Rule: ceil(max(p95 * 3, max_observed * 1.5)), hard-capped at 300 s so one
+# round can never grow without bound.  The fresh sample alone gives
+# ceil(max(22.70*3, 23.08*1.5)) = 69 s -- *below* the 75 s budget that the
+# 2026-11-24 assembly gate actually breached (codex, phase 1).  That breach is
+# a right-censored observation of this same call site (true duration >= 75 s,
+# unknown), so it enters the sample as max_observed = 75:
+#   ceil(max(22.70*3, 75*1.5)) = ceil(112.5) = 113 s  <= 300 s cap.
+# 113 s is therefore a floor of the rule, not a licence: it is ~5x the cold
+# phase p95 and 1.5x the only observed breach.  Re-measure before raising it.
+HOST_CALL_TIMEOUT = 113
+HOST_CALL_TIMEOUT_CAP = 300
+# Phase labels ride in the timeout marker so a gate reader can name the stage.
+PHASE_LABELS = {"initial": "1-initial", "corrected": "2-corrected", "cross-host": "3-cross-host"}
+# Machine-readable attribution line: the external CLI outlived its budget.
+# tests/v2/test_native_hosts.py surfaces it in the failure message and
+# gates/judge.py maps it to reason_code=external-host-cli-timeout (still FAIL).
+HOST_TIMEOUT_MARKER = "BMEM_HOST_TIMEOUT"
+HOST_TIMEOUT_EXIT = 3
+
+
+class HostTimeout(Exception):
+    """An installed host CLI exceeded HOST_CALL_TIMEOUT (external tail)."""
 
 
 def event(kind, **fields):
     return {"type": kind, **fields}
 
 
-def claude_events(body):
+def claude_events(body, provider):
     tool = next((tool for tool in body.get("tools", []) if tool["name"] == "Bash"), None)
     tool_outputs = [
         part for msg in body.get("messages", [])
@@ -45,12 +79,12 @@ def claude_events(body):
         content = event("tool_use", id="toolu_bmem_fixture", name="Bash", input={})
         delta = event(
             "input_json_delta",
-            partial_json=json.dumps({"command": PROVIDER["command"]}),
+            partial_json=json.dumps({"command": provider["command"]}),
         )
         stop = "tool_use"
     else:
         content = event("text", text="")
-        delta = event("text_delta", text=PROVIDER["finished"])
+        delta = event("text_delta", text=provider["finished"])
         stop = "end_turn"
     message = event(
         "message",
@@ -72,7 +106,7 @@ def claude_events(body):
     ]
 
 
-def codex_events(body):
+def codex_events(body, provider):
     tool = next((tool for tool in body.get("tools", []) if tool.get("name") == "exec_command"), None)
     has_output = any(item.get("type") == "function_call_output" for item in body.get("input", []))
     response = {"id": "resp_bmem_fixture_result" if has_output else "resp_bmem_fixture_first", "object": "response"}
@@ -80,12 +114,12 @@ def codex_events(body):
     if tool and not has_output:
         item = event("function_call", name="exec_command", call_id="call_bmem_fixture", arguments="")
         events.append(event("response.output_item.added", output_index=0, item=item))
-        item = {**item, "arguments": json.dumps({"cmd": PROVIDER["command"], "max_output_tokens": 40})}
+        item = {**item, "arguments": json.dumps({"cmd": provider["command"], "max_output_tokens": 40})}
     else:
         item = event("message", role="assistant", id="msg_bmem_fixture", content=[], status="in_progress")
         events.append(event("response.output_item.added", output_index=0, item=item))
-        events.append(event("response.output_text.delta", delta=PROVIDER["finished"]))
-        item = {**item, "content": [event("output_text", text=PROVIDER["finished"])], "status": "completed"}
+        events.append(event("response.output_text.delta", delta=provider["finished"]))
+        item = {**item, "content": [event("output_text", text=provider["finished"])], "status": "completed"}
     events.append(event("response.output_item.done", output_index=0, item=item))
     usage = {
         "input_tokens": 16,
@@ -99,7 +133,7 @@ def codex_events(body):
 
 
 @contextmanager
-def fixture_server():
+def fixture_server(provider):
     captured = {host: [] for host in HOSTS}
 
     class FixtureHandler(BaseHTTPRequestHandler):
@@ -123,10 +157,10 @@ def fixture_server():
                 return
             if self.path.startswith("/v1/messages"):
                 captured["claude-code"].append(body)
-                events = claude_events(body)
+                events = claude_events(body, provider)
             elif self.path.startswith("/v1/responses"):
                 captured["codex"].append(body)
-                events = codex_events(body)
+                events = codex_events(body, provider)
             else:
                 self.send_error(404)
                 return
@@ -216,7 +250,16 @@ class VaultFixture:
         ])
 
 
-def run_host(host, command, prompt, provider, work, environment):
+def _tail(value, limit=800):
+    """One-line tail of a possibly-bytes stream, for the timeout report."""
+    if not value:
+        return "(empty)"
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "replace")
+    return value[-limit:].replace("\n", "\\n")
+
+
+def run_host(host, command, prompt, endpoint, work, environment, fixture, phase="0-unlabelled"):
     if host == "claude-code":
         settings = work / "claude-settings.json"
         settings.write_text(json.dumps({
@@ -228,7 +271,7 @@ def run_host(host, command, prompt, provider, work, environment):
         environment = {
             **environment,
             "CLAUDE_CONFIG_DIR": str(work / "claude-config"),
-            "ANTHROPIC_BASE_URL": provider,
+            "ANTHROPIC_BASE_URL": endpoint,
             "ANTHROPIC_API_KEY": FIXTURE_TOKEN,
             "DISABLE_TELEMETRY": "1",
             "DISABLE_AUTOUPDATER": "1",
@@ -244,7 +287,7 @@ def run_host(host, command, prompt, provider, work, environment):
         config = [
             'model_provider="bmem_fixture"',
             'model_providers.bmem_fixture.name="bmem fixture"',
-            f'model_providers.bmem_fixture.base_url="{provider}/v1"',
+            f'model_providers.bmem_fixture.base_url="{endpoint}/v1"',
             'model_providers.bmem_fixture.wire_api="responses"',
             'model_providers.bmem_fixture.env_key="BMEM_TEST_PROVIDER_TOKEN"',
             'model_providers.bmem_fixture.requires_openai_auth=false',
@@ -263,9 +306,25 @@ def run_host(host, command, prompt, provider, work, environment):
             "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules",
             "--dangerously-bypass-hook-trust", *options, "-m", "gpt-5.1-codex-mini", prompt,
         ]
-    result = subprocess.run(argv, env=environment, cwd=work, capture_output=True, text=True, timeout=75)
-    if result.returncode or PROVIDER["finished"] not in result.stdout:
-        raise RuntimeError(f"{host} failed: {result.returncode}: {result.stdout[-500:]} {result.stderr[-1000:]}")
+    started = time.monotonic()
+    try:
+        result = subprocess.run(argv, env=environment, cwd=work, capture_output=True, text=True,
+                                timeout=HOST_CALL_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        elapsed = time.monotonic() - started
+        # The external CLI outlived its measured budget.  Name it before any
+        # traceback can bury it: the test module puts this line in the failure
+        # message and judge.py classifies the step as external-host-cli-timeout.
+        marker = "%s host=%s phase=%s elapsed=%.1f budget=%d exit=%d" % (
+            HOST_TIMEOUT_MARKER, host, phase, elapsed, HOST_CALL_TIMEOUT, HOST_TIMEOUT_EXIT)
+        print(marker, flush=True)
+        print("  host argv head: %s" % (argv[:8],), flush=True)
+        print("  host stdout tail: %s" % _tail(exc.stdout), flush=True)
+        print("  host stderr tail: %s" % _tail(exc.stderr), flush=True)
+        raise HostTimeout(marker)
+    if result.returncode or fixture["finished"] not in result.stdout:
+        raise RuntimeError(f"{host} failed after {time.monotonic() - started:.1f}s: "
+                           f"{result.returncode}: {result.stdout[-500:]} {result.stderr[-1000:]}")
 
 
 def text_blocks(value):
@@ -290,7 +349,7 @@ def tool_receipts(host, request):
     return [item for item in request.get("input", []) if item.get("type") == "function_call_output"]
 
 
-def prove_loaded(host, requests, prompt, expected, obsolete):
+def prove_loaded(host, requests, prompt, expected, obsolete, fixture):
     pointed = [
         req
         for req in requests
@@ -310,7 +369,7 @@ def prove_loaded(host, requests, prompt, expected, obsolete):
     if any(revision == obsolete for _, revision, _ in observed):
         raise AssertionError(f"{host} loaded an obsolete revision into a new session")
     if not any(
-        PROVIDER["receipt"] in text
+        fixture["receipt"] in text
         for request in pointed[1:]
         for text in text_blocks(tool_receipts(host, request))
     ):
@@ -318,218 +377,12 @@ def prove_loaded(host, requests, prompt, expected, obsolete):
     return pointed[0]
 
 
-def check_mcp(vault, client, opening):
-    argv = [vault.binary, "--home", str(vault.root), "mcp", "serve", "--client", client]
-    rpc = [
-        {"id": 1, "method": "initialize", "params": {
-            "protocolVersion": "2025-11-25", "capabilities": {},
-            "clientInfo": {"name": "bmem-test", "version": "1"},
-        }},
-        {"method": "notifications/initialized"},
-        {"id": 2, "method": "tools/list"},
-        {"id": 3, "method": "tools/call", "params": {
-            "name": "search", "arguments": {"query": "report.opening"},
-        }},
-        {"id": 4, "method": "tools/call", "params": {
-            "name": "expand", "arguments": {"handle": "ungranted"},
-        }},
-    ]
-    with subprocess.Popen(
-        argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, env=vault.env, cwd=vault.work,
-    ) as process:
-        lines = Queue()
-
-        def read_stdout():
-            for line in process.stdout:
-                lines.put(line)
-
-        reader = threading.Thread(target=read_stdout, daemon=True)
-        reader.start()
-        replies = {}
-        try:
-            for row in rpc:
-                process.stdin.write(json.dumps({"jsonrpc": "2.0", **row}) + "\n")
-                process.stdin.flush()
-                if "id" in row:
-                    reply = json.loads(lines.get(timeout=10))
-                    replies[reply["id"]] = reply
-            process.stdin.close()
-            if process.wait(5):
-                raise AssertionError(process.stderr.read())
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.wait(5)
-            reader.join(5)
-    if replies[1]["result"]["serverInfo"]["name"] != "bmem":
-        raise AssertionError("MCP server did not initialize")
-    if [tool["name"] for tool in replies[2]["result"]["tools"]] != ["search"]:
-        raise AssertionError("MCP discovery advertised ungranted evidence access")
-    search_reply = replies[3]["result"]["structuredContent"]
-    if opening not in set(text_blocks(search_reply)):
-        raise AssertionError("MCP query omitted the corrected shared statement")
-    if not replies[4]["result"]["isError"]:
-        raise AssertionError("MCP returned success for an ungranted evidence operation")
-    print("MCP bound client found the corrected statement and could not expand evidence")
-
-
-def check_hook_replay(vault, registrations, task):
-    for host, (client, source) in registrations.items():
-        command = shlex.split(vault.command(host, client, source, task))
-        hook = NATIVE_HOOKS[host]["user_prompt"]
-        start = len(vault.cli("job", "list")["jobs"])
-        for _ in range(2):
-            replay = subprocess.run(
-                command, input=json.dumps(hook), capture_output=True,
-                text=True, env=vault.env, cwd=vault.work, timeout=10,
-            )
-            if replay.returncode:
-                raise AssertionError(replay.stderr)
-        divergent = subprocess.run(
-            command, input=json.dumps({**hook, "prompt": "different text with the same native ID"}),
-            capture_output=True, text=True, env=vault.env, cwd=vault.work, timeout=10,
-        )
-        if divergent.returncode == 0 or json.loads(divergent.stderr)["code"] != "key_conflict":
-            raise AssertionError(f"{host} accepted different text for the same hook ID")
-        other = next(name for name in registrations if name != host)
-        other_source = registrations[other][1]
-        wrong_host = subprocess.run(
-            shlex.split(vault.command(other, client, source, task)),
-            input=json.dumps(NATIVE_HOOKS[other]["user_prompt"]), capture_output=True,
-            text=True, env=vault.env, cwd=vault.work, timeout=10,
-        )
-        if wrong_host.returncode == 0 or json.loads(wrong_host.stderr)["code"] != "action_denied":
-            raise AssertionError(f"{host} escaped its registered hook type")
-        wrong_source = subprocess.run(
-            shlex.split(vault.command(host, client, other_source, task)),
-            input=json.dumps(hook), capture_output=True, text=True, env=vault.env, cwd=vault.work, timeout=10,
-        )
-        if wrong_source.returncode or json.loads(wrong_source.stdout).get("decision") != "block":
-            raise AssertionError(f"{host} failed to block the prompt for an unbound capture source")
-        if len(vault.cli("job", "list")["jobs"]) != start + 1:
-            raise AssertionError(f"{host} did not keep exactly one job on hook replay")
-    print("Both hooks deduplicated retry, rejected same-ID changes and refused mismatched host or source")
-
-
-def check_native_redaction(vault, registrations, task):
-    for host, (client, source) in registrations.items():
-        hook = NATIVE_HOOKS[host]["tool_result"]
-        sentinel = f"visible structured receipt for {host}"
-        event = {
-            **hook,
-            "tool_response": {
-                "stdout": sentinel,
-                "nested": {"password": "SYNTHETIC-REDACTION-TEST", "check": "present"},
-            },
-        }
-        command = shlex.split(vault.command(host, client, source, task))
-        result = subprocess.run(
-            command, input=json.dumps(event), capture_output=True,
-            text=True, env=vault.env, cwd=vault.work, timeout=10,
-        )
-        if result.returncode:
-            raise AssertionError(result.stderr)
-        hits = vault.cli("search", sentinel, "--task", task)["results"]
-        if len(hits) != 1 or hits[0]["actor_kind"] != "tool_result":
-            raise AssertionError(f"{host} did not retain a searchable typed tool result")
-        evidence = vault.cli("evidence", "expand", hits[0]["handle"])
-        checks = json.loads(evidence["text"])
-        sanitized = checks["output"]["result"]
-        if sanitized["nested"] != {"check": "present"} or sanitized["stdout"] != sentinel:
-            raise AssertionError(f"{host} did not scrub a nested credential before persisting evidence")
-    print("Both host adapters preserved structured receipts and scrubbed nested credential fields")
-
-
-def check_cross_host_task_package(vault, registrations, task, endpoint, captured, pool, expected, obsolete):
-    previous = {}
-    for host in HOSTS:
-        other = next(candidate for candidate in HOSTS if candidate != host)
-        client = registrations[host][0]
-        vault.grant("source", registrations[other][1], "--purpose", "task_delivery", "--client", client, "--allow", "true")
-        previous[host] = other
-    prompts = {host: f"{PROVIDER['prompt']} authorized handoff {host}" for host in HOSTS}
-    offsets = {host: len(captured[host]) for host in HOSTS}
-    runs = {
-        host: pool.submit(
-            run_host, host, vault.command(host, *registrations[host], task),
-            prompts[host], endpoint, vault.work, vault.env,
-        )
-        for host in HOSTS
-    }
-    marker = "bmem authorized task evidence."
-    for host in HOSTS:
-        runs[host].result()
-        observed = prove_loaded(host, captured[host][offsets[host]:], prompts[host], expected, obsolete)
-        packages = [
-            json.JSONDecoder().raw_decode(text.split(marker, 1)[1].split("\n", 1)[1])[0]
-            for text in text_blocks(observed) if marker in text
-        ]
-        handed_off = [item for package in packages for item in package["evidence"]]
-        user_text = {item["text"] for item in handed_off if item["actor_kind"] == "user_message"}
-        allowed_prompt = f"{PROVIDER['prompt']} corrected {previous[host]}"
-        denied_prompt = f"{PROVIDER['prompt']} corrected {host}"
-        if allowed_prompt not in user_text or denied_prompt in user_text:
-            raise AssertionError(f"{host} did not apply the opposite-source task grant")
-        if not any(
-            item["task_id"] == task and item["actor_kind"] == "tool_result" and PROVIDER["receipt"] in item["text"]
-            for item in handed_off
-        ):
-            raise AssertionError(f"{host} task context has no authorized source tool result")
-        print(f"{host} received the other host's source events after explicit task and source grants")
-
-
-def run():
-    binary = Path(os.environ["BMEM_V2_TEST_BIN"]).resolve(strict=True)
-    with tempfile.TemporaryDirectory(prefix="bmem-v2-native-hosts-") as directory, fixture_server() as (endpoint, captured):
-        vault = VaultFixture(binary, Path(directory).resolve())
-        with vault.running(), ThreadPoolExecutor(max_workers=2) as pool:
-            registrations = {host: vault.register(host) for host in HOSTS}
-            task = vault.cli("task", "create", "fixture-parse/import@3", "--project", "fixture-parse")["task_id"]
-            for client, _ in registrations.values():
-                vault.grant("set", "--client", client, "--task", task, "--allow", "true")
-            initial = vault.cli("declare", DECLARATIONS["initial"], "--share", "authorized_assistants")
-            by_key = {item["key"]: item["revision_id"] for item in initial["dimensions"]}
-            language = by_key[DECLARATIONS["language_key"]]
-            opening = by_key[DECLARATIONS["opening_key"]]
-            obsolete = None
-            for phase in ("initial", "corrected"):
-                if phase == "corrected":
-                    response = vault.cli("declare", DECLARATIONS["correction"], "--share", "authorized_assistants")
-                    opening, obsolete = response["dimensions"][0]["revision_id"], opening
-                offsets = {host: len(captured[host]) for host in HOSTS}
-                prompts = {host: f"{PROVIDER['prompt']} {phase} {host}" for host in HOSTS}
-                executors = {
-                    host: pool.submit(
-                        run_host, host, vault.command(host, *registrations[host], task),
-                        prompts[host], endpoint, vault.work, vault.env,
-                    )
-                    for host in HOSTS
-                }
-                for host in HOSTS:
-                    executors[host].result()
-                    expected = {
-                        (DECLARATIONS["language_key"], language, DECLARATIONS["language"]),
-                        (DECLARATIONS["opening_key"], opening, DECLARATIONS[f"{phase}_opening"]),
-                    }
-                    received = prove_loaded(host, captured[host][offsets[host]:], prompts[host], expected, obsolete)
-                    if any("bmem authorized task evidence." in text for text in text_blocks(received)):
-                        raise AssertionError(f"{host} received evidence before granting its source")
-                    print(f"{host} {phase}: captured the current declaration revisions and the real shell receipt")
-            jobs = vault.cli("job", "list")["jobs"]
-            if len(jobs) < 8:
-                raise AssertionError(f"only {len(jobs)} durable jobs for 4 native prompt/tool pairs")
-            deliveries = vault.cli("delivery", "list")["deliveries"]
-            if {row["client_id"] for row in deliveries} != {record[0] for record in registrations.values()}:
-                raise AssertionError("missing durable delivery for a registered host")
-            if any(row["loaded_state"] != "unknown" or row["used_state"] != "unknown" for row in deliveries):
-                raise AssertionError("native hooks must not report evidence that they cannot observe")
-            print(f"bmem retained {len(jobs)} native capture jobs and {len(deliveries)} provided deliveries")
-            check_mcp(vault, registrations["codex"][0], opening)
-            check_hook_replay(vault, registrations, task)
-            check_native_redaction(vault, registrations, task)
-            check_cross_host_task_package(vault, registrations, task, endpoint, captured, pool, expected, obsolete)
-
-
 if __name__ == "__main__":
-    run()
+    # Guard against the stale CONTRIBUTING entry silently passing: this file is
+    # no longer a runnable script.  Exit non-zero and point at the real entry.
+    sys.exit(
+        "native_hosts.py is now an implementation module imported by "
+        "test_native_hosts.py; run the host checks with:\n"
+        "  BMEM_V2_TEST_NATIVE_HOSTS=1 BMEM_V2_TEST_BIN=/abs/path/to/bmem "
+        "python3 tests/v2/test_native_hosts.py"
+    )

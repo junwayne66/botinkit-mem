@@ -15,7 +15,9 @@ browser, no writes into the repository, no skips. Python 3.9, stdlib only.
 import hashlib
 import io
 import json
+import math
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -192,6 +194,40 @@ class TestSkipFails(unittest.TestCase):
         self.assertEqual(unknown, [])
         expected_posix, _ = judge.expected_skip_ids(collection, {}, "posix")
         self.assertEqual(expected_posix, set())
+
+    def test_baseline_class_guard_skips_every_method(self):
+        # T044-E: the native-host opt-in moved to a CLASS-level skipUnless that
+        # now covers N counted cases.  The baseline must expect ALL of them to
+        # skip (not report "unexpected skip"), and the opt-in must expect none.
+        source = (
+            "import os, unittest\n"
+            "@unittest.skipUnless(os.environ.get(\"BMEM_V2_TEST_NATIVE_HOSTS\") == \"1\", \"opt in\")\n"
+            "class NativeHosts(unittest.TestCase):\n"
+            "    def test_a(self): pass\n"
+            "    def test_b(self): pass\n"
+            "    def test_c(self): pass\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "test_native_hosts.py"), "w", encoding="utf-8") as handle:
+                handle.write(source)
+            collection = judge.collect_ast_tests(tmp)
+        self.assertEqual(collection["ast_total"], 3)
+        self.assertEqual(collection["native_hosts_count"], 3)
+        tids = ["test_native_hosts.NativeHosts.test_%s" % suffix for suffix in "abc"]
+        for tid in tids:
+            self.assertEqual(
+                collection["guards"][tid],
+                [{"kind": "skipUnless", "cond": 'os.environ.get("BMEM_V2_TEST_NATIVE_HOSTS") == "1"'}])
+        expected, unknown = judge.expected_skip_ids(collection, {}, "posix")
+        self.assertEqual(expected, set(tids))
+        self.assertEqual(unknown, [])
+        parsed = judge.parse_unittest_output(unittest_output(3, tids))
+        res = judge.judge_unittest(parsed, 0, collection, {}, "posix",
+                                   strict_zero_skips=False, baseline_min=3)
+        self.assertEqual(res["status"], judge.PASS)
+        expected_on, _ = judge.expected_skip_ids(
+            collection, {"BMEM_V2_TEST_NATIVE_HOSTS": "1"}, "posix")
+        self.assertEqual(expected_on, set())
 
     def test_cargo_ignored_counts_as_failure(self):
         parsed = judge.parse_cargo_test("test result: ok. 10 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out\n")
@@ -672,6 +708,164 @@ class TestCli(unittest.TestCase):
             self.assertEqual(S.step_by_id(table, "6").sid, 6)
             self.assertEqual(S.step_by_id(table, "unittest-full").sid, 6)
             self.assertIsNone(S.step_by_id(table, "99"))
+
+
+class TestHostTimeoutAttribution(unittest.TestCase):
+    """T044 budget round (2026-11-24): the tail of an installed third-party
+    host CLI must be attributable in gates.json without softening the gate.
+    Every case here still expects FAIL -- attribution is not leniency."""
+
+    NATIVE_HOSTS = os.path.join(_V2, "native_hosts.py")
+    WRAPPER = os.path.join(_V2, "test_native_hosts.py")
+    JUDGE = os.path.join(_HERE, "judge.py")
+    MARKER_LINE = ("BMEM_HOST_TIMEOUT host=codex phase=1-initial elapsed=113.2 "
+                   "budget=113 exit=3")
+
+    def failing_output(self, detail):
+        return unittest_output(40, status="FAILED (failures=1)") + detail + "\n"
+
+    def judge_text(self, text, exit_code=1):
+        parsed = judge.parse_unittest_output(text)
+        return judge.judge_unittest(parsed, exit_code, fake_collection(), {},
+                                    "posix", strict_zero_skips=True)
+
+    def test_host_timeout_marker_is_classified_and_still_fails(self):
+        res = self.judge_text(self.failing_output(self.MARKER_LINE))
+        self.assertEqual(res["status"], judge.FAIL)
+        self.assertEqual(res["reason_code"], judge.REASON_EXTERNAL_HOST_TIMEOUT)
+        self.assertEqual(res["reason_code"], "external-host-cli-timeout")
+        # The code must ride in the reason: that is the field run_gates writes
+        # into the gates.json step record.
+        self.assertIn("reason_code=external-host-cli-timeout", res["reason"])
+
+    def test_plain_assertion_failure_is_not_called_external(self):
+        res = self.judge_text(self.failing_output(
+            "AssertionError: codex model request is missing the expected declaration values"))
+        self.assertEqual(res["status"], judge.FAIL)
+        self.assertEqual(res["reason_code"], judge.REASON_TEST_FAILURE)
+        self.assertEqual(res["reason_code"], "test-failure")
+
+    def test_timeout_words_without_the_marker_stay_test_failure(self):
+        # A bmem-side timeout (or any prose about timeouts) is not the external
+        # CLI tail; only the explicit marker may earn that code.
+        for detail in ("subprocess.TimeoutExpired: Command '['bmem', 'hook']' timed out after 10 seconds",
+                       "AssertionError: MCP query omitted the corrected shared statement (timeout)"):
+            res = self.judge_text(self.failing_output(detail))
+            self.assertEqual(res["reason_code"], "test-failure", detail)
+
+    def test_parser_carries_marker_count_and_raw_output_path_works(self):
+        text = self.failing_output(self.MARKER_LINE)
+        parsed = judge.parse_unittest_output(text)
+        self.assertEqual(parsed["host_timeout_hits"], 1)
+        self.assertEqual(parsed["reason_code"], "external-host-cli-timeout")
+        bare = judge.parse_unittest_output(unittest_output(40, status="FAILED (failures=1)"))
+        res = judge.judge_unittest(bare, 1, fake_collection(), {}, "posix",
+                                   strict_zero_skips=True, output=text)
+        self.assertEqual(res["reason_code"], "external-host-cli-timeout")
+
+    def test_passing_run_carries_no_failure_code(self):
+        res = self.judge_text(unittest_output(40), exit_code=0)
+        self.assertEqual(res["status"], judge.PASS)
+        self.assertNotIn("reason_code", res)
+
+    def test_runner_writes_the_code_into_the_step_record(self):
+        def responder(argv, env):
+            if "unittest" in argv:
+                return {"stdout": self.failing_output(self.MARKER_LINE), "exit": 1}
+            return host_responder(argv, env)
+        with tempfile.TemporaryDirectory() as tmp:
+            runner, ops, cfg = make_runner(tmp, responder)
+            step = S.step_by_id(S.build_steps(cfg), "6")
+            rec = runner.execute(step)
+            self.assertEqual(rec["status"], judge.FAIL)
+            self.assertIn("reason_code=external-host-cli-timeout", rec["reason"])
+            self.assertFalse(judge.compute_all_pass({6: rec}, "assembly", False))
+
+    def _block(self, tid, message):
+        # Real unittest failure-block shape (header + traceback + assertion).
+        return ("======================================================================\n"
+                "FAIL: %s (test_native_hosts.NativeHosts)\n"
+                "----------------------------------------------------------------------\n"
+                "Traceback (most recent call last):\n"
+                "AssertionError: %s\n" % (tid, message))
+
+    def test_single_real_format_timeout_block_is_external(self):
+        text = (unittest_output(40, status="FAILED (failures=1)")
+                + self._block("test_initial_declarations_load_current_revisions", self.MARKER_LINE))
+        parsed = judge.parse_unittest_output(text)
+        self.assertEqual(parsed["reason_code"], "external-host-cli-timeout")
+        # No raw output handed back: the parsed reason_code must propagate.
+        res = judge.judge_unittest(parsed, 1, fake_collection(), {}, "posix", strict_zero_skips=True)
+        self.assertEqual(res["status"], judge.FAIL)
+        self.assertEqual(res["reason_code"], "external-host-cli-timeout")
+
+    def test_multiple_timeout_blocks_still_external(self):
+        # Two different test_* methods both outlived the host budget.
+        text = (unittest_output(40, status="FAILED (failures=2)")
+                + self._block("test_initial_declarations_load_current_revisions", self.MARKER_LINE)
+                + self._block("test_cross_host_task_package_grants",
+                              "BMEM_HOST_TIMEOUT host=claude-code phase=3-cross-host "
+                              "elapsed=113.1 budget=113 exit=3"))
+        res = self.judge_text(text)
+        self.assertEqual(res["status"], judge.FAIL)
+        self.assertEqual(res["reason_code"], "external-host-cli-timeout")
+
+    def test_mixed_timeout_and_assertion_is_test_failure(self):
+        # An external tail PLUS a bmem-side assertion failure in the same run:
+        # tasks.md requires "no other assertion failure" for the external label,
+        # so the cause must be test-failure (the verdict stays FAIL).
+        text = (unittest_output(40, status="FAILED (failures=2)")
+                + self._block("test_cross_host_task_package_grants", self.MARKER_LINE)
+                + self._block("test_mcp_bound_client_search_and_denied_expand",
+                              "MCP query omitted the corrected shared statement"))
+        res = self.judge_text(text)
+        self.assertEqual(res["status"], judge.FAIL)
+        self.assertEqual(res["reason_code"], "test-failure")
+
+    def test_subtest_timeout_blocks_are_external(self):
+        # subTest failures carry a "(host='...')" suffix on the FAIL header.
+        text = (unittest_output(40, status="FAILED (failures=2)")
+                + "FAIL: test_cross_host_task_package_grants (test_native_hosts.NativeHosts) (host='codex')\n"
+                + "AssertionError: " + self.MARKER_LINE + "\n"
+                + "FAIL: test_cross_host_task_package_grants (test_native_hosts.NativeHosts) (host='claude-code')\n"
+                + "AssertionError: BMEM_HOST_TIMEOUT host=claude-code phase=3-cross-host "
+                  "elapsed=113.0 budget=113 exit=3\n")
+        res = self.judge_text(text)
+        self.assertEqual(res["status"], judge.FAIL)
+        self.assertEqual(res["reason_code"], "external-host-cli-timeout")
+
+    def test_marker_literal_agrees_across_the_three_files(self):
+        for path in (self.NATIVE_HOSTS, self.WRAPPER, self.JUDGE):
+            with open(path, encoding="utf-8") as handle:
+                self.assertIn('"%s"' % judge.HOST_TIMEOUT_MARKER, handle.read(), path)
+        with open(self.WRAPPER, encoding="utf-8") as handle:
+            self.assertIn("native_hosts_output.txt", handle.read())
+
+    def test_host_budget_constant_documents_its_measurement(self):
+        with open(self.NATIVE_HOSTS, encoding="utf-8") as handle:
+            source = handle.read()
+        found = re.search(r"^HOST_CALL_TIMEOUT = (\d+)$", source, re.M)
+        self.assertIsNotNone(found, "native_hosts.py must define HOST_CALL_TIMEOUT")
+        budget = int(found.group(1))
+        cap = int(re.search(r"^HOST_CALL_TIMEOUT_CAP = (\d+)$", source, re.M).group(1))
+        self.assertLessEqual(budget, cap)
+        self.assertLessEqual(cap, 300, "one host call may never grow without bound")
+        self.assertNotIn("timeout=75", source, "the unmeasured 75s budget must be gone")
+        provenance = source[:found.start()]
+        for token in ("2026-11-24", "N=9", "p50/p95/max", "codex-cli 0.171.0", "claude 2.1.308"):
+            self.assertIn(token, provenance, "budget comment must state %s" % token)
+        stats = re.search(r"codex\s+p50/p95/max = ([\d.]+) / ([\d.]+) / ([\d.]+) s", provenance)
+        self.assertIsNotNone(stats, "budget comment must record the codex distribution")
+        formula = re.search(
+            r"ceil\(max\(([\d.]+)\*3, ([\d.]+)\*1\.5\)\) = ceil\(([\d.]+)\) = (\d+) s", provenance)
+        self.assertIsNotNone(formula, "budget comment must show the rule with numbers substituted")
+        p95, observed, inner, stated = (float(formula.group(1)), float(formula.group(2)),
+                                       float(formula.group(3)), int(formula.group(4)))
+        self.assertEqual(p95, float(stats.group(2)), "formula must use the measured codex p95")
+        self.assertGreaterEqual(observed, 75.0, "the observed 75s breach must enter the sample")
+        self.assertEqual(inner, max(p95 * 3, observed * 1.5))
+        self.assertEqual(stated, min(cap, math.ceil(inner)))
+        self.assertEqual(budget, stated, "constant must equal the documented rule result")
 
 
 if __name__ == "__main__":
