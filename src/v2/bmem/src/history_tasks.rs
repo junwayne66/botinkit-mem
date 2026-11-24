@@ -475,8 +475,10 @@ fn insert_task(
 /// the capped per-target error ledger.
 pub fn list(db: &Connection) -> Result<Value> {
     let ids: Vec<String> = {
+        // A bulk batch shares one `created_at`, so ties resolve by insertion
+        // order (rowid) to match the order the scheduler drains them in.
         let mut stmt =
-            db.prepare("SELECT task_id FROM history_task_jobs ORDER BY created_at, task_id")?;
+            db.prepare("SELECT task_id FROM history_task_jobs ORDER BY created_at, rowid")?;
         stmt.query_map([], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?
     };
@@ -868,7 +870,7 @@ fn select(db: &Connection) -> Result<Option<Pick>> {
            AND EXISTS (SELECT 1 FROM ing_actors a
                        WHERE a.source_id = j.source_id AND a.actor = 'owner'
                          AND a.action = 'accept' AND a.active = 1)
-         ORDER BY j.created_at, j.task_id, i.ordinal
+         ORDER BY j.created_at, j.rowid, i.ordinal
          LIMIT 1",
         [],
         |r| {

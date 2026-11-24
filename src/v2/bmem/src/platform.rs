@@ -7,6 +7,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::net::SocketAddr;
 use std::path::{Component, Path, PathBuf};
+use std::thread;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 pub struct Instance {
@@ -531,6 +533,27 @@ pub fn lock_service(instance: &Instance) -> Result<File> {
     }
 }
 
+/// Daemon-side lock acquisition with a bounded retry.
+///
+/// `lock_service` keeps its one-shot semantics because `discover` reads "the
+/// lock is free this instant" as the stopped signal, and every CLI probe takes
+/// the same lock for a sub-millisecond window. A daemon starting during one of
+/// those probes must not die: it retries within the budget and only then
+/// reports the conflict, so a real owner still gets the same error after the
+/// budget expires.
+pub fn lock_service_for_daemon(instance: &Instance, budget: Duration) -> Result<File> {
+    let deadline = Instant::now() + budget;
+    loop {
+        match lock_service(instance) {
+            Ok(file) => return Ok(file),
+            Err(error) if error.status == 409 && Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 pub fn publish(instance: &Instance, address: SocketAddr) -> Result<()> {
     if !address.ip().is_loopback() || address.port() == 0 {
         return Err(Error::denied(
@@ -610,3 +633,7 @@ fn test_atomic_replace(path: &Path) -> io::Result<()> {
         .map_err(|error| error.error)?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/v2/platform.rs"]
+mod tests;

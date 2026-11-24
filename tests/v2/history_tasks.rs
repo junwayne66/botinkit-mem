@@ -655,3 +655,67 @@ fn deduplication_counts_real_duplicates() -> Result<()> {
 
     Ok(())
 }
+
+/// A bulk batch shares one `created_at`, so the drain order must come from
+/// insertion order and not from the random `task_id`. The scheduler used to tie
+/// on the UUID, which made the order of a three-job batch random every run; one
+/// third of the time the last job finished after the caller's budget and the
+/// data-console restart test failed for no reproducible reason.
+#[test]
+fn bulk_jobs_with_equal_created_at_drain_in_insertion_order() -> Result<()> {
+    let mut db = setup();
+    let source = register_source(&mut db, "feishu", "feishu-test");
+
+    // Kinds arrive out of order; create_all sorts the batch and inserts in that
+    // order, so the response order is the insertion order the caller sees.
+    let batch = create_all(
+        &mut db,
+        &json!({"source_id":source,"kinds":["group","dm","docs"]}),
+        "bulk",
+    )?;
+    let batch_jobs = batch["jobs"].as_array().expect("bulk batch lists jobs");
+    let ids: Vec<String> = batch_jobs
+        .iter()
+        .map(|job| job["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ids.len(), 3, "expected three jobs, got {ids:?}");
+
+    let ties: i64 = db.query_row(
+        "SELECT COUNT(*) - COUNT(DISTINCT created_at) FROM history_task_jobs",
+        [],
+        |row| row.get(0),
+    )?;
+    assert!(ties >= 2, "batch must share created_at, ties={ties}");
+
+    let expected: Vec<String> = batch_jobs
+        .iter()
+        .map(|job| job["kind"].as_str().unwrap().to_owned())
+        .collect();
+
+    // The task list the UI reads must follow the same order.
+    let listed: Vec<String> = list(&db)?["jobs"]
+        .as_array()
+        .expect("list returns jobs")
+        .iter()
+        .map(|job| job["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(listed, ids);
+
+    let mut drained = Vec::with_capacity(ids.len());
+    for _ in &ids {
+        let pick = select(&db)?.expect("a queued job is selectable");
+        drained.push(pick.kind.clone());
+        db.execute(
+            "UPDATE history_task_items SET state = 'completed' WHERE task_id = ?1",
+            rusqlite::params![pick.task_id],
+        )?;
+        db.execute(
+            "UPDATE history_task_jobs SET state = 'completed' WHERE task_id = ?1",
+            rusqlite::params![pick.task_id],
+        )?;
+    }
+    assert_eq!(drained, expected, "drain order must equal insertion order");
+    assert!(select(&db)?.is_none(), "no runnable job is left");
+
+    Ok(())
+}

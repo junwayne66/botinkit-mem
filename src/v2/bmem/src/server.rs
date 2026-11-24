@@ -73,7 +73,10 @@ fn read_snapshot(app: &App) -> Result<Connection> {
 }
 
 pub async fn serve(instance: platform::Instance) -> Result<()> {
-    let _service_lock = platform::lock_service(&instance)?;
+    // A CLI liveness probe holds the same lock for a sub-millisecond window, so
+    // a daemon that starts during one must retry rather than die; a real owner
+    // still gets the conflict once the budget expires.
+    let _service_lock = platform::lock_service_for_daemon(&instance, Duration::from_secs(2))?;
     let preferred = platform::registered_endpoint(&instance).map_or(0, |addr| addr.port());
     let listener = match tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, preferred)).await {
         Err(err) if preferred != 0 && err.kind() == std::io::ErrorKind::AddrInUse => {
