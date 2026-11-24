@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bmem://specs/005-agent-mcp-interface/schemas/patch.schema.json",
+  "title": "装配补丁 patches/<pkg>.json（T045 冻结条文 C14）",
+  "description": "与 scripts/apply_patch.py 的结构校验逐条对齐（load_patch_files/_validate_entry，apply_patch.py:148-326）。本 schema 只表达单文件结构约束；跨包静态冲突（ARM_CONFLICT/ROUTE_DUPLICATE/ENUM_DUPLICATE/LAYER_DUPLICATE/HOTSPOT_RECONCILER/DANGLING_DECLARATION/GENERATE_EMPTY，apply_patch.py:365-445）与锚点运行时冲突（ANCHOR_*/SCOPE_*/OVERLAP_CONFLICT 等，apply_patch.py:506-588）由工具执行期判定，不在本 schema 表达。与实现的已知差异见 spec.md §14.5（含 #8 尾随换行 not 子句、#9 file_path 规范化收紧）。格式规程：specs/005-agent-mcp-interface/patch-format.md。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["wave", "patches"],
+  "properties": {
+    "pkg": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "包号（如 T051a）。缺省取文件名主干（apply_patch.py:165）。给出时必须非空白。"
+    },
+    "wave": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "波次，必填；--wave N 按此过滤（apply_patch.py:169-171,339）。布尔不算整数。"
+    },
+    "order": {
+      "type": "integer",
+      "default": 0,
+      "description": "同波次内应用序（默认 0，可为负）。排序键 (wave, order, pkg, 条目序, 操作序)（apply_patch.py:172-174,360-361）。reconciler 包必须由 ASM 分配 order 排序最后。"
+    },
+    "sample": {
+      "type": "boolean",
+      "default": false,
+      "description": "true＝样例，供 --list/--dry-run 演示。**工具不拦截 sample 包的 apply**（apply_patch.py:191 仅 bool 强转，selftest 即以 sample=true 夹具真写）；「禁止对主线 apply」为流程约定（patch-format.md:9，examples 目录不在默认 patches/ 内）。实现以 bool() 强转任意值；本 schema 收紧为布尔，差异登记于 spec.md §14.5.1。"
+    },
+    "notes": {
+      "type": "string",
+      "description": "自由说明。实现读取但不使用顶层 notes（TOP_KEYS 白名单，apply_patch.py:35）；本 schema 收紧为字符串。"
+    },
+    "patches": {
+      "type": "array",
+      "description": "条目数组，必填（apply_patch.py:175-177）。允许空数组（实现不禁止）；每个非空条目必须至少含一条声明或一个写入操作。",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "非空白字符串（对应 _require_str 的 strip 判定，apply_patch.py:112-116）。"
+    },
+    "singleLine": {
+      "type": "string",
+      "pattern": "^[^\\n\\r]*$",
+      "not": { "pattern": "[\\n\\r]" },
+      "description": "单行字符串，不含换行符；允许空串（_check_lines 逐项判定，apply_patch.py:137-145）。not 子句消除 Python re 尾随换行泄漏（spec.md §14.5.8）。"
+    },
+    "singleLineArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/singleLine" },
+      "description": "非空单行字符串数组（锚点行/字面插入行）。"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_path"],
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "allOf": [
+            { "not": { "pattern": "^/" } },
+            { "not": { "pattern": "\\\\" } },
+            { "not": { "pattern": "(^|/)\\.\\.($|/)" } },
+            { "not": { "pattern": "(^|/)\\.($|/)" } },
+            { "not": { "pattern": "//" } },
+            { "not": { "pattern": "/$" } }
+          ],
+          "description": "规范仓库相对路径：以 / 分段、各段非空且不得为 . 或 ..，不得以 / 开头或结尾，不得含反斜杠与 ./ 前缀。工具现状仅禁绝对路径/..段/反斜杠（apply_patch.py:201-203），保留 ./ 前缀并按原字符串分组可致同一目标被分别写入——schema 收紧为规范路径，工具对齐属 T044 后续（spec.md §14.5.9）。目标文件必须已存在且为 UTF-8 LF（read_target，apply_patch.py:591-608）；本工具不创建新文件。"
+        },
+        "function_scope": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "not": { "type": "string", "pattern": "[\\n\\r]" },
+          "description": "函数名标识符；锚点搜索与插入点限制在该函数段内（花括号计数启发式，find_scope，apply_patch.py:453-475）。显式 null 与缺省等价（apply_patch.py:204-207）。not 子句闭合尾随换行泄漏。"
+        },
+        "notes": {
+          "type": "string",
+          "description": "自由说明。实现不做类型校验（apply_patch.py:211）；本 schema 收紧为字符串，差异登记于 spec.md §14.5。"
+        },
+        "route_additions": {
+          "type": "array",
+          "description": "路由声明；由同波次同文件 reconciler 的 generate 消费（否则 DANGLING_DECLARATION）。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["method", "path", "handler"],
+            "properties": {
+              "method": {
+                "type": "string",
+                "pattern": "^[A-Z]+$",
+                "not": { "pattern": "[\\n\\r]" },
+                "description": "大写 HTTP 动词（apply_patch.py:230-232；不限定动词枚举，与实现一致）。not 子句闭合尾随换行泄漏。"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^/",
+                "description": "以 / 开头的路由路径（apply_patch.py:233-235）。"
+              },
+              "handler": { "$ref": "#/$defs/nonEmptyString" },
+              "capability_bits": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "default": [],
+                "description": "能力位字符串数组，允许空数组；每项非空（apply_patch.py:238-241）。渲染时逗号连接（apply_patch.py:498-499）。"
+              }
+            }
+          }
+        },
+        "middleware_stack": {
+          "type": "array",
+          "description": "middleware 层声明（plan §三.3 固定字段）。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["layer", "order"],
+            "properties": {
+              "layer": { "$ref": "#/$defs/nonEmptyString" },
+              "order": { "type": "integer" }
+            }
+          }
+        },
+        "enum_variants": {
+          "type": "array",
+          "description": "枚举变体声明（如 main.rs enum Command）。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "$ref": "#/$defs/nonEmptyString" },
+              "payload": { "type": "string", "default": "" },
+              "doc": { "type": "string", "default": "" }
+            }
+          }
+        },
+        "match_arms": {
+          "type": "array",
+          "description": "写入操作数组。热点文件（server.rs/main.rs/index.html/intake.js，按 basename）上只有波次内排序最后的包允许携带（HOTSPOT_RECONCILER，apply_patch.py:33,411-426）。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["arm", "anchor"],
+            "oneOf": [
+              { "required": ["insert"] },
+              { "required": ["generate"] }
+            ],
+            "description": "insert 与 generate 恰好二选一（apply_patch.py:288-292）；两者同时出现或同时缺失均无效。",
+            "properties": {
+              "arm": {
+                "$ref": "#/$defs/nonEmptyString",
+                "description": "操作键；同一次运行内同文件唯一（ARM_CONFLICT，apply_patch.py:365-377）。"
+              },
+              "anchor": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["lines"],
+                "properties": {
+                  "lines": {
+                    "$ref": "#/$defs/singleLineArray",
+                    "description": "连续若干行逐字符精确文本（含缩进）；在目标文件/函数段内唯一命中才允许（apply_patch.py:478-485,526-552）。"
+                  },
+                  "position": {
+                    "enum": ["after", "before"],
+                    "default": "after",
+                    "description": "插入位置（apply_patch.py:284-287,567）。"
+                  }
+                }
+              },
+              "insert": {
+                "$ref": "#/$defs/singleLineArray",
+                "description": "字面插入行（非空；缩进由作者自理）。"
+              },
+              "generate": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["from", "template"],
+                "properties": {
+                  "from": {
+                    "enum": ["route_additions", "enum_variants", "middleware_stack"],
+                    "description": "消费同波次同文件的该 kind 全部声明（apply_patch.py:48-54,488-503）。"
+                  },
+                  "template": {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "description": "string.Template 模板；${name} 占位符必须在 from 对应字段集内（加载期校验，apply_patch.py:310-317）。Rust 花括号无需转义。"
+                  }
+                },
+                "allOf": [
+                  {
+                    "if": { "properties": { "from": { "const": "route_additions" } }, "required": ["from"] },
+                    "then": {
+                      "properties": {
+                        "template": {
+                          "not": { "pattern": "\\$(?:\\{)?(?!(?:method|path_segments|path|handler|capability_bits)(?![A-Za-z0-9_]))[A-Za-z_]" }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": { "properties": { "from": { "const": "enum_variants" } }, "required": ["from"] },
+                    "then": {
+                      "properties": {
+                        "template": {
+                          "not": { "pattern": "\\$(?:\\{)?(?!(?:name|payload|doc)(?![A-Za-z0-9_]))[A-Za-z_]" }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": { "properties": { "from": { "const": "middleware_stack" } }, "required": ["from"] },
+                    "then": {
+                      "properties": {
+                        "template": {
+                          "not": { "pattern": "\\$(?:\\{)?(?!(?:layer|order)(?![A-Za-z0-9_]))[A-Za-z_]" }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "anyOf": [
+        { "required": ["route_additions"], "properties": { "route_additions": { "minItems": 1 } } },
+        { "required": ["middleware_stack"], "properties": { "middleware_stack": { "minItems": 1 } } },
+        { "required": ["enum_variants"], "properties": { "enum_variants": { "minItems": 1 } } },
+        { "required": ["match_arms"], "properties": { "match_arms": { "minItems": 1 } } }
+      ],
+      "description": "条目必须至少含一条声明或一个写入操作（apply_patch.py:323-325）。所有层级拒绝未知字段（_check_keys，apply_patch.py:126-134）。"
+    }
+  }
+}

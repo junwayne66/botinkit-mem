@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bmem://specs/005-agent-mcp-interface/schemas/matrix.schema.json",
+  "title": "T063 逐样本验收矩阵（T045 冻结条文 C13）",
+  "description": "T063-lite/full 矩阵文档的形状。行字段以 tasks.md T063 逐样本字段为基线（该条标注「19 字段」实列 20 项，sample_id…verdict_reason，本 schema 全数收录），另按 T045 任务指令补 evidence_type（real-host/real-model/fixture/loopback/doc-claim）、timezone、红绿 run id 成对（negative_control）、carried_forward 与缺口说明。数字全部自 gates.json/包工件注入，禁手改（tasks.md T063 验收证据）。判定规则：verdict=evidence 的宿主装入/真实提炼样本必须 evidence_kind=real_host_real_model；real_host_loopback、synthetic_client_real_model 与 fixture_only 上限 partial；doc-claim 不得 evidence（上限 partial/gap）；evidence_kind↔evidence_type 映射由本 schema allOf 机械执行（spec.md §14.3）；无运行工件的 pending/blocked_external 行填 evidence_type=[]、evidence_kind=null、artifact_paths=[]；未登记包对应行强制 pending+owner。跨行判定（(sample_id,acceptance_row,row_type) 唯一、red_run_id≠green_run_id、聚合包集＝manifest 机械推导、执行体名册/版本钉住核对）由 build_validation_matrix.py 构建期执行，见 spec.md §14.3。锚定模式均附 not:[\\n\\r] 子句，闭合 Python re 尾随换行泄漏（spec.md §14.5.8）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "run_id", "assembly_commit", "binary_sha256", "timezone", "rows"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "not": { "type": "string", "pattern": "[\\n\\r]" },
+      "description": "矩阵构建时刻，ISO 8601 必须带时区（acceptance.md:3 要求记录时区）。"
+    },
+    "run_id": { "type": "string", "minLength": 8, "description": "本次矩阵构建的 run id（build_validation_matrix.py 产出）。" },
+    "assembly_commit": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{40}$",
+      "not": { "type": "string", "pattern": "[\\n\\r]" },
+      "description": "装配树 HEAD（git rev-parse HEAD 全长）；行级可覆盖。"
+    },
+    "binary_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "not": { "type": "string", "pattern": "[\\n\\r]" },
+      "description": "被测 bmem 二进制 SHA-256（gates.json binaries.bmem.sha256）；行级可覆盖。"
+    },
+    "timezone": {
+      "type": "string",
+      "pattern": "^(UTC|[A-Za-z][A-Za-z0-9_+-]*/[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z][A-Za-z0-9_+-]*)?)$",
+      "not": { "type": "string", "pattern": "[\\n\\r]" },
+      "description": "运行环境时区（IANA 名，如 Asia/Shanghai；或 UTC）。"
+    },
+    "profile": { "enum": ["assembly", "generic"], "description": "门禁档位（gates.json profile）。" },
+    "gates_run_id": { "type": ["string", "null"], "description": "关联的 run_gates.py run id。" },
+    "p0_evidence_complete": { "type": ["boolean", "null"], "description": "gates.json 同名位（judge.py:573-599）；T052 合流后 assembly 档以此为硬门，且必须核对本次运行出处（run_id/assembly_commit/binary_sha256，spec.md §14.1.4）。" },
+    "rows": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/row" },
+      "description": "一行一条样本。(sample_id,acceptance_row,row_type) 三元组全局唯一由构建期判定（Draft 2020-12 无法表达跨行去重），见 spec.md §14.3 构建期规则 4。"
+    }
+  },
+  "$defs": {
+    "isoTime": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "not": { "type": "string", "pattern": "[\\n\\r]" }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample_id", "acceptance_row", "row_type", "expected", "evidence_type", "verdict", "verdict_reason", "owner", "artifact_paths"],
+      "properties": {
+        "sample_id": {
+          "type": "string",
+          "pattern": "^(A(0[1-8]|12)|P0-1-[1-7]|P0-2-[1-5]|005-[A-Za-z0-9][A-Za-z0-9._-]*)$",
+          "not": { "type": "string", "pattern": "[\\n\\r]" },
+          "description": "样本编号：A01–A08/A12（acceptance.md:37-48 阶段样本）；P0-1-1…P0-1-7（第一步子步）；P0-2-1…P0-2-5（第二步子步）；005-*（005 面行，如 005-search.query-positive / 005-candidate.submit-negative）。"
+        },
+        "acceptance_row": {
+          "type": "string",
+          "minLength": 1,
+          "description": "判据定位：spec.md 条款号（C01…）、acceptance.md 步骤或 tasks.md 包条目，必须可回查。"
+        },
+        "row_type": {
+          "enum": ["positive", "negative"],
+          "description": "正对照/负对照。负对照行必须携带 negative_control（红绿 run id 成对）。"
+        },
+        "run_id": { "type": ["string", "null"], "minLength": 8, "description": "产出该样本证据的门禁/测试 run id；pending 行可为 null。" },
+        "started_at": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "not": { "type": "string", "pattern": "[\\n\\r]" },
+          "description": "样本运行开始时刻，必须带时区。"
+        },
+        "assembly_commit": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "not": { "type": "string", "pattern": "[\\n\\r]" }, "description": "行级装配树 HEAD；缺省继承文档级。" },
+        "binary_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "not": { "type": "string", "pattern": "[\\n\\r]" }, "description": "行级被测二进制 SHA-256；缺省继承文档级。" },
+        "host_name": { "type": ["string", "null"], "description": "宿主名（claude-code/codex/dsh/generic/owner-cli/browser 等）；非宿主样本为 null。执行体名册核对（review_only 执行体不得产出 real_host_real_model evidence 行）由构建期执行，schema 不钉枚举（未来宿主目录扩展不得被 schema 误拒），见 spec.md §14.3 构建期规则 6。" },
+        "host_version": { "type": ["string", "null"], "description": "宿主实际版本（钉住矩阵 claude 2.1.308 / codex-cli 0.171.0，plan.md §五步 6）；漂移即 BLOCKED，由构建期核对（carried_forward 历史版本行不被 schema 误拒）。" },
+        "provider_mode": {
+          "type": ["string", "null"],
+          "enum": ["loopback_fixture", "real_local_model", null],
+          "description": "T052 双模之一；非模型样本为 null。"
+        },
+        "model_id": { "type": ["string", "null"], "description": "真实模型标识（如 qwen3:4b-instruct-2507-q4_K_M）；无模型为 null。" },
+        "identity_role": {
+          "type": ["string", "null"],
+          "enum": ["owner", "browser", "host_adapter", "agent_writer", "agent_reader", null],
+          "description": "执行身份档位（spec.md §4）；不适用为 null。"
+        },
+        "capability_scope": {
+          "type": ["array", "null"],
+          "items": {
+            "enum": ["load_context", "observe_loaded", "observe_used", "verify_outcomes", "manage_tasks", "search", "evidence_expand", "statement_list", "task_handoff", "delivery_ledger_self", "candidate_submit", "operation_preview", "operation_confirm", "history_import_request"]
+          },
+          "uniqueItems": true,
+          "description": "该样本身份实际持有的能力位集合，词表＝spec.md §4.2 冻结 14 位穷尽清单（表外值 schema 直接拒）；不适用为 null。"
+        },
+        "command_or_tool": { "type": ["string", "null"], "minLength": 1, "description": "command_id 或 MCP 工具名（spec.md §3 动作表）。" },
+        "input_digest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "not": { "type": "string", "pattern": "[\\n\\r]" }, "description": "规范化输入的 SHA-256（幂等/重放对照用）。" },
+        "expected": { "type": "string", "minLength": 1, "description": "机器可判定期望（退出码/HTTP 码/JSON 字段==期望值/零增量断言），不得只写散文。" },
+        "observed_status": { "type": ["string", "null"], "description": "实际观察（如 201、403 action_denied、isError=true code=rate_limited）；pending 为 null。" },
+        "artifact_paths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "证据工件仓库相对路径（tests/v2/artifacts/<pkg>.json 等）；pending/blocked_external 无工件行必须空数组。"
+        },
+        "evidence_kind": {
+          "type": ["string", "null"],
+          "enum": ["real_host_real_model", "real_host_loopback", "synthetic_client_real_model", "owner_native", "fixture_only", null],
+          "description": "T063 细粒度证据类（tasks.md T063）；无运行工件的 pending/blocked_external 行为 null。与 evidence_type 的映射由本 schema allOf 执行（spec.md §14.3）。"
+        },
+        "evidence_type": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["real-host", "real-model", "fixture", "loopback", "doc-claim"] },
+          "description": "证据介质粗分类（T045 任务指令）：real-host=本机真实执行（真实宿主 CLI 或真实二进制 CLI/HTTP 回执）；real-model=真实模型推理；fixture=合成夹具；loopback=回环端点；doc-claim=仅文档断言、无运行证据。一个样本可含多种介质。verdict∈{evidence,partial,gap} 时必须非空；verdict∈{pending,blocked_external} 时必为空数组（同时 evidence_kind=null、artifact_paths=[]，双向约束）——有夹具/文档证据的样本应标 partial/gap 而非 pending。"
+        },
+        "verdict": {
+          "enum": ["evidence", "partial", "pending", "blocked_external", "gap"],
+          "description": "evidence=证据闭合；partial=部分闭合（上限见描述）；pending=未登记/无工件，必须给 owner；blocked_external=外部材料未到位（owner=user＋材料清单）；gap=可判定子集外的命名缺口（T062 token 列形态）。"
+        },
+        "verdict_reason": {
+          "type": "string",
+          "description": "结论理由/缺口说明。verdict≠evidence 时必须非空；blocked_external 必须写明缺什么材料，禁写「待材料」散文（tasks.md T061）。"
+        },
+        "owner": { "type": "string", "minLength": 1, "description": "责任包号（T0xx）或 user（外部材料）。pending/blocked_external 行必填且不得留空。" },
+        "carried_forward": { "type": "boolean", "default": false, "description": "true＝沿用 004 既有证据（A01–A08/A12），必须给 source_reference。" },
+        "source_reference": { "type": ["string", "null"], "minLength": 1, "description": "carried_forward 行的 004 证据定位（specs/004-bmem-v2/validation.md 段落/行）。" },
+        "receipt_ref": { "type": ["string", "null"], "minLength": 1, "description": "回执证据引用（native_receipts.json 内键或工件路径）；宿主类样本必填。" },
+        "wire_capture_ref": { "type": ["string", "null"], "minLength": 1, "description": "模型 wire 捕获引用；真实模型类样本必填。" },
+        "external_materials": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "blocked_external 行的材料清单（如 macOS Developer ID＋notarytool 凭据）；verdict=blocked_external 时必填非空。"
+        },
+        "negative_control": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mutation_point", "red_run_id", "green_run_id", "observable_assertions", "cleanup"],
+          "properties": {
+            "mutation_point": { "type": "string", "minLength": 1, "description": "点名实码的破坏点（file:line＋改法），如「移除 context.rs:249 bind 查询的 revoked_at 判定」。" },
+            "red_run_id": { "type": "string", "minLength": 8, "description": "变异后对基线/修复前二进制跑红的 run id。必须≠green_run_id（构建期判定，schema 无法比较兄弟值）。" },
+            "green_run_id": { "type": "string", "minLength": 8, "description": "修复后跑绿的 run id；与 red_run_id 成对。" },
+            "observable_assertions": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 },
+              "description": "可观测断言清单：status＋错误体不含调用者输入＋关联表零增量（tasks.md 通用模板④）。"
+            },
+            "cleanup": { "type": "string", "minLength": 1, "description": "清理动作（隔离根/夹具回收）。" }
+          },
+          "description": "负对照行必填（row_type=negative）。"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "row_type": { "const": "negative" } }, "required": ["row_type"] },
+          "then": { "required": ["negative_control"] }
+        },
+        {
+          "if": { "properties": { "verdict": { "enum": ["partial", "pending", "blocked_external", "gap"] } }, "required": ["verdict"] },
+          "then": { "properties": { "verdict_reason": { "minLength": 1 } } }
+        },
+        {
+          "if": { "properties": { "verdict": { "enum": ["evidence", "partial", "gap"] } }, "required": ["verdict"] },
+          "then": { "properties": { "evidence_type": { "minItems": 1 } } }
+        },
+        {
+          "if": { "properties": { "evidence_type": { "maxItems": 0 } }, "required": ["evidence_type"] },
+          "then": {
+            "properties": {
+              "verdict": { "enum": ["pending", "blocked_external"] },
+              "evidence_kind": { "const": null },
+              "artifact_paths": { "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "verdict": { "enum": ["pending", "blocked_external"] } }, "required": ["verdict"] },
+          "then": {
+            "properties": {
+              "evidence_type": { "maxItems": 0 },
+              "evidence_kind": { "const": null },
+              "artifact_paths": { "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "evidence_type": { "contains": { "const": "doc-claim" } } }, "required": ["evidence_type"] },
+          "then": { "properties": { "verdict": { "enum": ["partial", "gap"] } } }
+        },
+        {
+          "if": { "properties": { "evidence_kind": { "enum": ["real_host_loopback", "synthetic_client_real_model", "fixture_only"] } }, "required": ["evidence_kind"] },
+          "then": { "properties": { "verdict": { "enum": ["partial", "pending", "blocked_external", "gap"] } } }
+        },
+        {
+          "if": { "properties": { "evidence_kind": { "const": "real_host_real_model" } }, "required": ["evidence_kind"] },
+          "then": {
+            "required": ["receipt_ref", "wire_capture_ref"],
+            "properties": {
+              "receipt_ref": { "type": "string" },
+              "wire_capture_ref": { "type": "string" },
+              "evidence_type": { "allOf": [ { "contains": { "const": "real-host" } }, { "contains": { "const": "real-model" } } ] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "evidence_kind": { "const": "real_host_loopback" } }, "required": ["evidence_kind"] },
+          "then": {
+            "required": ["receipt_ref"],
+            "properties": {
+              "receipt_ref": { "type": "string" },
+              "evidence_type": { "contains": { "const": "real-host" } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "evidence_kind": { "const": "synthetic_client_real_model" } }, "required": ["evidence_kind"] },
+          "then": {
+            "required": ["wire_capture_ref"],
+            "properties": {
+              "wire_capture_ref": { "type": "string" },
+              "evidence_type": { "contains": { "const": "real-model" } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "evidence_kind": { "const": "owner_native" } }, "required": ["evidence_kind"] },
+          "then": {
+            "required": ["receipt_ref"],
+            "properties": {
+              "receipt_ref": { "type": "string" },
+              "evidence_type": { "contains": { "const": "real-host" } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "evidence_kind": { "const": "fixture_only" } }, "required": ["evidence_kind"] },
+          "then": { "properties": { "evidence_type": { "contains": { "const": "fixture" } } } }
+        },
+        {
+          "if": { "properties": { "evidence_type": { "contains": { "const": "real-model" } } }, "required": ["evidence_type"] },
+          "then": { "properties": { "evidence_kind": { "type": "string" } } }
+        },
+        {
+          "if": { "properties": { "verdict": { "const": "evidence" } }, "required": ["verdict"] },
+          "then": {
+            "required": ["run_id", "started_at", "assembly_commit", "binary_sha256", "evidence_kind"],
+            "properties": {
+              "run_id": { "type": "string" },
+              "started_at": { "type": "string" },
+              "assembly_commit": { "type": "string" },
+              "binary_sha256": { "type": "string" },
+              "evidence_kind": { "type": "string" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "carried_forward": { "const": true } }, "required": ["carried_forward"] },
+          "then": { "required": ["source_reference"], "properties": { "source_reference": { "type": "string" } } }
+        },
+        {
+          "if": { "properties": { "verdict": { "const": "blocked_external" } }, "required": ["verdict"] },
+          "then": { "required": ["external_materials"], "properties": { "external_materials": { "minItems": 1 } } }
+        }
+      ]
+    }
+  }
+}
