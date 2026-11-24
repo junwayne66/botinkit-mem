@@ -136,7 +136,7 @@ Claude Code 完成了 Web 勾选界面的初稿，Codex 实现后台任务并审
 
 ## 门禁复跑与三处陈旧记录更正 · 2026-11-24
 
-本机 macOS arm64（cargo/rustc 1.100.0、Python 3.9.6、Node v22.22.3、Chrome via Playwright 1.64.1）。一条命令复跑：`BMEM_V2_TEST_REAL_MODEL=qwen3:4b-instruct-2507-q4_K_M BMEM_V2_TEST_NATIVE_HOSTS=1 BMEM_V2_PLAYWRIGHT_MODULE=<playwright> python3 tests/v2/run_gates.py --profile assembly`。数字取自 `tests/v2/artifacts/validation_numbers.json`（runner 机械写入，禁手填），绑定 HEAD `04da93e8633c`、被测二进制 sha256 `e6e0ee08623c…`。本节只追加，不改写上表的历史时点记录。
+本机 macOS arm64（cargo/rustc 1.100.0、Python 3.9.6、Node v22.22.3、Chrome via Playwright 1.64.1）。一条命令复跑：`BMEM_V2_TEST_REAL_MODEL=qwen3:4b-instruct-2507-q4_K_M BMEM_V2_TEST_NATIVE_HOSTS=1 BMEM_V2_PLAYWRIGHT_MODULE=<playwright> python3 tests/v2/run_gates.py --profile assembly`。数字取自 `tests/v2/artifacts/validation_numbers.json`（runner 机械写入，禁手填），绑定代码基线 HEAD `04da93e8633c`、被测二进制 sha256 `e6e0ee08623c…`；台账文档提交后于 `0183c4f7d28f`（binary `d640bf9f46ea…`）复跑，14 步同样全 PASS、`all_pass=true`、Python 全证据档 146 run / 0 skip / 0 失败。本节只追加，不改写上表的历史时点记录。
 
 | 检查 | 实测结果 |
 |---|---|
