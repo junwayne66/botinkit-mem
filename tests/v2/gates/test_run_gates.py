@@ -12,6 +12,7 @@ Everything is deterministic: fake ops, temp dirs, no cargo, no network, no
 browser, no writes into the repository, no skips. Python 3.9, stdlib only.
 """
 
+import ast
 import hashlib
 import io
 import json
@@ -866,6 +867,97 @@ class TestHostTimeoutAttribution(unittest.TestCase):
         self.assertEqual(inner, max(p95 * 3, observed * 1.5))
         self.assertEqual(stated, min(cap, math.ceil(inner)))
         self.assertEqual(budget, stated, "constant must equal the documented rule result")
+
+
+class TestCountedCasesAreNotHollow(unittest.TestCase):
+    """Anti-hollowing backstop, added after a real mutation experiment.
+
+    2026-11-24, mutations run on a /tmp copy with the real discover + judge
+    path: emptying the six native host cases to `pass` stayed green in BOTH
+    profiles, because counting, skip sets and marker checks say nothing about
+    what a body asserts.  Two of three mutations were caught (rename-only was
+    caught by the collection rule, editing the budget comment by its own
+    provenance test); the hollow one was not.  So the cheapest mechanical guard
+    is here: every counted case in the expensive native host module must
+    contain at least one assertion or call into the implementation under test.
+
+    The permanent fix is an evidence gate: once T052 produces
+    native_receipts.json, `p0_evidence_complete` should become a hard assembly
+    failure when it is false (tasks.md T052/T063), which a hollow body cannot
+    satisfy because it never drives a real host call.
+    """
+
+    WRAPPER = os.path.join(_V2, "test_native_hosts.py")
+    IMPL_CALLS = ("run_host", "prove_loaded", "post_json", "request", "tool_receipts")
+
+    def module_methods(self):
+        with open(self.WRAPPER, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        tests = []
+        helpers = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if not isinstance(item, ast.FunctionDef):
+                        continue
+                    if item.name.startswith("test_"):
+                        tests.append(item)
+                    else:
+                        helpers[item.name] = item
+        return tests, helpers
+
+    def _calls(self, node):
+        return [n.func.attr for n in ast.walk(node)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+
+    def _has_evidence(self, calls, helpers, depth=0):
+        """A case may legitimately delegate its assertions to a private helper
+        (test_initial_... calls _declaration_phase, which subTests per host), so
+        follow helper calls a few levels down instead of demanding an inline
+        assertion in every method."""
+        for name in calls:
+            if name.startswith("assert") or name == "fail":
+                return True
+            if name in self.IMPL_CALLS:
+                return True
+            if depth < 3 and name in helpers and self._has_evidence(
+                    self._calls(helpers[name]), helpers, depth + 1):
+                return True
+        return False
+
+    def test_native_host_cases_are_not_hollow(self):
+        tests, helpers = self.module_methods()
+        self.assertGreaterEqual(
+            len(tests), 6,
+            "the native host module must keep its six counted cases; found %d" % len(tests))
+        for method in tests:
+            self.assertTrue(
+                self._has_evidence(self._calls(method), helpers),
+                "%s has no assertion, never calls the implementation under test, "
+                "and delegates to no helper that does; a hollow case would pass "
+                "every gate check" % method.name)
+
+    def test_quoted_marker_literal_is_not_attributed_to_the_host_cli(self):
+        # An AssertionError that merely quotes the marker text must not paint a
+        # bmem-side failure as an external host CLI tail (observed in mutation a).
+        text = unittest_output(144, status="FAILED (failures=1)") + (
+            "FAIL: test_marker_agreement (gates.test_run_gates.X)\n"
+            "AssertionError: BMEM_HOST_TIMEOUT literal missing from the wrapper\n")
+        parsed = judge.parse_unittest_output(text)
+        res = judge.judge_unittest(parsed, 1, fake_collection(), {}, "posix",
+                                   strict_zero_skips=True)
+        self.assertEqual(res["status"], judge.FAIL)
+        self.assertEqual(res["reason_code"], "test-failure")
+
+        emitted = unittest_output(144, status="FAILED (failures=1)") + (
+            "FAIL: test_mcp (test_native_hosts.NativeHosts)\n"
+            "AssertionError: BMEM_HOST_TIMEOUT host=codex phase=1-initial "
+            "elapsed=113.2 budget=113 exit=3\n")
+        parsed = judge.parse_unittest_output(emitted)
+        res = judge.judge_unittest(parsed, 1, fake_collection(), {}, "posix",
+                                   strict_zero_skips=True)
+        self.assertEqual(res["status"], judge.FAIL)
+        self.assertEqual(res["reason_code"], "external-host-cli-timeout")
 
 
 if __name__ == "__main__":

@@ -49,6 +49,20 @@ HOST_TIMEOUT_MARKER = "BMEM_HOST_TIMEOUT"
 REASON_EXTERNAL_HOST_TIMEOUT = "external-host-cli-timeout"
 REASON_TEST_FAILURE = "test-failure"
 
+# Attribution needs an actual emission, not the bare literal: an AssertionError
+# whose message merely quotes "BMEM_HOST_TIMEOUT" (a marker-agreement test going
+# red, say) used to paint the whole run as an external tail.  Requiring the
+# key=value shape the script prints keeps subTest emissions matching while a
+# quoted literal does not.
+HOST_TIMEOUT_EMISSION = re.compile(
+    re.escape(HOST_TIMEOUT_MARKER) + r" host=\S+ phase=\S+ elapsed=\S+ budget=\S+ exit=\d+"
+)
+
+
+def _host_timeout_evidence(text):
+    # type: (Optional[str]) -> bool
+    return bool(text) and bool(HOST_TIMEOUT_EMISSION.search(text))
+
 
 # unittest prints one "FAIL: <id>" / "ERROR: <id>" header per failed test (and
 # one per failed subTest).  Splitting on them lets attribution survive the
@@ -79,10 +93,10 @@ def classify_python_failure(text):
     Header-less text (no parseable FAIL/ERROR blocks) falls back to marker
     presence.  Either way the verdict stays FAIL; this only names the cause."""
     text = text or ""
-    if HOST_TIMEOUT_MARKER not in text:
+    if not _host_timeout_evidence(text):
         return REASON_TEST_FAILURE
     blocks = _failure_blocks(text)
-    if blocks and any(HOST_TIMEOUT_MARKER not in block for block in blocks):
+    if blocks and any(not _host_timeout_evidence(block) for block in blocks):
         return REASON_TEST_FAILURE
     return REASON_EXTERNAL_HOST_TIMEOUT
 
