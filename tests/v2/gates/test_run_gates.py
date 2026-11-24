@@ -432,12 +432,21 @@ class TestStepTableAndCommands(unittest.TestCase):
             cfg = make_cfg(tmp)
             table = S.build_steps(cfg)
             self.assertLess(table[3].sid, table[4].sid)
+            verbs = ("clean", "clippy", "build", "test")
             for st in table:
                 for cmd in st.commands:
                     if cmd["argv"] and cmd["argv"][0] == cfg.cargo and "fmt" not in cmd["argv"]:
                         self.assertIn("--manifest-path", cmd["argv"])
                         self.assertEqual(cmd["argv"][cmd["argv"].index("--manifest-path") + 1],
                                          "src/v2/bmem/Cargo.toml")
+                        # cargo only accepts options after the subcommand: an
+                        # argv starting cargo --manifest-path <verb> aborts with
+                        # "unexpected argument '--manifest-path'" in ~12ms, which
+                        # is exactly the failure a real assembly run hit once.
+                        idx = cmd["argv"].index("--manifest-path")
+                        self.assertGreater(idx, 1)
+                        self.assertIn(cmd["argv"][1], verbs)
+                        self.assertNotIn("--manifest-path", cmd["argv"][1:idx])
 
     def test_cargo_env_sets_target_dir_and_jobs(self):
         with tempfile.TemporaryDirectory() as tmp:

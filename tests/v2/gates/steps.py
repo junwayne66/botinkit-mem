@@ -90,7 +90,9 @@ class Config(object):
 
     def cargo_base(self):
         # type: () -> List[str]
-        return [self.cargo, "--manifest-path", self.manifest_path]
+        # cargo accepts global options only after the subcommand, so the base
+        # stays bare and every step inserts --manifest-path after its verb.
+        return [self.cargo]
 
     def cargo_env(self, base_env):
         # type: (Dict[str, str]) -> Dict[str, str]
@@ -141,16 +143,16 @@ def build_steps(cfg):
              [_cmd([cfg.cargo, "fmt", "--check", "--manifest-path", cfg.manifest_path])],
              SHORT_TIMEOUT, "plan step 1: exit 0"),
         Step(2, "clippy", "clippy",
-             [_cmd((cargo + ["clean"] + (["-p", "bmem"] if not cfg.full_clean else []) + td), "cargo"),
-              _cmd(cargo + ["clippy", "--locked", "--all-targets", "--no-deps"] + td + ["--jobs", j, "--", "-D", "warnings"], "cargo")],
+             [_cmd((cargo + ["clean", "--manifest-path", cfg.manifest_path] + (["-p", "bmem"] if not cfg.full_clean else []) + td), "cargo"),
+              _cmd(cargo + ["clippy", "--manifest-path", cfg.manifest_path, "--locked", "--all-targets", "--no-deps"] + td + ["--jobs", j, "--", "-D", "warnings"], "cargo")],
              CARGO_TIMEOUT,
              "plan step 2: clean -p bmem only (full clean only via --full-clean per plan cold-run policy); output must contain 'Checking bmem'"),
         Step(3, "build", "build",
-             [_cmd(cargo + ["build", "--locked"] + td + ["--jobs", j], "cargo")],
+             [_cmd(cargo + ["build", "--manifest-path", cfg.manifest_path, "--locked"] + td + ["--jobs", j], "cargo")],
              CARGO_TIMEOUT,
              "plan step 3: after clean, before test; record binary path+sha256+mtime; find -newer must be empty"),
         Step(4, "cargo-test", "cargo_test",
-             [_cmd(cargo + ["test", "--locked"] + td + ["--jobs", j], "cargo")],
+             [_cmd(cargo + ["test", "--manifest-path", cfg.manifest_path, "--locked"] + td + ["--jobs", j], "cargo")],
              CARGO_TIMEOUT,
              "plan step 4: parse 'N passed; 0 failed; 0 ignored' across all test targets"),
         Step(5, "unittest-baseline", "discover_baseline",
