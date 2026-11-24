@@ -64,7 +64,15 @@ class Ops(object):
         try:
             proc = subprocess.run(
                 argv, cwd=cwd or self.repo_root, env=env,
-                capture_output=True, text=True, timeout=timeout)
+                capture_output=True, text=True,
+                # The gate itself runs under nohup/CI, where the inherited stdin
+                # is an open pipe that never closes.  No step command consumes
+                # stdin (cargo/git/shasum/find, node --check, unittest, the host
+                # --version probes), so hand every child EOF instead of the
+                # parent's stdin: this is the defect class that made codex block
+                # on "Reading additional input from stdin..." and masquerade as
+                # an external host CLI tail on 2026-11-24.
+                stdin=subprocess.DEVNULL, timeout=timeout)
             return {"exit": proc.returncode, "stdout": proc.stdout or "",
                     "stderr": proc.stderr or "",
                     "duration_ms": int((time.monotonic() - started) * 1000),

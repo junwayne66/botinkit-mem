@@ -31,24 +31,31 @@ HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PostToolUse")
 FIXTURE_TOKEN = "synthetic-key"
 
 # Per-call budget for the *external* host CLIs, measured not guessed.
-# 2026-11-24, N=9 full runs of this script (54 host calls; claude 2.1.308,
-# codex-cli 0.171.0, loopback fixture provider, loadavg 3.0-4.0):
-#   claude  p50/p95/max = 1.24 / 1.31 / 1.49 s
-#   codex   p50/p95/max = 9.32 / 22.70 / 23.08 s
-#     phase 1 (cold sqlite/log dirs) 21.94 / 23.08 / 23.08 s
-#     phase 2 8.87 / 10.42 / 10.42 s, phase 3 9.12 / 9.49 / 9.49 s
-#   round wall time p50/p95/max = 41.13 / 42.43 / 42.43 s, 9/9 passed,
-#   no call above 75 s; the 414 bmem-side calls in the same runs maxed at 0.10 s.
+# 2026-11-24 RE-measurement after the inherited-stdin fix, N=9 full non-TTY
+# rounds of test_native_hosts.py (54 host calls; claude 2.1.308,
+# codex-cli 0.171.0, loopback fixture provider, loadavg 2.25-4.05; every round
+# launched with stdin redirected from /dev/null -- the nohup/CI condition):
+#   claude  p50/p95/max = 1.26 / 1.61 / 1.89 s
+#   codex   p50/p95/max = 13.73 / 28.57 / 30.93 s
+#     phase 1 (cold sqlite/log dirs) 25.46 / 30.93 / 30.93 s
+#     phase 2 12.56 / 16.31 / 16.31 s, phase 3 12.79 / 16.56 / 16.56 s
+#   round wall time p50/p95/max = 51.34 / 60.09 / 60.09 s, 9/9 passed,
+#   0 calls above 75 s; the 431 bmem-side spawns in the same runs maxed at 0.09 s
+#   (nearest-rank percentiles).
+# Contaminated observation, excluded from the sample: the 2026-11-24 assembly
+# breach (codex phase 1 at the old 75 s budget, then all three codex phases at
+# 113 s in run a7feecae) was NOT an external CLI tail.  run_host inherited the
+# gate's stdin; under nohup/CI that is an open pipe which never closes, so codex
+# printed "Reading additional input from stdin..." and blocked until the budget
+# expired.  stdin=subprocess.DEVNULL removes the block.  The earlier derivation
+# that admitted that 75 s breach as a right-censored max_observed (giving 113 s)
+# rested on this contaminated observation and is void.
 # Rule: ceil(max(p95 * 3, max_observed * 1.5)), hard-capped at 300 s so one
-# round can never grow without bound.  The fresh sample alone gives
-# ceil(max(22.70*3, 23.08*1.5)) = 69 s -- *below* the 75 s budget that the
-# 2026-11-24 assembly gate actually breached (codex, phase 1).  That breach is
-# a right-censored observation of this same call site (true duration >= 75 s,
-# unknown), so it enters the sample as max_observed = 75:
-#   ceil(max(22.70*3, 75*1.5)) = ceil(112.5) = 113 s  <= 300 s cap.
-# 113 s is therefore a floor of the rule, not a licence: it is ~5x the cold
-# phase p95 and 1.5x the only observed breach.  Re-measure before raising it.
-HOST_CALL_TIMEOUT = 113
+# round can never grow without bound.  Substituting the clean sample:
+#   ceil(max(28.57*3, 30.93*1.5)) = ceil(85.71) = 86 s  <= 300 s cap.
+# Re-measure before raising it.  A real external tail must still FAIL: the
+# BMEM_HOST_TIMEOUT marker and reason_code attribution below are unchanged.
+HOST_CALL_TIMEOUT = 86
 HOST_CALL_TIMEOUT_CAP = 300
 # Phase labels ride in the timeout marker so a gate reader can name the stage.
 PHASE_LABELS = {"initial": "1-initial", "corrected": "2-corrected", "cross-host": "3-cross-host"}
@@ -196,6 +203,9 @@ class VaultFixture:
             text=True,
             cwd=self.work,
             env=self.env,
+            # Same reason as run_host: an inherited stdin that never closes makes
+            # a child that waits on input hang until its budget expires.
+            stdin=subprocess.DEVNULL,
             timeout=15,
         )
         if result.returncode:
@@ -210,6 +220,11 @@ class VaultFixture:
                 [self.binary, "--home", str(self.root), "service", "run"],
                 cwd=self.work,
                 env=self.env,
+                # The daemon never reads stdin; give it EOF rather than letting
+                # it hold the gate's (possibly never-closing) stdin open for the
+                # whole round.  Matches the product spawn (client.rs Stdio::null)
+                # and browser_smoke.cjs stdio 'ignore'.
+                stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
             )
@@ -308,8 +323,13 @@ def run_host(host, command, prompt, endpoint, work, environment, fixture, phase=
         ]
     started = time.monotonic()
     try:
+        # stdin must be DEVNULL, not inherited: with a parent whose stdin is an
+        # open pipe (gate launched under nohup or CI), codex prints "Reading
+        # additional input from stdin..." and blocks until the budget expires,
+        # which previously looked like an external CLI tail.  The prompt travels
+        # as an argument, so there is nothing to feed.
         result = subprocess.run(argv, env=environment, cwd=work, capture_output=True, text=True,
-                                timeout=HOST_CALL_TIMEOUT)
+                                stdin=subprocess.DEVNULL, timeout=HOST_CALL_TIMEOUT)
     except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - started
         # The external CLI outlived its measured budget.  Name it before any

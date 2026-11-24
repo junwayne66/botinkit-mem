@@ -96,6 +96,10 @@ class BmemIntegration(unittest.TestCase):
             capture_output=True,
             text=True,
             encoding="utf-8",
+            # Same as native_hosts.VaultFixture.cli: an inherited stdin that
+            # never closes (nohup/CI gate) must not reach a child that could
+            # wait on input.  None of these CLI commands reads stdin today.
+            stdin=subprocess.DEVNULL,
             timeout=timeout,
         )
         if ok:
@@ -111,6 +115,9 @@ class BmemIntegration(unittest.TestCase):
             [self.binary, "service", "run"],
             cwd=self.work,
             env=self.environment,
+            # Daemon stdin is EOF, never the gate's inherited pipe (matches
+            # client.rs Stdio::null and browser_smoke.cjs stdio 'ignore').
+            stdin=subprocess.DEVNULL,
             stdout=self.daemon_log,
             stderr=subprocess.STDOUT,
         )
@@ -223,6 +230,9 @@ class BmemIntegration(unittest.TestCase):
         launcher = subprocess.Popen(
             [self.binary, "--json", "web", "--no-open"],
             cwd=self.work, env=self.environment, start_new_session=True,
+            # The launcher does not read stdin, and the daemon it detaches gets
+            # Stdio::null() from client.rs; keep the gate's stdin out of both.
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         try:
@@ -338,7 +348,7 @@ class BmemIntegration(unittest.TestCase):
                     "--expected-revision", str(revision), "--idempotency-key", "parallel-cli",
                 ],
                 cwd=self.work, env=self.environment, capture_output=True, text=True,
-                encoding="utf-8", timeout=10,
+                encoding="utf-8", stdin=subprocess.DEVNULL, timeout=10,
             )
             web = pool.submit(
                 browser.request,

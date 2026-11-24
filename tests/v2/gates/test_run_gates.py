@@ -855,6 +855,15 @@ class TestHostTimeoutAttribution(unittest.TestCase):
         provenance = source[:found.start()]
         for token in ("2026-11-24", "N=9", "p50/p95/max", "codex-cli 0.171.0", "claude 2.1.308"):
             self.assertIn(token, provenance, "budget comment must state %s" % token)
+        # The 2026-11-24 75 s breach was the inherited-stdin defect (codex
+        # blocking on "Reading additional input from stdin..." under a nohup/CI
+        # gate), not an external CLI tail.  The comment must record that the
+        # contaminated observation is excluded, so it can never silently
+        # re-enter the sample as a right-censored "max_observed" again.
+        self.assertIn("inherited-stdin", provenance,
+                      "budget comment must name the inherited-stdin defect")
+        self.assertIn("excluded from the sample", provenance,
+                      "budget comment must record the contaminated 75s exclusion")
         stats = re.search(r"codex\s+p50/p95/max = ([\d.]+) / ([\d.]+) / ([\d.]+) s", provenance)
         self.assertIsNotNone(stats, "budget comment must record the codex distribution")
         formula = re.search(
@@ -863,8 +872,13 @@ class TestHostTimeoutAttribution(unittest.TestCase):
         p95, observed, inner, stated = (float(formula.group(1)), float(formula.group(2)),
                                        float(formula.group(3)), int(formula.group(4)))
         self.assertEqual(p95, float(stats.group(2)), "formula must use the measured codex p95")
-        self.assertGreaterEqual(observed, 75.0, "the observed 75s breach must enter the sample")
-        self.assertEqual(inner, max(p95 * 3, observed * 1.5))
+        self.assertEqual(observed, float(stats.group(3)),
+                         "formula must use the clean sample's measured max; the 75s "
+                         "inherited-stdin artifact is excluded, not a budget floor")
+        # places=9 tolerates only IEEE-754 representation noise in the product
+        # (e.g. 28.57*3 = 85.71000000000001); any real arithmetic error >= 1e-9
+        # still fails.  This is far tighter than the 0.01 s measurement grain.
+        self.assertAlmostEqual(inner, max(p95 * 3, observed * 1.5), places=9)
         self.assertEqual(stated, min(cap, math.ceil(inner)))
         self.assertEqual(budget, stated, "constant must equal the documented rule result")
 
