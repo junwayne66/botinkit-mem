@@ -1,0 +1,32 @@
+{
+  "pkg": "T050",
+  "wave": 2,
+  "order": 90,
+  "sample": true,
+  "notes": "假想样例（勿对主线 apply）：reconcile_routes() 挂载点。order=90 使本包在波次 2 的 server.rs 上排序最后，符合「同一波次只允许最后一个包写 reconciler」。generate 消费本波次全部 route_additions 声明，逐条渲染与真实路由表同构的 match arm。",
+  "patches": [
+    {
+      "file_path": "src/v2/bmem/src/server.rs",
+      "function_scope": "dispatch",
+      "notes": "锚点四行逐字符取自真实 src/v2/bmem/src/server.rs:538-541（GET /v2/facts/:id/history arm，全文件唯一命中，已只读核对）。模板用 string.Template 的 ${name} 占位符，Rust 花括号无需转义。",
+      "match_arms": [
+        {
+          "arm": "reconcile_routes_wave2",
+          "anchor": {
+            "lines": [
+              "        (\"GET\", [\"v2\", \"facts\", id, \"history\"]) => {",
+              "            identity.owner()?;",
+              "            (200, authority::history(&read_snapshot(app)?, id)?)",
+              "        }"
+            ],
+            "position": "after"
+          },
+          "generate": {
+            "from": "route_additions",
+            "template": "        (\"${method}\", [${path_segments}]) => {\n            identity.bound()?;\n            (200, ${handler}(&read_snapshot(app)?)?)\n        }"
+          }
+        }
+      ]
+    }
+  ]
+}

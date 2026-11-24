@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bmem://tests/v2/gates/schemas/gates.schema.json",
+  "title": "run_gates.py evidence document (T044-A)",
+  "description": "Shape of evidence/gates/<timestamp>.json and tests/v2/artifacts/gates.json. Spec: specs/005-agent-mcp-interface/plan.md section 5. Validated offline by run_gates.py --selftest (structural check, stdlib only; no third-party jsonschema dependency).",
+  "type": "object",
+  "required": [
+    "schema_version", "run_id", "started_at", "finished_at", "profile",
+    "repo_root", "head", "branch", "manifest_path", "target_dir", "jobs",
+    "binaries", "steps", "all_pass", "p0_evidence_complete", "summary"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "minLength": 8 },
+    "started_at": { "type": "string" },
+    "finished_at": { "type": "string" },
+    "dry_run": { "type": "boolean" },
+    "profile": { "enum": ["assembly", "generic"] },
+    "repo_root": { "type": "string" },
+    "head": { "type": ["string", "null"], "description": "worktree HEAD at run start (task requirement 4)" },
+    "branch": { "type": ["string", "null"] },
+    "manifest_path": { "const": "src/v2/bmem/Cargo.toml" },
+    "target_dir": { "type": "string" },
+    "jobs": {
+      "type": "object",
+      "required": ["requested", "effective", "loadavg", "threshold", "demoted"],
+      "properties": {
+        "requested": { "type": "integer", "minimum": 1 },
+        "effective": { "type": "integer", "minimum": 1 },
+        "loadavg": { "type": ["number", "null"] },
+        "threshold": { "type": "number" },
+        "demoted": { "type": "boolean" }
+      }
+    },
+    "full_clean": { "type": "boolean" },
+    "binaries": {
+      "type": "object",
+      "description": "SHA-256 fingerprints of binaries used (task requirement 4); bmem entry appears after step 3",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": { "type": ["string", "null"] },
+          "sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+          "mtime": { "type": ["number", "null"] },
+          "version": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "name", "command", "exit", "duration_ms", "stdout_tail", "status", "reason", "head", "binary_sha256"],
+        "properties": {
+          "step": { "type": "integer", "minimum": 0, "maximum": 13 },
+          "name": { "type": "string" },
+          "command": { "type": "array", "items": { "type": "string" } },
+          "argv": { "type": "array", "items": { "type": "array", "items": { "type": "string" } } },
+          "exit": { "type": ["integer", "null"] },
+          "duration_ms": { "type": "integer", "minimum": 0 },
+          "stdout_tail": { "type": "array", "items": { "type": "string" } },
+          "stderr_tail": { "type": "array", "items": { "type": "string" } },
+          "key_lines": { "type": "array", "items": { "type": "string" } },
+          "status": { "enum": ["PASS", "FAIL", "BLOCKED", "WARN", "DRY_RUN", "NOT_RUN"] },
+          "reason": { "type": "string" },
+          "head": { "type": ["string", "null"] },
+          "binary_sha256": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "all_pass": { "type": "boolean" },
+    "p0_evidence_complete": { "type": "boolean" },
+    "summary": { "type": "object" }
+  }
+}

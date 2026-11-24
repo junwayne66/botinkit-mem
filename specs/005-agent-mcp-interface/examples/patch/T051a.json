@@ -1,0 +1,22 @@
+{
+  "pkg": "T051a",
+  "wave": 2,
+  "order": 10,
+  "sample": true,
+  "notes": "假想样例（勿对主线 apply）：bound 身份 shared 投影只读路由。热点文件 server.rs 上本包只声明条目，不直接写 dispatch match 块；文本由波次内排序最后的 T050 reconciler 补丁统一生成（plan §三.3）。handler 为假想名，真实实现以 T045 冻结契约为准。",
+  "patches": [
+    {
+      "file_path": "src/v2/bmem/src/server.rs",
+      "function_scope": "dispatch",
+      "notes": "锚点写法与真实 server.rs:538-541 的 (method, [segments]) match arm 同构；声明路径 /v2/agent/statements 对应段数组 [\"v2\", \"agent\", \"statements\"]。",
+      "route_additions": [
+        {
+          "method": "GET",
+          "path": "/v2/agent/statements",
+          "handler": "agent_statements_shared",
+          "capability_bits": ["statement_list"]
+        }
+      ]
+    }
+  ]
+}

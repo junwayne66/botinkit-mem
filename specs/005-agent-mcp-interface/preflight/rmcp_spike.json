@@ -1,0 +1,61 @@
+{
+  "attempt": 1,
+  "timestamp": "2026-11-24",
+  "duration_ms": 45650,
+  "exit": 0,
+  "blocker": null,
+  "network_available": true,
+  "cargo_lock_changed": true,
+  "new_crates": [
+    "async-trait 0.1.92",
+    "sse-stream 0.2.6",
+    "tokio-stream 0.1.19"
+  ],
+  "rmcp_new_dependencies": [
+    "async-trait",
+    "base64 0.23.1",
+    "rand 0.10.4",
+    "sse-stream",
+    "tokio-stream",
+    "tower-service 0.3.3"
+  ],
+  "compilation": {
+    "success": true,
+    "errors": 0,
+    "warnings": 0,
+    "duration_seconds": 45.65,
+    "jobs": 2,
+    "target_dir": "target-preflight"
+  },
+  "protocol_version": {
+    "max_supported": "2025-11-25",
+    "era": "legacy",
+    "evidence": "rmcp-3.11.0/src/model.rs: V_2025_11_25, V_2025_06_18, V_2025_03_26"
+  },
+  "mounting": {
+    "axum_version": "0.8.9",
+    "tower_version": "0.5.3",
+    "pattern": "Router::new().nest_service(\"/mcp\", service)",
+    "compatible": true,
+    "constraints": [
+      "Mount after authenticate() middleware",
+      "Per-request re-authentication required",
+      "No static Client in service_factory",
+      "No initialize session caching",
+      "Session mode: (client_id, credential_version) per-request validation",
+      "Bind only to 127.0.0.1"
+    ]
+  },
+  "conclusion": "compiles",
+  "t056_recommendation": "retain",
+  "t056_rationale": "Compilation preflight passed, no technical barriers, mounting boundary clear, workload estimate <=1 day after T050",
+  "worktree_path": ".worktrees/T044-rmcp-preflight",
+  "worktree_size_mb": 965,
+  "main_worktree_clean": true,
+  "artifacts": {
+    "report": "PREFLIGHT_REPORT.md",
+    "build_log": "/tmp/t044_build.log",
+    "fetch_log": "/tmp/t044_fetch.log",
+    "cargo_lock_diff": "git diff src/v2/bmem/Cargo.lock (in worktree)"
+  }
+}

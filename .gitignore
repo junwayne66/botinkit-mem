@@ -51,3 +51,4 @@ npm-debug.log*
 
 # ---- 机器生成的调研简报（含本机路径，不入库）----
 specs/005-agent-mcp-interface/research-brief.md
+/tests/v2/artifacts/
