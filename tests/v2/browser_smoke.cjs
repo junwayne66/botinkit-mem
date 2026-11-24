@@ -78,6 +78,7 @@ async function run() {
 
     if (process.platform !== 'win32') {
       await integrations.verifyIntegrations(page, cli, workspace, executable, env);
+      await require('./browser_data_console.cjs').verifyDataConsole(page, cli, env.BMEM_CONFIG_ROOT);
     }
 
     assert.deepEqual(errors, []);

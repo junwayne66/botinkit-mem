@@ -69,7 +69,7 @@
 
 .intake-integration-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -78,6 +78,165 @@
 .intake-connect-options label { display: flex; gap: 8px; align-items: center; }
 .intake-feishu-auth { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .intake-feishu-auth img { background: #fff; border-radius: 6px; }
+
+/* 飞书授权账号列表 */
+.intake-feishu-accounts {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.intake-feishu-account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg, #0b1420);
+  border: 1px solid var(--divider, #283847);
+  border-radius: 6px;
+}
+.intake-feishu-account__name {
+  flex: 1 1 6rem;
+  overflow-wrap: anywhere;
+  font-weight: 590;
+}
+.intake-feishu-account__status {
+  font-size: 0.8rem;
+  color: var(--muted, #adbccb);
+}
+
+/* 历史作业列表 */
+.intake-jobs-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.intake-job {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg, #0b1420);
+  border: 1px solid var(--divider, #283847);
+  border-radius: 8px;
+}
+.intake-job__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.intake-job__title {
+  font-weight: 600;
+  flex: 1;
+}
+.intake-job__stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+.intake-job__stat {
+  display: flex;
+  gap: 4px;
+}
+.intake-job__stat-label {
+  color: var(--muted, #adbccb);
+}
+.intake-job__errors {
+  margin-top: 8px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--err, #e57373) 10%, var(--surface, #111b28));
+  border-left: 3px solid var(--err, #e57373);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+/* 连接器目录 */
+.intake-connector-catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.intake-connector-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--bg, #0b1420);
+  border: 1px solid var(--divider, #283847);
+  border-radius: 8px;
+}
+.intake-connector-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.intake-connector-card__name {
+  font-weight: 600;
+  flex: 1;
+}
+.intake-connector-card__desc {
+  font-size: 0.85rem;
+  color: var(--muted, #adbccb);
+  margin: 0;
+}
+
+/* 历史导入表单 */
+.intake-history-form {
+  display: grid;
+  gap: 14px;
+}
+@media (max-width: 1150px) {
+  .intake-integration-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 780px) {
   .intake-integration-grid { grid-template-columns: minmax(0, 1fr); }
+  .intake-job__stats { flex-direction: column; gap: 4px; }
 }
+
+.intake-page-actions { justify-content: flex-end; }
+.intake-activity-chart { display: grid; gap: 8px; padding: 14px 0 0; }
+.intake-activity-line { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(5rem, 3fr) 3rem; align-items: center; gap: 12px; }
+.intake-activity-line meter { width: 100%; accent-color: var(--accent); }
+.intake-activity-line strong { text-align: right; font-family: var(--mono); }
+.intake-transfer-grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.intake-transfer-tile { display: grid; gap: 8px; justify-items: start; }
+.intake-table-scroll { overflow-x: auto; }
+.intake-table { width: 100%; border-collapse: collapse; text-align: left; }
+.intake-table th, .intake-table td { padding: 12px; border-bottom: 1px solid var(--divider); vertical-align: top; }
+.intake-table th { white-space: nowrap; color: var(--muted); background: var(--surface-2); }
+.intake-table td pre { max-width: 40ch; overflow: auto; white-space: pre-wrap; }
+.intake-table summary { color: var(--accent); cursor: pointer; }
+
+/* 全量历史导入：复选框范围选择 */
+.intake-history-scopes {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg, #0b1420);
+  border: 1px solid var(--divider, #283847);
+  border-radius: 6px;
+}
+.intake-history-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 6px 0;
+}
+.intake-history-scope input[type=checkbox] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+.intake-history-scope span {
+  font-size: 0.9rem;
+}
+
+@media (max-width: 650px) {
+  .intake-transfer-grid { grid-template-columns: 1fr; }
+  .intake-activity-line { grid-template-columns: minmax(5rem, 1fr) minmax(3rem, 2fr) 2.5rem; gap: 8px; }
+}
+.intake-activity-line meter::-webkit-meter-bar { background: var(--surface-2); border: 0; }
+.intake-activity-line meter::-webkit-meter-optimum-value { background: var(--accent); }
+.intake-activity-line meter::-moz-meter-bar { background: var(--accent); }

@@ -4,7 +4,7 @@ window.MemoryIntake = (() => {
   const eventKinds = {user_message:'本人消息', assistant_message:'助手消息', tool_result:'工具回执'};
   const dispositions = {accepted:'已受理', duplicate:'已存在', revoked:'已撤回', revoked_blocked:'已屏蔽', revoked_unknown:'未找到撤回目标'};
   const draft = { sourceId:'', file:null, intent:null, sending:false, receipt:null, last:null };
-  let drawImport, refreshImport;
+  let drawImport, refreshImport, refreshTransfers, refreshHistoryJobs;
   // 每次挂载独享一个中止信号：open() 替换根节点前中止上一轮挂载，
   // document 级监听器与轮询定时器随之立即释放，不再滞留已分离的视图树。
   let mountAbort = null;
@@ -54,10 +54,35 @@ window.MemoryIntake = (() => {
     return historyErrors[code] ? historyErrors[code] + '（' + code + '）' : String(code);
   }
 
+  // 7天柱状图：渲染来源活动统计
+  function activityChart(sourceActivity) {
+    const items = (Array.isArray(sourceActivity) ? sourceActivity : []).filter(item => item.event_count > 0);
+    const chart = el('section', {class:'intake-activity-chart', 'aria-label':'最近 7 天入库事件'}, [
+      el('h4', {text:'最近 7 天入库事件'}),
+    ]);
+    const max = Math.max(...items.map(item => item.event_count), 1);
+    if (!items.length) chart.append(el('p', {class:'hint-sm',text:'暂无入库事件'}));
+    for (const item of items) {
+      const name = item.type === 'feishu' ? '飞书' : integrationHosts[item.type]?.name || item.type || item.source_id;
+      chart.append(el('div', {class:'intake-activity-line'}, [
+        el('span', {text:name}),
+        el('meter', {min:'0',max:String(max),value:String(item.event_count),'aria-label':name+'入库事件'}),
+        el('strong', {text:String(item.event_count)}),
+      ]));
+    }
+    return chart;
+  }
+
   const integrationHosts = {
     codex: { name:'Codex', usage:'采集新会话，通过 MCP 查询已授权声明。添加后在 Codex 中审阅并信任新的 Hook。' },
     'claude-code': { name:'Claude Code', usage:'采集新会话，通过 Hook 和 MCP 使用已授权声明。添加后打开新会话。' },
-    dsh: { name:'DeepSeek Harness（DSH）', usage:'通过原生插件采集新会话，并通过 MCP 查询已授权声明。添加后重新加载 DSH 配置。' },
+    dsh: { name:'DeepSeek Harness', usage:'通过原生插件采集新会话，并通过 MCP 查询已授权声明。添加后重新加载 DSH 配置。' },
+  };
+  // 连接器目录：Hermes / OpenClaw / MCP 候选
+  const connectorCatalog = {
+    hermes: { name:'Hermes', desc:'候选适配器 · 验证官方 JSONL 会话导出。' },
+    openclaw: { name:'OpenClaw', desc:'候选适配器 · 按宿主版本验证本机会话读取。' },
+    mcp: { name:'第三方 MCP', desc:'候选扩展 · 按已授权服务的能力读取资料。' },
   };
   const feishuStages = {
     checking:'正在核对飞书 CLI 配置…',
@@ -66,7 +91,7 @@ window.MemoryIntake = (() => {
     connected:'飞书已授权并登记为来源。',
   };
 
-  function integrations(onChange, signal) {
+  function integrations(onChange, signal, onActivity) {
     const region = el('section',{class:'intake-panel intake-integrations'},[
       el('h3',{text:'添加集成'}),
     ]);
@@ -80,8 +105,15 @@ window.MemoryIntake = (() => {
       add.append(el('summary',{text:'配置集成'}));
       const capture = el('input',{type:'checkbox'});
       const share = el('input',{type:'checkbox'});
+      const captureStatus = el('p',{class:'hint-sm'});
       const output = statusLine();
+      const importHistory = button('导入历史',() => openHistoryImportDialog({
+        source_id:importHistory.dataset.sourceId,type:id,account:'local',display_name:details.name,
+      },onChange));
+      importHistory.hidden = true;
       let installing = false;
+      let dirty = false;
+      capture.onchange = share.onchange = () => { dirty = true; };
       const install = button('添加集成', async () => {
         if (installing) return;
         installing = true;
@@ -94,6 +126,7 @@ window.MemoryIntake = (() => {
         installing = false;
         renderResult(output,res);
         if (res.ok) {
+          dirty = false;
           output.textContent = '已配置。'+details.usage;
           await refresh();
           await onChange();
@@ -105,10 +138,11 @@ window.MemoryIntake = (() => {
           el('label',{},[share,' 允许助手读取已授权声明']),
         ]),install,output
       );
-      cards[id] = {availability,add,install,isInstalling:() => installing};
+      cards[id] = {availability,add,install,capture,share,captureStatus,importHistory,isInstalling:() => installing,isDirty:() => dirty};
       catalog.append(el('article',{class:'intake-source',id:'integration-'+id},[
         el('header',{class:'intake-header'},[el('h4',{text:details.name}),availability]),
-        el('p',{class:'hint-sm',text:details.usage}),add,
+        captureStatus,el('p',{class:'hint-sm',text:details.usage}),add,
+        el('div',{class:'intake-actions'},[importHistory]),
       ]));
     }
 
@@ -116,7 +150,8 @@ window.MemoryIntake = (() => {
     const authControls = el('div',{class:'intake-feishu-auth',hidden:true});
     const openAuth = el('a',{class:'btn btn--primary',target:'_blank',rel:'noopener noreferrer',text:'打开飞书授权页'});
     const qr = el('img',{width:'156',height:'156',alt:'飞书授权二维码',hidden:true});
-    authControls.append(openAuth,qr);
+    const accountsList = el('div', {class: 'intake-feishu-accounts'});
+    authControls.append(openAuth, qr);
     let starting = false;
     const start = button('发起授权', async () => {
       if (starting) return;
@@ -130,32 +165,39 @@ window.MemoryIntake = (() => {
     },true);
     catalog.prepend(el('article',{class:'intake-source',id:'integration-feishu'},[
       el('header',{class:'intake-header'},[el('h4',{text:'飞书'})]),
-      el('p',{class:'hint-sm',text:'使用官方 lark-cli 在浏览器授权并登记账号。授权后可按来源导入事件批次。'}),
-      feishuStatus,start,authControls
+      el('p',{class:'hint-sm',text:'通过飞书官方页面授权。授权后可选择导入该账号的历史数据。'}),
+      feishuStatus,accountsList,start,authControls
     ]));
 
     let poll;
     let lastStage;
     let lastQrUrl;
     let lastFeishuBusy = false;
+    let refreshing = false;
+    let readOnce = false;
+    let accountsVersion = '';
     function schedulePoll() {
       clearTimeout(poll);
+      if (!viewVisible(region) || signal.aborted) return;
       poll = setTimeout(() => {
         if (viewVisible(region)) void refresh();
-      },1200);
+      },lastFeishuBusy ? 1200 : 3000);
     }
     function updateFeishu(state) {
       clearTimeout(poll);
       const changed = lastStage !== state.stage;
       lastStage = state.stage;
       lastFeishuBusy = !!state.busy;
+      const connected = state.authorization === 'connected';
       if (!starting) {
         start.disabled = state.busy || !state.available;
-        start.textContent = state.busy ? '授权进行中' : state.stage === 'connected' ? '重新授权' : '发起授权';
+        start.textContent = state.busy ? '授权进行中' : connected ? '重新授权' : '发起授权';
       }
-      const base = feishuStages[state.stage] || (state.available
-        ? state.registered ? '已有飞书来源。可重新授权当前账号。' : '等待授权。'
-        : '需要先安装官方 CLI：npm install -g @larksuite/cli');
+      const base = state.busy ? feishuStages[state.stage] || '正在读取授权状态…'
+        : connected ? feishuStages.connected
+        : state.authorization === 'reauthorization_required' ? '飞书登录凭据已失效，请重新授权。'
+        : state.available ? state.registered ? '已登记飞书账号，等待授权核验。' : '等待授权。'
+        : '需要先安装官方 CLI：npm install -g @larksuite/cli';
       // 仅在文本变化时写入，避免 role=status 每轮重复播报。
       setText(feishuStatus, state.stage === 'failed'
         ? state.result?.message || base : state.result?.account_name ? base+' '+state.result.account_name : base);
@@ -175,39 +217,83 @@ window.MemoryIntake = (() => {
       } else if (changed && state.stage === 'connected') {
         void onChange();
       }
+      // 渲染飞书授权账号列表
+      const accounts = state.accounts || [];
+      const version = JSON.stringify(accounts);
+      if (version !== accountsVersion) {
+        accountsVersion = version;
+        accountsList.replaceChildren(...accounts.map(acc =>
+          el('div', {class: 'intake-feishu-account'}, [
+            el('span', {class: 'intake-feishu-account__name', text: acc.account_name || '飞书账号'}),
+            el('span', {class: 'intake-feishu-account__status', text:
+              acc.credential_state === 'needs_refresh' ? '已授权 · 待续期'
+                : acc.authorization === 'connected' ? '已授权'
+                : acc.authorization === 'reauthorization_required' ? '需重新授权' : '待核验'}),
+            acc.authorization === 'connected' ? button('导入历史',() => openHistoryImportDialog({
+              source_id:acc.source_id,type:'feishu',display_name:acc.account_name || '飞书账号',
+            },onChange)) : null,
+          ])
+        ));
+      }
     }
 
     async function refresh() {
+      if (refreshing || signal.aborted) return;
+      refreshing = true;
       const res = await api('GET','/v2/integrations');
-      renderResult(general,res);
+      refreshing = false;
+      if (signal.aborted) return;
       if (!res.ok) {
-        // 单次读取失败不终止授权轮询：按最近一次 busy 状态继续重排。
-        if (lastFeishuBusy && viewVisible(region)) schedulePoll();
+        renderResult(general,res);
+        if (readOnce) general.append(el('p',{class:'hint-sm',text:'显示上次读取的配置。'}));
+        schedulePoll();
         return;
       }
+      readOnce = true;
+      setText(general,'配置已从本机读取 · '+new Date().toLocaleTimeString('zh-CN',{hour12:false}));
       for (const state of res.data.hosts) {
         const card = cards[state.host];
         if (!card) continue;
         card.availability.textContent = state.configured ? '已写入配置' : state.available ? '已检测到' : '未检测到';
+        card.importHistory.hidden = !state.configured;
+        card.importHistory.dataset.sourceId = state.source_id || '';
+        setText(card.captureStatus,state.configured ? (state.capture_enabled ? '新会话采集已开启' : '新会话采集已暂停') : '');
         // 安装进行中不改写按钮禁用态与文案，避免轮询把忙碌按钮重新启用。
         if (!card.isInstalling()) {
           card.install.disabled = !state.available;
           card.install.textContent = state.configured ? '更新集成' : '添加集成';
+          if (!card.isDirty()) {
+            card.capture.checked = !!state.capture_enabled;
+            card.share.checked = !!state.shared_statements;
+          }
         }
         card.add.hidden = !state.available;
       }
       updateFeishu(res.data.feishu);
+      // 渲染 7 天活动统计柱状图（来自 source_activity）
+      const sourceActivity = res.data.source_activity;
+      if (sourceActivity) {
+        const existingChart = region.querySelector('.intake-activity-chart');
+        const newChart = activityChart(sourceActivity);
+        if (existingChart) existingChart.replaceWith(newChart);
+        else region.append(newChart);
+        onActivity(sourceActivity);
+      }
+      schedulePoll();
     }
 
     // 页面回到前台时按最近一次 busy 状态恢复飞书授权轮询；
     // 监听器与定时器随挂载信号中止，视图替换时立即释放。
     document.addEventListener('visibilitychange',() => {
-      if (lastFeishuBusy) schedulePoll();
+      if (viewVisible(region)) void refresh();
+      else clearTimeout(poll);
     },{signal});
+    window.addEventListener('focus',() => { if (viewVisible(region)) void refresh(); },{signal});
     signal.addEventListener('abort',() => clearTimeout(poll));
 
     start.disabled = true;
     queueMicrotask(refresh);
+    region.refresh = refresh;
     return region;
   }
 
@@ -224,9 +310,10 @@ window.MemoryIntake = (() => {
     const summary = el('strong',{text:'正在读取来源…'});
     const list = el('div',{class:'intake-list'});
     const result = statusLine();
-    const refreshButton = button('刷新来源',() => void refresh());
+    const refreshButton = button('刷新来源',() => void refreshAfterWrite());
+    const summaryTable = el('div');
     const panel = el('section',{class:'intake-panel'},[
-      el('header',{class:'intake-header'},[summary,refreshButton]), result, list,
+      el('header',{class:'intake-header'},[summary,refreshButton]), result, summaryTable, list,
     ]);
     const registration = el('details',{class:'intake-panel intake-register'});
     registration.append(el('summary',{text:'登记新来源'}));
@@ -282,30 +369,68 @@ window.MemoryIntake = (() => {
       if (res.ok) { account.value = ''; await refresh(); }
     };
     registration.append(form);
-    root.append(integrations(async () => { invalidateClients(); await refresh(); },signal),panel,registration);
+    const directory = connectorDirectory();
+    directory.hidden = true;
+    let sourceRows = [];
+    let activity = new Map();
+    const integrationRegion = integrations(async () => { invalidateClients(); await refresh(); },signal,items => {
+      activity = new Map(items.map(item => [item.source_id,item]));
+      renderSummary();
+    });
+    const tools = el('div',{class:'intake-actions intake-page-actions'},[
+      button('导入历史',() => chooseHistorySource(() => refresh())),
+      button('添加连接器',() => {
+        directory.hidden = !directory.hidden;
+        if (!directory.hidden) directory.scrollIntoView({block:'nearest'});
+      },true),
+    ]);
+    root.append(tools,integrationRegion,panel,registration,directory);
+
+    function renderSummary() {
+      summaryTable.replaceChildren(...(sourceRows.length ? [dataTable(
+        ['来源','账号','采集','历史同步','最近入库'],sourceRows.map(source => {
+          const received = activity.get(source.source_id)?.last_received_at;
+          return [source.type === 'feishu' ? '飞书' : integrationHosts[source.type]?.name || source.type,
+            source.type === 'feishu' ? '飞书账号' : source.account,
+            source.capture_enabled ? '已开启' : '已暂停',
+            source.history?.supported ? (source.history.enabled ? '持续采集' : '已暂停') : '—',
+            received ? new Date(received).toLocaleString('zh-CN',{hour12:false}) : '—'];
+        }),
+      )] : []));
+    }
+
+    function refreshAfterWrite() {
+      return Promise.all([refresh(),integrationRegion.refresh()]);
+    }
 
     let loaded = false;
-    let historyLive = false;
     let historyTimer = 0;
-    // 历史同步开启时约 5s 静默增量刷新；视图隐藏或页面后台即停。
+    let reading = false;
     function scheduleHistoryRefresh() {
       clearTimeout(historyTimer);
       historyTimer = 0;
-      if (!historyLive || !viewVisible(panel)) return;
+      if (signal.aborted || !viewVisible(panel)) return;
       historyTimer = setTimeout(() => {
         historyTimer = 0;
-        if (!historyLive || !viewVisible(panel)) return;
+        if (!viewVisible(panel)) return;
         void refresh();
-      },5000);
+      },3000);
     }
     // 页面可见性变化时暂停 / 恢复历史自动刷新；监听器与定时器随挂载信号中止。
-    document.addEventListener('visibilitychange',() => scheduleHistoryRefresh(),{signal});
+    document.addEventListener('visibilitychange',() => {
+      if (viewVisible(panel)) void refresh();
+      else clearTimeout(historyTimer);
+    },{signal});
     signal.addEventListener('abort',() => clearTimeout(historyTimer));
 
     async function refresh() {
+      if (reading || signal.aborted) return;
+      reading = true;
       refreshButton.disabled = true;
       const res = await api('GET','/v2/sources');
+      reading = false;
       refreshButton.disabled = false;
+      if (signal.aborted) return;
       renderResult(result,res);
       if (!res.ok) {
         summary.textContent = '已登记来源';
@@ -315,9 +440,10 @@ window.MemoryIntake = (() => {
       }
       loaded = true;
       summary.textContent = '已登记来源 · ' + res.data.sources.length;
-      historyLive = res.data.sources.some(source => source.history?.enabled);
+      sourceRows = res.data.sources;
+      renderSummary();
       reconcileList(list,res.data.sources,source => source.source_id,
-        source => sourceCard(source,refresh),
+        source => sourceCard(source,refreshAfterWrite),
         (node,source) => node.__intakeUpdate(source));
       if (!res.data.sources.length) {
         list.replaceChildren(emptyMsg('暂无来源。先登记一个账号，再开启采集或导入历史。',{
@@ -416,10 +542,12 @@ window.MemoryIntake = (() => {
     if (syncHistory) syncHistory.dataset.focusKey = 'history';
 
     const importButton = button('导入历史',() => {
-      if (!draft.intent && !draft.sending && draft.sourceId !== current.source_id) {
-        Object.assign(draft,{sourceId:current.source_id,file:null,receipt:null,last:null});
+      if (current.history?.supported) openHistoryImportDialog(current, () => refresh());
+      else {
+        draft.sourceId = current.source_id;
+        draft.receipt = draft.last = null;
+        navigate('imports');
       }
-      navigate('imports');
     });
     importButton.dataset.focusKey = 'import';
 
@@ -892,7 +1020,7 @@ window.MemoryIntake = (() => {
     if (draft.sending || !draft.intent) return;
     draft.sending = true; draft.last = null; drawImport?.();
     const {key,body} = draft.intent;
-    const res = await api('POST','/v2/events',{body,idempotencyKey:key});
+    const res = await api('POST','/v2/events',{body,idempotencyKey:key,headers:{'X-Bmem-Import':'file'}});
     draft.sending = false;
     if (res.ok) {
       draft.receipt = res.data; draft.file = draft.intent = null;
@@ -902,15 +1030,364 @@ window.MemoryIntake = (() => {
     }
     drawImport?.();
     if (res.ok || res.status === 409) await refreshImport?.();
+    if (res.ok) await refreshTransfers?.();
+  }
+
+  // 历史导入对话框：选择类型、目标、日期范围
+  const historyKinds = {dm:'私聊',group:'群聊',docs:'飞书文档',sessions:'历史会话'};
+
+  function dateRange(from, to) {
+    if (!from || !to || from > to) throw new Error('请选择有效的起始日期和截止日期。');
+    const first = new Date(from + 'T00:00:00');
+    const last = new Date(to + 'T00:00:00');
+    last.setDate(last.getDate() + 1);
+    return {from:first.toISOString(),to:last.toISOString()};
+  }
+
+  function scopedDialog(title, body, actions) {
+    const id = 'intake-dialog-' + newKey();
+    const close = () => dialog.close();
+    const dialog = el('dialog', {class:'dialog', 'aria-labelledby':id}, [
+      el('div', {class:'dialog-card'}, [
+        el('h2',{id,class:'dialog-title',text:title}), body,
+        el('div',{class:'dialog-actions'},[button('取消',close),...actions]),
+      ]),
+    ]);
+    dialog.addEventListener('close',() => dialog.remove(),{once:true});
+    document.body.append(dialog);
+    dialog.showModal();
+    return dialog;
+  }
+
+  async function chooseHistorySource(onDone) {
+    const select = el('select');
+    const status = statusLine();
+    const next = button('选择来源',() => {
+      const source = sources.find(item => item.source_id === select.value);
+      if (!source) return;
+      dialog.close();
+      openHistoryImportDialog(source,onDone);
+    },true);
+    let sources = [];
+    next.disabled = true;
+    const dialog = scopedDialog('导入历史数据',el('div',{class:'intake-history-form'},[
+      field('history-source-picker','已连接来源',select),status,
+    ]),[next]);
+    setLoading(status,'正在读取来源…');
+    const res = await api('GET','/v2/sources');
+    if (!dialog.open) return;
+    renderResult(status,res);
+    if (!res.ok) return;
+    sources = res.data.sources.filter(source => source.history?.supported);
+    for (const source of sources) select.add(new Option(label(source),source.source_id));
+    next.disabled = !sources.length;
+    if (!sources.length) setText(status,'暂无支持历史导入的已连接来源。');
+  }
+
+  function openHistoryImportDialog(source, onDone) {
+    const options = source.type === 'feishu'
+      ? [['dm','全部私聊'],['group','全部群聊'],['docs','全部可见文档']]
+      : [['sessions','全部历史会话（含工具回执）']];
+    const result = statusLine();
+    let intentKey = null;
+    const checks = options.map(([value,name]) => {
+      const input = el('input',{type:'checkbox',value});
+      input.addEventListener('change',() => {
+        intentKey = null;
+        confirm.disabled = checks.every(check => !check.input.checked);
+        result.replaceChildren();
+      });
+      return {input,label:el('label',{class:'intake-history-scope'},[input,el('span',{text:name})])};
+    });
+
+    const confirm = button('创建导入任务',async () => {
+      const kinds = checks.filter(({input}) => input.checked).map(({input}) => input.value);
+      if (!kinds.length) return;
+      for (const {input} of checks) input.disabled = true;
+      busy(confirm,true,'正在提交…');
+      result.replaceChildren();
+      intentKey ??= newKey();
+      const res = await api('POST','/v2/history/jobs',{
+        body:{source_id:source.source_id,kinds},idempotencyKey:intentKey,
+      });
+      for (const {input} of checks) input.disabled = false;
+      busy(confirm,false);
+      if (!dialog.open) return;
+      if (!res.ok) {
+        renderResult(result,res);
+        return;
+      }
+      dialog.close();
+      toast('已创建 '+res.data.jobs.length+' 个历史导入任务，可在数据管理查看进度。','ok');
+      await onDone?.();
+    },true);
+    confirm.disabled = true;
+
+    const body = el('div',{class:'intake-history-form'},[
+      el('p',{class:'hint-sm',text:'勾选后创建任务，系统将在后台一次性导入所选类别。'}),
+      el('div',{class:'intake-history-scopes',role:'group','aria-label':'导入范围'},checks.map(({label}) => label)),
+      source.type === 'feishu' ? el('p',{class:'hint-sm',text:'飞书内容受当前账号可见范围和应用权限限制。'}) : null,
+      result,
+    ]);
+    const dialog = scopedDialog('导入历史数据 · '+(source.display_name || label(source)),body,[confirm]);
+  }
+
+  // 历史作业管理视图
+  async function openHistoryJobs(root, signal) {
+    const summary = el('strong', {text: '历史导入任务'});
+    const refreshBtn = button('刷新作业', () => void refresh());
+    const panel = el('section', {class: 'intake-panel'}, [
+      el('header', {class: 'intake-header'}, [summary, refreshBtn]),
+      el('div', {class: 'intake-jobs-list'}),
+    ]);
+    const list = panel.querySelector('.intake-jobs-list');
+    const result = statusLine();
+    panel.insertBefore(result, list);
+    root.append(panel);
+
+    let pollTimer = 0;
+    let liveJobs = false;
+
+    function schedulePoll() {
+      clearTimeout(pollTimer);
+      pollTimer = 0;
+      if (!liveJobs || !viewVisible(panel)) return;
+      pollTimer = setTimeout(() => {
+        pollTimer = 0;
+        if (!liveJobs || !viewVisible(panel)) return;
+        void refresh();
+      }, 3000);
+    }
+
+    document.addEventListener('visibilitychange', () => schedulePoll(), {signal});
+    signal.addEventListener('abort', () => clearTimeout(pollTimer));
+
+    function renderJob(job) {
+      const statItems = [
+        ['已受理', job.accepted ?? 0],
+        ['重复', job.duplicates ?? 0],
+        ['失败', job.failed ?? 0],
+      ];
+      const stats = el('div', {class: 'intake-job__stats'},
+        statItems.map(([label, value]) =>
+          el('span', {class: 'intake-job__stat'}, [
+            el('span', {class: 'intake-job__stat-label', text: label + ':'}),
+            el('span', {text: String(value)}),
+          ])
+        )
+      );
+      const actions = el('div', {class: 'intake-actions'});
+      if (job.state === 'running' || job.state === 'queued') {
+        actions.append(button('取消', async () => {
+          const res = await api('POST', '/v2/history/jobs/' + encodeURIComponent(job.id) + '/cancel');
+          renderResult(result, res);
+          if (res.ok) await refresh();
+        }));
+      } else if (['failed','partial','cancelled'].includes(job.state)) {
+        actions.append(button('重试', async () => {
+          const res = await api('POST', '/v2/history/jobs/' + encodeURIComponent(job.id) + '/retry');
+          renderResult(result, res);
+          if (res.ok) await refresh();
+        }));
+      }
+      const stateText = {
+        queued: '待执行',
+        partial: '部分完成',
+        running: '运行中',
+        completed: '已完成',
+        failed: '失败',
+        cancelled: '已取消',
+        withdrawn: '已撤回',
+      }[job.state] || job.state;
+      const jobEl = el('article', {class: 'intake-job'}, [
+        el('header', {class: 'intake-job__header'}, [
+          el('span', {class: 'intake-job__title', text: (historyKinds[job.kind] || '历史导入') + ' · ' + stateText}),
+          el('span', {class: 'pill', text: stateText}),
+        ]),
+        el('div', {class: 'intake-meta'}, [
+          kv('来源', integrationHosts[job.source_type]?.name || (job.source_type === 'feishu' ? '飞书' : job.source_id || '')),
+          kv('创建时间', job.created_at ? relativeTime(Date.parse(job.created_at)) : ''),
+          job.scope === 'all' ? kv('导入范围', '全部') : null,
+          job.scope === 'all' ? kv('对象进度', job.discovered
+            ? job.completed_targets+' / '+job.target_count+' 已处理'
+            : '已发现 '+job.target_count+' 个对象') : null,
+        ].filter(Boolean)),
+        stats,
+        actions,
+      ]);
+      if (job.errors && job.errors.length > 0) {
+        jobEl.append(el('div', {class: 'intake-job__errors'}, [
+          el('strong', {text: '错误:'}),
+          el('ul', {}, job.errors.map(e => el('li', {text: (e.target === '@discover' ? '读取目录 · ' : e.target ? e.target+' · ' : '')+(e.message || historyErrorText(e.code || e))}))),
+        ]));
+      }
+      return jobEl;
+    }
+
+    async function refresh() {
+      refreshBtn.disabled = true;
+      const res = await api('GET', '/v2/history/jobs');
+      refreshBtn.disabled = false;
+      renderResult(result, res);
+      if (!res.ok) {
+        summary.textContent = '历史导入任务';
+        schedulePoll();
+        return;
+      }
+      const jobs = res.data.jobs || [];
+      summary.textContent = '历史导入任务 · ' + jobs.length;
+      liveJobs = jobs.some(j => j.state === 'running' || j.state === 'queued');
+      if (jobs.length === 0) {
+        list.replaceChildren(emptyMsg('暂无历史作业。在来源卡片上点击"导入历史"开始。'));
+      } else {
+        list.replaceChildren(...jobs.map(renderJob));
+      }
+      schedulePoll();
+    }
+
+    refreshHistoryJobs = refresh;
+    setLoading(result, '正在读取作业…');
+    return refresh();
+  }
+
+  function dataTable(headers, rows) {
+    const head = el('thead',{},[el('tr',{},headers.map(text => el('th',{scope:'col',text})))]);
+    const body = el('tbody',{},rows.map(row => el('tr',{},row.map(value =>
+      el('td',{},[value instanceof Node ? value : String(value ?? '—')])))));
+    return el('div',{class:'intake-table-scroll'},[el('table',{class:'intake-table'},[head,body])]);
+  }
+
+  async function openDataManagement(root, signal) {
+    const records = el('div',{class:'intake-data-records'});
+    const result = statusLine();
+    const sources = new Map();
+    const exportSource = el('select',{required:true});
+    const exportFrom = el('input',{type:'date',required:true});
+    const exportTo = el('input',{type:'date',required:true});
+    const exportStatus = statusLine();
+    const exportButton = button('确认并下载',async () => {
+      if (exportButton.disabled) return;
+      try {
+        if (!exportSource.value) throw new Error('请选择导出来源。');
+        const body = {source_id:exportSource.value,...dateRange(exportFrom.value,exportTo.value)};
+        busy(exportButton,true,'正在导出…');
+        const res = await api('POST','/v2/data/export',{body});
+        busy(exportButton,false);
+        if (!res.ok) {
+          renderResult(exportStatus,res);
+          return;
+        }
+        const blob = new Blob([JSON.stringify(res.data.document)],{type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const download = el('a',{href:url,download:res.data.filename});
+        document.body.append(download);
+        download.click();
+        download.remove();
+        setTimeout(() => URL.revokeObjectURL(url),1000);
+        setText(exportStatus,'已导出 '+res.data.receipt.count+' 条事件 · '+res.data.filename);
+        await refresh();
+      } catch (error) {
+        busy(exportButton,false);
+        setText(exportStatus,error.message);
+      }
+    },true);
+    const exportBody = el('div',{class:'intake-history-form'},[
+      field('export-source','数据来源',exportSource),
+      el('div',{class:'intake-pickers'},[
+        field('export-from','起始日期',exportFrom),field('export-to','截止日期',exportTo),
+      ]),
+      el('p',{class:'hint-sm',text:'V2 事件 JSON · 包含所选范围内的可读事件正文。'}),
+      exportStatus,
+    ]);
+    const exportTile = el('article',{class:'intake-source intake-transfer-tile'},[
+      el('h3',{text:'导出数据'}),
+      el('p',{class:'hint-sm',text:'按来源和日期下载已入库事件。'}),
+      button('导出数据',() => scopedDialog('导出数据',exportBody,[exportButton])),
+    ]);
+    const importTile = el('article',{class:'intake-source intake-transfer-tile'},[
+      el('h3',{text:'导入数据'}),
+      el('p',{class:'hint-sm',text:'从已连接来源导入历史，或预览本机 JSON 批次。'}),
+      el('div',{class:'intake-actions'},[
+        button('从来源导入历史',() => chooseHistorySource(() => refreshHistoryJobs?.()),true),
+        button('导入 JSON 批次',() => root.querySelector('#intake-file')?.focus()),
+      ]),
+    ]);
+    const refreshButton = button('刷新记录',() => void refresh());
+    const panel = el('section',{class:'intake-panel'},[
+      el('header',{class:'intake-header'},[el('h3',{text:'导入导出记录'}),refreshButton]),
+      result,records,
+    ]);
+    root.prepend(el('section',{class:'intake-transfer-grid'},[importTile,exportTile]));
+    root.append(panel);
+    exportSource.add(new Option('请选择来源',''));
+
+    async function refresh() {
+      if (refreshButton.disabled || signal.aborted) return;
+      refreshButton.disabled = true;
+      const res = await api('GET','/v2/data/records');
+      refreshButton.disabled = false;
+      if (signal.aborted) return;
+      renderResult(result,res);
+      if (!res.ok) return;
+      const transfers = res.data.records;
+      if (!transfers.length) {
+        records.replaceChildren(emptyMsg('暂无导入导出记录。'));
+        return;
+      }
+      records.replaceChildren(dataTable(['时间','操作','来源','事件数','结果','回执'],transfers.map(item => [
+        new Date(item.created_at).toLocaleString('zh-CN',{hour12:false}),item.kind === 'import' ? '导入' : '导出',
+        sources.get(item.source_id) || item.source_id,item.count,'已完成',
+        el('details',{},[el('summary',{text:'查看回执'}),el('pre',{text:pretty(item.receipt)})]),
+      ])));
+    }
+    refreshTransfers = refresh;
+    const res = await api('GET','/v2/sources');
+    if (signal.aborted) return;
+    if (res.ok) {
+      for (const source of res.data.sources) {
+        sources.set(source.source_id,label(source));
+        exportSource.add(new Option(label(source),source.source_id));
+      }
+    } else {
+      renderResult(exportStatus,res);
+    }
+    await refresh();
+  }
+
+  // 连接器目录：显示 Hermes/OpenClaw/MCP 候选
+  function connectorDirectory() {
+    const panel = el('section', {class: 'intake-panel'}, [
+      el('h3', {text: '连接器目录'}),
+      el('p', {class: 'view-desc', text: '当前支持飞书、Codex、Claude Code 和 DeepSeek Harness。'}),
+      el('div', {class: 'intake-connector-catalog'},
+        Object.entries(connectorCatalog).map(([id, info]) =>
+          el('article', {class: 'intake-connector-card', id: 'connector-' + id}, [
+            el('header', {class: 'intake-connector-card__header'}, [
+              el('span', {class: 'intake-connector-card__name', text: info.name}),
+            ]),
+            el('p', {class: 'intake-connector-card__desc', text: info.desc}),
+            el('span',{class:'pill',text:'待验证'}),
+          ])
+        )
+      ),
+    ]);
+    return panel;
+  }
+
+  function leave() {
+    mountAbort?.abort();
+    drawImport = refreshImport = refreshTransfers = refreshHistoryJobs = null;
   }
 
   function open(view, host) {
-    drawImport = refreshImport = null;
-    mountAbort?.abort();
+    leave();
     mountAbort = new AbortController();
     const root = el('div',{class:'intake-workspace'});
     host.replaceChildren(root);
-    return view === 'sources' ? openSources(root,mountAbort.signal) : openImports(root);
+    if (view === 'sources') return openSources(root,mountAbort.signal);
+    return Promise.all([
+      openImports(root),openDataManagement(root,mountAbort.signal),openHistoryJobs(root,mountAbort.signal),
+    ]);
   }
-  return {open};
+  return {open,leave};
 })();

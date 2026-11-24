@@ -1,0 +1,43 @@
+.ledger-root { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+.ledger-result { min-width: 0; }
+.ledger-summary:empty { display: none; }
+.ledger-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.ledger-metric, .ledger-filters, .ledger-result {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;
+}
+.ledger-metric { display: grid; gap: 6px; }
+.ledger-metric-label, .ledger-field, .ledger-pagination { color: var(--muted); }
+.ledger-metric-value { font: 28px/1.3 var(--mono); }
+.ledger-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.ledger-field { display: grid; gap: 6px; min-width: 9rem; }
+.ledger-input, .ledger-select {
+  min-height: 36px; padding: 7px 10px; font: inherit; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.ledger-filter-actions { display: flex; gap: 8px; }
+.ledger-table-scroll { overflow-x: auto; }
+.ledger-table { width: 100%; border-collapse: collapse; text-align: left; }
+.ledger-table th, .ledger-table td {
+  padding: 12px; border-bottom: 1px solid var(--divider); vertical-align: top;
+}
+.ledger-table th { color: var(--muted); background: var(--surface-2); }
+.ledger-table th, .ledger-table time, .ledger-table summary { white-space: nowrap; }
+.ledger-table summary { cursor: pointer; color: var(--accent); }
+.ledger-table code, .ledger-detail-pairs { overflow-wrap: anywhere; }
+.ledger-detail-pairs { display: grid; gap: 4px; min-width: 18ch; max-width: 36ch; margin: 10px 0 0; }
+.ledger-detail-pairs dt { color: var(--muted); }
+.ledger-detail-pairs dd { margin: 0 0 4px; }
+.ledger-detail-pairs pre { white-space: pre-wrap; margin: 0; }
+.ledger-pill { padding: 3px 7px; border-radius: 5px; font-size: .85rem; white-space: nowrap; }
+.ledger-pill--ok { color: var(--ok); background: var(--ok-bg); }
+.ledger-pill--warn { color: var(--warn); background: var(--warn-bg); }
+.ledger-pill--muted { color: var(--muted); background: var(--surface-2); }
+.ledger-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 10px; margin-top: 14px; }
+
+@media (max-width: 640px) {
+  .ledger-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .ledger-metric, .ledger-filters, .ledger-result { padding: 10px; }
+  .ledger-metric-value { font-size: 21px; }
+  .ledger-metric-label { font-size: .8rem; }
+  .ledger-field { width: 100%; }
+}

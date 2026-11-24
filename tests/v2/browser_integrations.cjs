@@ -155,10 +155,32 @@ async function verifyIntegrations(page, cli, workspace, executable, env) {
   await registration.locator('summary').click();
 
   await feishu.getByText(/飞书已授权并登记为来源/).waitFor();
+  await feishu.getByRole('button',{name:'导入历史',exact:true}).click();
+  const historyDialog = page.getByRole('dialog');
+  for (const category of ['全部私聊','全部群聊','全部可见文档']) {
+    const check = historyDialog.getByRole('checkbox',{name:category,exact:true});
+    assert.equal(await check.isChecked(),false);
+  }
+  await historyDialog.getByRole('checkbox',{name:'全部群聊',exact:true}).check();
+  await historyDialog.getByRole('button',{name:'取消',exact:true}).click();
+  assert.equal(cli('connector','history-jobs').jobs.length,0);
   const origin = new URL(page.url()).origin;
   const status = await page.request.get(origin+'/v2/integrations');
   assert(!((await status.text()).includes('private-fixture-code')));
   assert.equal(cli('connector','list').sources.filter(s=>s.type==='feishu').length,1);
+  const codexSource = cli('connector','list').sources.find(s=>s.type==='codex');
+  assert.ok(codexSource);
+  cli('connector','pause',codexSource.source_id);
+  await page.waitForFunction(() => {
+    const card = document.querySelector('#integration-codex');
+    return card && [...card.querySelectorAll('label')].some(label =>
+      label.textContent.includes('开启新会话采集') && label.querySelector('input')?.checked === false);
+  }, null, {timeout:8000});
+  await page.reload();
+  await codex.getByText('配置集成',{exact:true}).click();
+  assert.equal(await codex.getByLabel('开启新会话采集').isChecked(),false);
+  assert.equal(await codex.getByLabel('允许助手读取已授权声明').isChecked(),true);
+  await feishu.getByText(/飞书已授权并登记为来源/).waitFor();
   console.log('Browser verified three isolated host installations, install busy-state under polling, poll survival after a failed GET, and Feishu device-flow/QR/source registration.');
 }
 

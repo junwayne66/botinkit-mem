@@ -90,15 +90,17 @@ function listFrom(data, hints) {
 }
 
 // ---------- 单一同源 fetch 封装 ----------
-// 默认 30s 超时；模型连通测试与备份 / 恢复预检是长操作，默认放宽到 120s。
-// 调用方始终可用 opts.timeoutMs 覆盖。超时按连接失败如实报告，可原键重试。
+// Local reads fail promptly if the service cannot return committed state.
+// History options can call a remote connector.
+const API_READ_TIMEOUT_MS = 5000;
 const API_TIMEOUT_MS = 30000;
 const API_LONG_TIMEOUT_MS = 120000;
-function apiTimeoutFor(path, opts) {
+function apiTimeoutFor(method, path, opts) {
   if (opts.timeoutMs != null) return opts.timeoutMs;
   if (/^\/v2\/models\/[^/]+\/test$/.test(path)) return API_LONG_TIMEOUT_MS;
   const kind = opts.body && opts.body.kind;
   if (kind === 'backup' || kind === 'restore_preview') return API_LONG_TIMEOUT_MS;
+  if (method === 'GET' && !path.startsWith('/v2/history/options?')) return API_READ_TIMEOUT_MS;
   return API_TIMEOUT_MS;
 }
 async function api(method, path, opts) {
@@ -112,7 +114,7 @@ async function api(method, path, opts) {
 
   const controller = new AbortController();
   init.signal = controller.signal;
-  const timer = setTimeout(() => controller.abort(), apiTimeoutFor(path, opts));
+  const timer = setTimeout(() => controller.abort(), apiTimeoutFor(method, path, opts));
   let res,
     raw = '',
     data = null,
@@ -1209,22 +1211,12 @@ function proposalValue(value) {
   return typeof value === 'string' ? value : pretty(value);
 }
 
-const loadDeliveries = () =>
-  loadGeneric('deliv', '/v2/deliveries', ['deliveries'], (d) =>
-    card(
-      [el('strong', { text: d.route_ref }), pill('已提供', 'info')],
-      [
-        el('div', { class: 'metarow' }, [
-          kv('会话', d.session_id),
-          kv('提供时间', new Date(d.provided_at).toLocaleString()),
-          kv('提供修订', d.provided_revision_ids.length),
-          kv('装入回执', d.loaded ? '已观察' : '待回执'),
-          kv('采用回执', d.used ? '已观察' : '待回执')
-        ]),
-        detailsRecord(d)
-      ]
-    )
-  , (d) => d.delivery_id);
+function loadDeliveries() {
+  const root = $('#deliv-body');
+  return loadFeature('ledger').then(() => {
+    if (currentView === 'deliveries') return window.MemoryLedger.open(root);
+  }).catch(error => showFeatureError(root, error, loadDeliveries));
+}
 const operationNames = {
   change_grant: '变更授权',
   stop_capture: '暂停采集',
@@ -1312,6 +1304,7 @@ const routes = {
   injections: 'deliveries',
   operations: 'operations',
   sources: 'sources',
+  'data-management': 'imports',
   imports: 'imports'
 };
 const views = Object.fromEntries(Object.entries(routes).map(([route, view]) => [view, route]));
@@ -1330,7 +1323,7 @@ const viewTitles = {
   deliveries: '注入台账',
   operations: '操作记录',
   sources: '数据来源',
-  imports: '历史导入'
+  imports: '数据管理'
 };
 
 function showFeatureError(host, error, retry = null) {
@@ -1449,6 +1442,8 @@ function switchView(name) {
   if (name === 'statements' || name === 'jobs' || name === 'history') viewStyle('library');
   const old = currentView;
   currentView = name;
+  if ((old === 'sources' || old === 'imports') && old !== name) window.MemoryIntake?.leave();
+  if (old === 'deliveries' && old !== name) window.MemoryLedger?.leave();
   if (old === 'overview' || old === 'graph') window.MemoryDashboard?.leave();
   setMenu(false);
   if (name !== 'jobs') scheduleJobsRefresh(); // 离开作业视图即停轮询
@@ -1544,7 +1539,7 @@ function bindNav() {
     'reload-config': () => (window.MemorySettings ? window.MemorySettings.refresh() : switchView('settings')),
     'reload-tasks': loadTasks,
     'reload-jobs': loadJobs,
-    'reload-deliveries': loadDeliveries,
+    'reload-deliveries': () => window.MemoryLedger ? window.MemoryLedger.refresh() : loadDeliveries(),
     'reload-operations': loadOperations,
     'retry-statement': () => submitStatement(true)
   };

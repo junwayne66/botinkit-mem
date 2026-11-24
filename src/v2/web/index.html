@@ -101,11 +101,11 @@
           </button>
         </div>
         <div class="nav-group">
-          <div class="nav-label">数据管理</div>
+          <div class="nav-label">数据</div>
           <button class="navbtn" type="button" data-view="sources">
             <svg class="ico" aria-hidden="true"><use href="#i-sources" /></svg><span>数据来源</span></button
           ><button class="navbtn" type="button" data-view="imports">
-            <svg class="ico" aria-hidden="true"><use href="#i-imports" /></svg><span>历史导入</span></button
+            <svg class="ico" aria-hidden="true"><use href="#i-imports" /></svg><span>数据管理</span></button
           ><button class="navbtn" type="button" data-view="deliveries">
             <svg class="ico" aria-hidden="true"><use href="#i-deliveries" /></svg><span>注入台账</span>
           </button>
@@ -265,7 +265,7 @@
           <div class="view__head">
             <div>
               <h1 id="h-sources">数据来源</h1>
-              <p class="view-desc">管理向工作区提交事件的连接器和采集状态。</p>
+              <p class="view-desc">管理飞书授权和 Harness 采集，查看各来源的当前状态。</p>
             </div>
           </div>
           <div id="sources-content"></div>
@@ -273,8 +273,8 @@
         <section id="view-imports" class="view" aria-labelledby="h-imports" tabindex="-1" hidden>
           <div class="view__head">
             <div>
-              <h1 id="h-imports">历史导入</h1>
-              <p class="view-desc">把已有事件文件导入本机工作区，预览确认后开始写入。</p>
+              <h1 id="h-imports">数据管理</h1>
+              <p class="view-desc">导入已授权来源的历史或 V2 JSON 批次，按来源和日期导出已入库事件。</p>
             </div>
           </div>
           <div id="imports-content"></div>
@@ -644,8 +644,7 @@
             <h1 id="h-deliv">注入台账</h1>
             <button class="btn" type="button" data-action="reload-deliveries">重新读取</button>
           </div>
-          <p class="hint">核对助手获得的上下文及其装入回执。</p>
-          <div id="deliv-result" class="resultline" aria-live="polite"></div>
+          <p class="view-desc">追踪会话收到的修订，以及宿主回报的装入和采用。</p>
           <div id="deliv-body" class="list"></div>
         </section>
 
