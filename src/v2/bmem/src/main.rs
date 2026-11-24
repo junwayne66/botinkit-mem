@@ -3,11 +3,13 @@ mod archive;
 mod authority;
 mod client;
 mod context;
+mod data_management;
 mod error;
 mod feishu;
 mod history;
 mod history_feishu;
 mod history_hosts;
+mod history_tasks;
 mod host;
 mod ingestion;
 mod integrations;
@@ -18,7 +20,7 @@ mod server;
 mod settings;
 mod vector;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use client::Client;
 use error::{Error, Result};
 use serde_json::{Value, json};
@@ -273,6 +275,68 @@ enum Connector {
         #[arg(long)]
         pause: bool,
     },
+    /// List authorized objects for a one-time history import.
+    HistoryOptions {
+        source_id: String,
+        #[arg(long)]
+        kind: String,
+        #[arg(long)]
+        query: Option<String>,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    HistoryPreview(HistorySelection),
+    HistoryImport {
+        #[command(flatten)]
+        selection: HistorySelection,
+        #[arg(long)]
+        idempotency_key: Option<String>,
+    },
+    /// Queue all available history in one or more selected categories.
+    HistoryImportAll {
+        source_id: String,
+        #[arg(long = "kind", required = true)]
+        kinds: Vec<String>,
+        #[arg(long)]
+        idempotency_key: Option<String>,
+    },
+    HistoryJobs,
+    HistoryCancel {
+        id: String,
+    },
+    HistoryRetry {
+        id: String,
+    },
+    DataRecords,
+    DataExport {
+        source_id: String,
+        #[arg(long)]
+        from: String,
+        #[arg(long)]
+        to: String,
+    },
+}
+
+#[derive(Args)]
+struct HistorySelection {
+    source_id: String,
+    #[arg(long)]
+    kind: String,
+    #[arg(long = "target", required = true)]
+    targets: Vec<String>,
+    #[arg(long)]
+    from: Option<String>,
+    #[arg(long)]
+    to: Option<String>,
+    #[arg(long, default_value = "messages")]
+    content: String,
+}
+
+impl HistorySelection {
+    fn body(self) -> Value {
+        json!({"source_id": self.source_id, "kind": self.kind, "targets": self.targets,
+               "from": self.from, "to": self.to, "content": self.content})
+    }
 }
 #[derive(Subcommand)]
 enum Clients {
@@ -868,6 +932,70 @@ fn connector(client: &Client, command: Connector) -> Result<Value> {
             client,
             &format!("/v2/sources/{}/history", segment(&source_id)),
             &json!({"enabled":!pause}),
+            None,
+        ),
+        Connector::HistoryOptions {
+            source_id,
+            kind,
+            query,
+            cursor,
+        } => {
+            let mut params = url::form_urlencoded::Serializer::new(String::new());
+            params
+                .append_pair("source_id", &source_id)
+                .append_pair("kind", &kind);
+            if let Some(query) = query {
+                params.append_pair("query", &query);
+            }
+            if let Some(cursor) = cursor {
+                params.append_pair("cursor", &cursor);
+            }
+            get(client, &format!("/v2/history/options?{}", params.finish()))
+        }
+        Connector::HistoryPreview(selection) => {
+            post(client, "/v2/history/preview", &selection.body(), None)
+        }
+        Connector::HistoryImport {
+            selection,
+            idempotency_key,
+        } => post(
+            client,
+            "/v2/history/jobs",
+            &selection.body(),
+            idempotency_key.as_deref(),
+        ),
+        Connector::HistoryImportAll {
+            source_id,
+            kinds,
+            idempotency_key,
+        } => post(
+            client,
+            "/v2/history/jobs",
+            &json!({"source_id":source_id,"kinds":kinds}),
+            idempotency_key.as_deref(),
+        ),
+        Connector::HistoryJobs => get(client, "/v2/history/jobs"),
+        Connector::HistoryCancel { id } => post(
+            client,
+            &format!("/v2/history/jobs/{}/cancel", segment(&id)),
+            &json!({}),
+            None,
+        ),
+        Connector::HistoryRetry { id } => post(
+            client,
+            &format!("/v2/history/jobs/{}/retry", segment(&id)),
+            &json!({}),
+            None,
+        ),
+        Connector::DataRecords => get(client, "/v2/data/records"),
+        Connector::DataExport {
+            source_id,
+            from,
+            to,
+        } => post(
+            client,
+            "/v2/data/export",
+            &json!({"source_id":source_id,"from":from,"to":to}),
             None,
         ),
     }

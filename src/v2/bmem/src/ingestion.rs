@@ -189,6 +189,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             updated_at      TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_jobs_claim ON ing_jobs (status, available_at);
+        CREATE INDEX IF NOT EXISTS idx_jobs_source_created
+            ON ing_jobs(source_id, created_at, status, available_at, lease_expires_at, event_id);
+        CREATE INDEX IF NOT EXISTS idx_events_source_received
+            ON ing_event_versions(source_id, received_at);
 
         -- Candidate ledger: proposals produced by finished jobs. Storage of a
         -- candidate is *not* acceptance of a memory; D2 owns adjudication.
@@ -401,6 +405,27 @@ pub(crate) fn accept_in(
     page: Value,
     profile: &str,
 ) -> Result<Value> {
+    accept_page(tx, actor, key, page, profile, None)
+}
+
+pub(crate) fn accept_history_task(
+    tx: &rusqlite::Transaction<'_>,
+    task_id: &str,
+    key: &str,
+    page: Value,
+    profile: &str,
+) -> Result<Value> {
+    accept_page(tx, "owner", key, page, profile, Some(task_id))
+}
+
+fn accept_page(
+    tx: &rusqlite::Transaction<'_>,
+    actor: &str,
+    key: &str,
+    page: Value,
+    profile: &str,
+    history_task: Option<&str>,
+) -> Result<Value> {
     if actor.trim().is_empty() {
         return Err(Error::invalid("actor must not be empty"));
     }
@@ -485,7 +510,17 @@ pub(crate) fn accept_in(
             "action_denied: adapter '{actor}' is not bound to source '{source_id}' for page submission"
         )));
     }
-    if !grant_active_in(tx, &source_id, "capture")? {
+    let permitted = if let Some(task_id) = history_task {
+        tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM history_task_jobs
+              WHERE task_id=?1 AND source_id=?2 AND state='running' AND targets='[]')",
+            params![task_id, source_id],
+            |row| row.get::<_, bool>(0),
+        )?
+    } else {
+        grant_active_in(tx, &source_id, "capture")?
+    };
+    if !permitted {
         return Err(Error::denied(format!(
             "action_denied: capture is not enabled for source '{source_id}'"
         )));
@@ -611,24 +646,6 @@ pub(crate) fn accept_in(
 // D3 leased queue
 // ---------------------------------------------------------------------------
 
-/// List extraction jobs with their durable state: status, attempts, lease,
-/// failure reason, and the count of recorded candidates for finished jobs.
-pub fn jobs(conn: &Connection) -> Result<Value> {
-    let mut stmt = conn.prepare(
-        "SELECT j.job_id, j.source_id, j.event_id, j.intake_version, j.input,
-                j.status, j.attempts, j.available_at, j.lease_expires_at,
-                j.fail_reason, j.created_at, j.updated_at,
-                (SELECT COUNT(*) FROM ing_candidates c WHERE c.job_id = j.job_id)
-         FROM ing_jobs j ORDER BY j.created_at",
-    )?;
-    let rows = stmt.query_map([], job_row_to_value)?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(Value::Array(out))
-}
-
 pub fn job_candidates(conn: &Connection, job_id: &str) -> Result<Value> {
     let input: String = conn
         .query_row(
@@ -693,22 +710,24 @@ pub fn claim(conn: &mut Connection, route: &str) -> Result<Option<Job>> {
     let tx = conn.transaction()?;
     let found = tx
         .query_row(
-            "SELECT j.job_id, j.event_id, j.input, j.intake_version
+            "SELECT j.job_id,j.event_id,j.input,j.intake_version
              FROM ing_jobs j
-             WHERE (
-                      (j.status IN ('pending', 'failed') AND j.available_at <= ?1)
-                      OR (j.status = 'running' AND j.lease_expires_at IS NOT NULL
-                          AND j.lease_expires_at <= ?1)
-                   )
-               AND EXISTS (SELECT 1 FROM ing_event_versions e
-                           WHERE e.event_id = j.event_id AND e.active = 1)
-               AND EXISTS (SELECT 1 FROM ing_grants g
-                           WHERE g.source_id = j.source_id
-                             AND g.purpose = 'extract' AND g.active = 1)
-               AND EXISTS (SELECT 1 FROM ing_model_routes m
-                           WHERE m.source_id=j.source_id AND m.fingerprint=?2)
-             ORDER BY j.created_at
-             LIMIT 1",
+             WHERE j.rowid=(
+                 SELECT candidate.rowid
+                 FROM ing_model_routes m JOIN ing_grants g
+                   ON g.source_id=m.source_id AND g.purpose='extract' AND g.active=1
+                 JOIN ing_jobs candidate ON candidate.rowid=(
+                     SELECT q.rowid FROM ing_jobs q
+                     WHERE q.source_id=m.source_id
+                       AND ((q.status IN ('pending','failed') AND q.available_at<=?1)
+                            OR (q.status='running' AND q.lease_expires_at<=?1))
+                       AND EXISTS(SELECT 1 FROM ing_event_versions e
+                                  WHERE e.event_id=q.event_id AND e.active=1)
+                     ORDER BY q.created_at LIMIT 1
+                 )
+                 WHERE m.fingerprint=?2
+                 ORDER BY candidate.created_at,candidate.rowid LIMIT 1
+             )",
             params![now, route],
             |r| {
                 Ok((

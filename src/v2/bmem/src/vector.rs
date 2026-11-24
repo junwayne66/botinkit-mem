@@ -178,6 +178,8 @@ pub fn migrate(db: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS ing_vector_routes (
             source_id TEXT PRIMARY KEY REFERENCES ing_sources(source_id), fingerprint TEXT NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS vector_events_by_source
+            ON ing_event_versions(source_id,occurred_at,event_id) WHERE active=1;
         CREATE TABLE IF NOT EXISTS vector_projection (
             event_id TEXT NOT NULL REFERENCES ing_event_versions(event_id),
             source_id TEXT NOT NULL REFERENCES ing_sources(source_id),
@@ -230,39 +232,61 @@ pub fn drop_event(db: &Connection, event_id: &str) -> Result<()> {
 }
 
 pub fn pending(db: &Connection, route: &str) -> Result<Option<VectorJob>> {
-    let mut select = db.prepare(
-        "SELECT e.event_id,e.source_id,e.content
-         FROM ing_event_versions e JOIN ing_vector_routes g ON g.source_id=e.source_id
-         JOIN recall_events r ON r.event_id=e.event_id AND r.source_id=e.source_id
-         WHERE e.active=1 AND g.fingerprint=?1 AND length(CAST(e.content AS BLOB))<=?2
-           AND NOT EXISTS(SELECT 1 FROM vector_projection v WHERE v.route=g.fingerprint AND v.event_id=e.event_id)
+    let mut sources =
+        db.prepare_cached("SELECT source_id FROM ing_vector_routes WHERE fingerprint=?1")?;
+    let mut select = db.prepare_cached(
+        "SELECT e.event_id,e.occurred_at,e.content
+         FROM ing_event_versions e INDEXED BY vector_events_by_source
+         WHERE e.source_id=?1 AND e.active=1
+           AND NOT EXISTS(SELECT 1 FROM vector_projection v WHERE v.route=?2 AND v.event_id=e.event_id)
+           AND EXISTS(SELECT 1 FROM recall_events r WHERE r.event_id=e.event_id AND r.source_id=e.source_id)
+           AND octet_length(e.content)<=?3
          ORDER BY e.occurred_at,e.event_id",
     )?;
-    let mut rows = select.query(params![route, MAX_INPUT_BYTES as i64])?;
-    while let Some(row) = rows.next()? {
-        let content: Value = serde_json::from_str(
-            row.get_ref(2)?
+    // Each source can stop after its first valid candidate. Compare only
+    // those candidates to preserve oldest-first ordering across sources.
+    let mut oldest: Option<(String, VectorJob)> = None;
+    for source in sources.query_map([route], |row| row.get::<_, String>(0))? {
+        let source = source?;
+        let mut rows = select.query(params![source, route, MAX_INPUT_BYTES as i64])?;
+        while let Some(row) = rows.next()? {
+            let event_id: String = row.get(0)?;
+            let occurred_at: String = row.get(1)?;
+            if oldest
+                .as_ref()
+                .is_some_and(|(at, job)| (&occurred_at, &event_id) >= (at, &job.event_id))
+            {
+                break;
+            }
+            let content: Value = serde_json::from_str(
+                row.get_ref(2)?
+                    .as_str()
+                    .map_err(|_| Error::internal("stored embedding source is not text"))?,
+            )?;
+            let text = content
                 .as_str()
-                .map_err(|_| Error::internal("stored embedding source is not text"))?,
-        )?;
-        let original = content.as_str().or_else(|| content["text"].as_str());
-        let text = original
-            .filter(|value| !value.trim().is_empty())
-            .map(str::to_owned)
-            .or_else(|| {
-                content["checks"]
-                    .as_object()
-                    .map(|_| content["checks"].to_string())
-            });
-        if let Some(text) = text {
-            return Ok(Some(VectorJob {
-                event_id: row.get(0)?,
-                source_id: row.get(1)?,
-                text,
-            }));
+                .or_else(|| content["text"].as_str())
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_owned)
+                .or_else(|| {
+                    content["checks"]
+                        .as_object()
+                        .map(|_| content["checks"].to_string())
+                });
+            if let Some(text) = text {
+                oldest = Some((
+                    occurred_at,
+                    VectorJob {
+                        event_id,
+                        source_id: source,
+                        text,
+                    },
+                ));
+                break;
+            }
         }
     }
-    Ok(None)
+    Ok(oldest.map(|(_, job)| job))
 }
 
 pub fn commit(db: &Connection, job: &VectorJob, route: &str, vector: &[f32]) -> Result<()> {

@@ -1,13 +1,13 @@
 use crate::error::{Error, Result};
 use crate::{
-    archive, authority, context, history, ingestion, platform, providers, retrieval,
-    settings::Settings, vector,
+    archive, authority, context, data_management, history, history_tasks, ingestion, integrations,
+    platform, providers, retrieval, settings::Settings, vector,
 };
 use axum::body::{Body, to_bytes};
 use axum::extract::State;
 use axum::http::{HeaderMap, Response, StatusCode};
 use axum::response::IntoResponse;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -51,9 +51,24 @@ pub fn database(instance: &platform::Instance) -> Result<Connection> {
     context::migrate(&db)?;
     ingestion::migrate(&db)?;
     history::migrate(&db)?;
+    integrations::migrate(&db)?;
+    integrations::migrate_legacy_hosts(instance, &db)?;
+    data_management::migrate(&db)?;
+    history_tasks::migrate(&db)?;
     retrieval::migrate(&mut db)?;
     vector::migrate(&db)?;
-    crate::analytics::migrate(&db)?;
+    crate::analytics::migrate(&mut db)?;
+    Ok(db)
+}
+
+fn read_snapshot(app: &App) -> Result<Connection> {
+    let db = Connection::open_with_flags(
+        app.instance.root.join("data/bmem.sqlite3"),
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )?;
+    db.busy_timeout(Duration::from_millis(500))?;
+    // Keep all queries in one response on the same committed WAL snapshot.
+    db.execute_batch("BEGIN DEFERRED")?;
     Ok(db)
 }
 
@@ -87,7 +102,11 @@ pub async fn serve(instance: platform::Instance) -> Result<()> {
     let workers = [
         tokio::spawn(run_jobs(state.clone(), run_one)),
         tokio::spawn(run_jobs(state.clone(), run_vector)),
-        tokio::spawn(run_history(state.clone())),
+        tokio::spawn(run_history(state.clone(), |app, profile| {
+            history::scan_next(&app.database, profile, &|| *app.stop.borrow())
+        })),
+        tokio::spawn(run_history(state.clone(), scan_history_task)),
+        tokio::spawn(run_feishu_checks(state.clone())),
     ];
     let result = axum::serve(listener, app)
         .with_graceful_shutdown(async move {
@@ -218,6 +237,8 @@ const WEB_ASSETS: &[(&str, &str, &str)] = &[
     ("/library.css", CSS, include_str!("../../web/library.css")),
     ("/intake.js", JS, include_str!("../../web/intake.js")),
     ("/intake.css", CSS, include_str!("../../web/intake.css")),
+    ("/ledger.js", JS, include_str!("../../web/ledger.js")),
+    ("/ledger.css", CSS, include_str!("../../web/ledger.css")),
     ("/search.js", JS, include_str!("../../web/search.js")),
     ("/search.css", CSS, include_str!("../../web/search.css")),
 ];
@@ -368,10 +389,7 @@ fn authenticate(app: &App, headers: &HeaderMap, method: &str) -> Result<Identity
         if bool::from(token.as_bytes().ct_eq(app.instance.owner_token.as_bytes())) {
             return Ok(Identity::Owner);
         }
-        return Ok(Identity::Bound(context::bind(
-            &*lock(&app.database)?,
-            token,
-        )?));
+        return Ok(Identity::Bound(context::bind(&read_snapshot(app)?, token)?));
     }
     let name = format!("bmem_session_{}", app.address.port());
     let cookie = header(headers, "cookie").and_then(|cookies| {
@@ -429,14 +447,14 @@ fn dispatch(
             identity.owner()?;
             (
                 200,
-                crate::analytics::overview(&*lock(&app.database)?, query(qs, "days").as_deref())?,
+                crate::analytics::overview(&read_snapshot(app)?, query(qs, "days").as_deref())?,
             )
         }
         ("GET", ["v2", "graph"]) => {
             identity.owner()?;
             (
                 200,
-                crate::analytics::graph(&*lock(&app.database)?, query(qs, "limit").as_deref())?,
+                crate::analytics::graph(&read_snapshot(app)?, query(qs, "limit").as_deref())?,
             )
         }
         ("GET", ["v2", "health"]) => {
@@ -509,7 +527,7 @@ fn dispatch(
             (
                 200,
                 authority::current(
-                    &*lock(&app.database)?,
+                    &read_snapshot(app)?,
                     query(qs, "project").as_deref(),
                     query(qs, "valid_at").as_deref(),
                     query(qs, "known_at").as_deref(),
@@ -519,7 +537,7 @@ fn dispatch(
         }
         ("GET", ["v2", "facts", id, "history"]) => {
             identity.owner()?;
-            (200, authority::history(&*lock(&app.database)?, id)?)
+            (200, authority::history(&read_snapshot(app)?, id)?)
         }
         ("POST", ["v2", "clients"]) => {
             identity.owner()?;
@@ -530,11 +548,29 @@ fn dispatch(
         }
         ("GET", ["v2", "clients"]) => {
             identity.owner()?;
-            (200, context::clients(&*lock(&app.database)?)?)
+            (200, context::clients(&read_snapshot(app)?)?)
         }
         ("GET", ["v2", "deliveries"]) => {
             identity.owner()?;
-            (200, context::deliveries(&*lock(&app.database)?)?)
+            (200, context::deliveries(&read_snapshot(app)?)?)
+        }
+        ("GET", ["v2", "deliveries", "ledger"]) => {
+            identity.owner()?;
+            let page = query(qs, "page")
+                .map(|value| value.parse::<usize>())
+                .transpose()
+                .map_err(|_| Error::invalid("page must be a positive integer"))?
+                .unwrap_or(1);
+            (
+                200,
+                context::delivery_ledger(
+                    &read_snapshot(app)?,
+                    query(qs, "host").as_deref(),
+                    query(qs, "loaded").as_deref(),
+                    query(qs, "used").as_deref(),
+                    page,
+                )?,
+            )
         }
         ("POST", ["v2", "context", "load"]) => {
             let mut body = body;
@@ -557,7 +593,7 @@ fn dispatch(
         ),
         ("GET", ["v2", "tasks"]) => {
             identity.owner()?;
-            (200, context::tasks(&*lock(&app.database)?)?)
+            (200, context::tasks(&read_snapshot(app)?)?)
         }
         ("POST", ["v2", "tasks"]) => (
             201,
@@ -583,7 +619,7 @@ fn dispatch(
             context::outcome(&mut *lock(&app.database)?, identity.bound()?, id, body)?,
         ),
         ("GET", ["v2", "tasks", id, "handoff"]) => {
-            let db = lock(&app.database)?;
+            let db = read_snapshot(app)?;
             let data = if let Some(client) = identity.optional_bound() {
                 if !context::task_access(&db, id, &client.id)? {
                     return Err(Error::missing("task is unavailable"));
@@ -597,7 +633,7 @@ fn dispatch(
         ("POST", ["v2", "search"]) => {
             let query = required(&body, "query")?;
             if let Some(client) = identity.optional_bound() {
-                let db = lock(&app.database)?;
+                let db = read_snapshot(app)?;
                 if body["route_ref"]
                     .as_str()
                     .is_some_and(|route| route != client.route_ref)
@@ -618,7 +654,7 @@ fn dispatch(
             }
         }
         ("POST", ["v2", "evidence", "expand"]) => {
-            let db = lock(&app.database)?;
+            let db = read_snapshot(app)?;
             let handle = required(&body, "handle")?;
             let data = if let Some(client) = identity.optional_bound() {
                 retrieval::expand_for_client(&db, handle, &client.id)?
@@ -629,13 +665,14 @@ fn dispatch(
         }
         ("GET", ["v2", "integrations"]) => {
             identity.owner()?;
-            let mut status = crate::integrations::status(&app.instance);
-            status["feishu"] = lock(&app.feishu)?.status();
-            let registered: bool = lock(&app.database)?.query_row(
-                "SELECT EXISTS(SELECT 1 FROM ing_sources WHERE kind='feishu' AND account LIKE 'feishu-%')",
-                [], |row| row.get(0),
-            )?;
-            status["feishu"]["registered"] = json!(registered);
+            let mut flow = lock(&app.feishu)?.status();
+            let db = read_snapshot(app)?;
+            let mut status = integrations::status(&db)?;
+            let durable = integrations::feishu_status(&db)?;
+            if let (Some(flow), Some(persisted)) = (flow.as_object_mut(), durable.as_object()) {
+                flow.extend(persisted.clone());
+            }
+            status["feishu"] = flow;
             (200, status)
         }
         ("POST", ["v2", "integrations", "feishu", "start"]) => {
@@ -646,12 +683,15 @@ fn dispatch(
                     let shutdown = app.stop.subscribe();
                     let result = crate::feishu::authorize(&app.feishu, || *shutdown.borrow());
                     let result = result.and_then(|account| {
+                        let mut db = lock(&app.database)?;
                         let source = ingestion::register(
-                            &mut *lock(&app.database)?,
+                            &mut db,
                             json!({
                                 "type":"feishu","account":account.key,"actors":["owner"]
                             }),
                         )?;
+                        let source_id = required(&source, "source_id")?;
+                        integrations::record_feishu(&db, source_id, Some(&account))?;
                         Ok(json!({"account_name":account.label,"source_id":source["source_id"]}))
                     });
                     if let Ok(mut flow) = app.feishu.lock() {
@@ -679,7 +719,7 @@ fn dispatch(
                 Err(error) => return Err(error),
             };
             let fingerprint = route.as_ref().map(|(_, _, id)| id.as_str());
-            let db = lock(&app.database)?;
+            let db = read_snapshot(app)?;
             let mut sources = ingestion::list(&db, fingerprint)?;
             history::describe(&db, &mut sources)?;
             (200, json!({"sources":sources}))
@@ -692,6 +732,71 @@ fn dispatch(
             let output = history::set_enabled(&mut *lock(&app.database)?, id, enabled)?;
             app.history.notify_one();
             (202, output)
+        }
+        ("GET", ["v2", "history", "options"]) => {
+            identity.owner()?;
+            let source_id =
+                query(qs, "source_id").ok_or_else(|| Error::invalid("source_id is required"))?;
+            let kind = query(qs, "kind").ok_or_else(|| Error::invalid("kind is required"))?;
+            let (source, account) = history_source(&read_snapshot(app)?, &source_id)?;
+            let search = query(qs, "query");
+            let cursor = query(qs, "cursor");
+            let stop = || *app.stop.borrow();
+            let options = if source == "feishu" {
+                crate::history_feishu::options(
+                    &account,
+                    &kind,
+                    search.as_deref(),
+                    cursor.as_deref(),
+                    &stop,
+                )?
+            } else {
+                crate::history_hosts::options(
+                    &source,
+                    &kind,
+                    search.as_deref(),
+                    cursor.as_deref(),
+                    &stop,
+                )?
+            };
+            (200, options)
+        }
+        ("POST", ["v2", "history", "preview"]) => {
+            identity.owner()?;
+            (200, history_tasks::preview(&read_snapshot(app)?, &body)?)
+        }
+        ("GET", ["v2", "history", "jobs"]) => {
+            identity.owner()?;
+            (200, history_tasks::list(&read_snapshot(app)?)?)
+        }
+        ("POST", ["v2", "history", "jobs"]) => {
+            identity.owner()?;
+            let mut db = lock(&app.database)?;
+            let key = key(headers)?;
+            let job = if body.get("kinds").is_some() {
+                history_tasks::create_all(&mut db, &body, key)?
+            } else {
+                history_tasks::create(&mut db, &body, key)?
+            };
+            app.history.notify_waiters();
+            (202, job)
+        }
+        ("POST", ["v2", "history", "jobs", id, action @ ("cancel" | "retry")]) => {
+            identity.owner()?;
+            let job = history_tasks::change(&mut *lock(&app.database)?, id, action)?;
+            app.history.notify_waiters();
+            (200, job)
+        }
+        ("GET", ["v2", "data", "records"]) => {
+            identity.owner()?;
+            (200, data_management::records(&read_snapshot(app)?)?)
+        }
+        ("POST", ["v2", "data", "export"]) => {
+            identity.owner()?;
+            (
+                200,
+                data_management::export(&mut *lock(&app.database)?, &body)?,
+            )
         }
         ("POST", ["v2", "sources"]) => {
             identity.owner()?;
@@ -758,34 +863,42 @@ fn dispatch(
                 .as_str()
                 .unwrap_or("balanced")
                 .to_owned();
-            let value = ingestion::accept(&mut db, actor, key, body, &profile)?;
+            let manual_import = header(headers, "x-bmem-import") == Some("file")
+                || query(qs, "import").as_deref() == Some("true");
+            let value = if manual_import {
+                identity.owner()?;
+                let tx = db.transaction()?;
+                let value = ingestion::accept_in(&tx, actor, key, body, &profile)?;
+                data_management::record_import(&tx, &source_id, &value)?;
+                tx.commit()?;
+                value
+            } else {
+                ingestion::accept(&mut db, actor, key, body, &profile)?
+            };
             app.jobs.notify_waiters();
             (201, value)
         }
         ("GET", ["v2", "jobs"]) => {
             identity.owner()?;
-            let db = lock(&app.database)?;
-            let page = if let Some(limit) = query(qs, "limit") {
+            (
+                200,
                 crate::analytics::job_page(
-                    &db,
-                    &limit,
+                    &read_snapshot(app)?,
+                    query(qs, "limit").as_deref().unwrap_or("40"),
                     query(qs, "before").as_deref(),
                     query(qs, "status").as_deref(),
-                )?
-            } else {
-                job_list(&db)?
-            };
-            (200, page)
+                )?,
+            )
         }
         ("GET", ["v2", "jobs", id]) => {
             identity.owner()?;
-            let mut job = ingestion::fetch_job(&*lock(&app.database)?, id)?;
+            let mut job = ingestion::fetch_job(&read_snapshot(app)?, id)?;
             job["job_id"] = job["id"].clone();
             (200, job)
         }
         ("GET", ["v2", "jobs", id, "candidates"]) => {
             identity.owner()?;
-            (200, ingestion::job_candidates(&*lock(&app.database)?, id)?)
+            (200, ingestion::job_candidates(&read_snapshot(app)?, id)?)
         }
         ("POST", ["v2", "jobs", id, "retry"]) => {
             identity.owner()?;
@@ -863,14 +976,14 @@ fn dispatch(
         }
         ("GET", ["v2", "operations"]) => {
             identity.owner()?;
-            (200, retrieval::operations(&*lock(&app.database)?)?)
+            (200, retrieval::operations(&read_snapshot(app)?)?)
         }
         ("GET", ["v2", "operations", id]) => {
             identity.owner()?;
             (
                 200,
                 find(
-                    retrieval::operations(&*lock(&app.database)?)?,
+                    retrieval::operations(&read_snapshot(app)?)?,
                     "operations",
                     "operation_id",
                     id,
@@ -895,16 +1008,6 @@ fn dispatch(
     Ok(outcome)
 }
 
-fn job_list(db: &Connection) -> Result<Value> {
-    let mut jobs = ingestion::jobs(db)?;
-    if let Some(rows) = jobs.as_array_mut() {
-        for row in rows {
-            row["job_id"] = row["id"].clone();
-        }
-    }
-    Ok(json!({"jobs":jobs}))
-}
-
 fn find(value: Value, list: &str, field: &str, id: &str) -> Result<Value> {
     value[list]
         .as_array()
@@ -918,7 +1021,7 @@ fn find(value: Value, list: &str, field: &str, id: &str) -> Result<Value> {
 fn capabilities(app: &App, identity: &Identity) -> Result<Vec<Value>> {
     let own = identity.optional_bound().is_none();
     let search = if let Some(client) = identity.optional_bound() {
-        context::shared_enabled(&*lock(&app.database)?, client)?
+        context::shared_enabled(&read_snapshot(app)?, client)?
     } else {
         true
     };
@@ -1016,7 +1119,102 @@ async fn run_jobs(state: Arc<App>, work: fn(&App) -> Result<bool>) {
     }
 }
 
-async fn run_history(state: Arc<App>) {
+fn history_source(db: &Connection, id: &str) -> Result<(String, String)> {
+    let (kind, account): (String, String) = db
+        .query_row(
+            "SELECT kind, account FROM ing_sources WHERE source_id=?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| Error::missing("来源不存在"))?;
+    let supported = match kind.as_str() {
+        "feishu" => account.starts_with("feishu-"),
+        "codex" | "claude-code" | "dsh" => account == "local",
+        _ => false,
+    };
+    if !supported {
+        return Err(Error::invalid("该来源仅支持文件导入"));
+    }
+    Ok((kind, account))
+}
+
+async fn run_feishu_checks(app: Arc<App>) {
+    let mut stop = app.stop.subscribe();
+    let mut interval = tokio::time::interval(Duration::from_secs(60));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    while !*stop.borrow() {
+        tokio::select! {
+            _ = stop.changed() => break,
+            _ = interval.tick() => {
+                let app = app.clone();
+                let _ = tokio::task::spawn_blocking(move || verify_feishu_registrations(&app)).await;
+            }
+        }
+    }
+}
+
+fn verify_feishu_registrations(app: &App) -> Result<()> {
+    let state = integrations::feishu_status(&read_snapshot(app)?)?;
+    let stop = || *app.stop.borrow();
+    for row in state["accounts"].as_array().into_iter().flatten() {
+        if stop() {
+            break;
+        }
+        if let (Some(source), Some(account)) = (row["source_id"].as_str(), row["account"].as_str())
+        {
+            let result = crate::history_feishu::account(account, &stop);
+            if !stop() {
+                match result {
+                    Ok(account) => integrations::record_feishu(
+                        &*lock(&app.database)?,
+                        source,
+                        Some(&account.identity),
+                    )?,
+                    Err(error) if error.code == "action_denied" => {
+                        integrations::record_feishu(&*lock(&app.database)?, source, None)?;
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn scan_history_task(app: &App, profile: &str) -> Result<bool> {
+    let stop = || *app.stop.borrow();
+    history_tasks::run_next(
+        &app.database,
+        profile,
+        &stop,
+        &|source_type, account, kind, target, from, to, content, cursor| {
+            if source_type == "feishu" {
+                crate::history_feishu::read_import_page(
+                    account,
+                    kind,
+                    target,
+                    (from, to),
+                    content,
+                    cursor,
+                    &stop,
+                )
+            } else {
+                crate::history_hosts::read_import_page(
+                    source_type,
+                    kind,
+                    target,
+                    (from, to),
+                    content,
+                    cursor,
+                    &stop,
+                )
+            }
+        },
+    )
+}
+
+async fn run_history(state: Arc<App>, scan: fn(&App, &str) -> Result<bool>) {
     let mut stop = state.stop.subscribe();
     loop {
         let run = state.clone();
@@ -1025,7 +1223,7 @@ async fn run_history(state: Arc<App>) {
                 .as_str()
                 .unwrap_or("balanced")
                 .to_owned();
-            history::scan_next(&run.database, &profile, &|| *run.stop.borrow())
+            scan(&run, &profile)
         })
         .await
         .ok()
@@ -1105,7 +1303,7 @@ fn run_vector(app: &App) -> Result<bool> {
     let Some((model, credential, route)) = model_route(app, "embed")? else {
         return Ok(false);
     };
-    let job = vector::pending(&*lock(&app.database)?, &route)?;
+    let job = vector::pending(&read_snapshot(app)?, &route)?;
     let Some(job) = job else { return Ok(false) };
     let value = vector::embed(
         &model.protocol,
@@ -1137,7 +1335,7 @@ fn owner_search(app: &App, query: &str, task: Option<&str>, mode: Option<&str>) 
         None | Some("lexical") => None,
         _ => return Err(Error::invalid("search mode must be lexical or vector")),
     };
-    let mut output = retrieval::search_owner(&*lock(&app.database)?, query, task)?;
+    let mut output = retrieval::search_owner(&read_snapshot(app)?, query, task)?;
     if let Some(reason) = failure {
         output["fallback_reason"] = json!(reason);
     }
@@ -1163,7 +1361,7 @@ fn vector_search(app: &App, query: &str, task: Option<&str>) -> Result<Option<Ve
         return Ok(None);
     }
     Ok(Some(vector::search(
-        &*lock(&app.database)?,
+        &read_snapshot(app)?,
         &route,
         &q,
         task,

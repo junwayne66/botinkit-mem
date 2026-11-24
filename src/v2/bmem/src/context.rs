@@ -1261,3 +1261,126 @@ pub fn deliveries(conn: &Connection) -> Result<Value> {
     }
     Ok(json!({"deliveries": items}))
 }
+
+/// Fixed ledger page size; keeping it constant makes page numbers stable
+/// across refreshes while new deliveries arrive.
+const LEDGER_PAGE_SIZE: usize = 20;
+
+/// Completeness of the newest loaded receipt for a delivery, NULL when the
+/// host never reported loading. Receipts are append-only, so the newest rowid
+/// is the current observation; `partial` always corresponds to a real receipt
+/// recorded with complete=0.
+const LEDGER_LATEST_LOADED: &str = "(SELECT r.complete FROM context_receipts r \
+    WHERE r.delivery_id=d.id AND r.kind='loaded' ORDER BY r.rowid DESC LIMIT 1)";
+const LEDGER_HAS_USED: &str =
+    "EXISTS(SELECT 1 FROM context_receipts r WHERE r.delivery_id=d.id AND r.kind='used')";
+
+/// Owner-facing ledger of the durable deliveries recorded in the last 7 days.
+/// `loaded` filters pending|partial|observed, `used` filters pending|observed;
+/// an empty host filter means all hosts. Summary counts and `total` cover the
+/// whole filtered window, never just the returned page. The legacy
+/// `deliveries` projection above is intentionally left unchanged.
+pub fn delivery_ledger(
+    db: &Connection,
+    host: Option<&str>,
+    loaded: Option<&str>,
+    used: Option<&str>,
+    page: usize,
+) -> Result<Value> {
+    if loaded.is_some_and(|state| !matches!(state, "pending" | "partial" | "observed")) {
+        return Err(Error::invalid(
+            "loaded must be pending, partial, or observed",
+        ));
+    }
+    if used.is_some_and(|state| !matches!(state, "pending" | "observed")) {
+        return Err(Error::invalid("used must be pending or observed"));
+    }
+    if page == 0 || page > 10_000 {
+        return Err(Error::invalid("page must be between 1 and 10000"));
+    }
+    let host = host.filter(|value| !value.is_empty());
+    let mut filters =
+        String::from(" WHERE d.created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days')");
+    filters.push_str(" AND (?1 IS NULL OR c.host=?1)");
+    match loaded {
+        Some("pending") => filters.push_str(&format!(" AND {LEDGER_LATEST_LOADED} IS NULL")),
+        Some("partial") => filters.push_str(&format!(" AND {LEDGER_LATEST_LOADED}=0")),
+        Some("observed") => filters.push_str(&format!(" AND {LEDGER_LATEST_LOADED}=1")),
+        _ => {}
+    }
+    match used {
+        Some("pending") => filters.push_str(&format!(" AND NOT {LEDGER_HAS_USED}")),
+        Some("observed") => filters.push_str(&format!(" AND {LEDGER_HAS_USED}")),
+        _ => {}
+    }
+    let (total, loaded_count, used_count): (i64, i64, i64) = db.query_row(
+        &format!(
+            "SELECT COUNT(*),
+                    COALESCE(SUM(CASE WHEN {LEDGER_LATEST_LOADED} IS NOT NULL THEN 1 ELSE 0 END),0),
+                    COALESCE(SUM(CASE WHEN {LEDGER_HAS_USED} THEN 1 ELSE 0 END),0)
+             FROM context_deliveries d JOIN context_clients c ON c.id=d.client_id{filters}"
+        ),
+        params![host],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    let offset = ((page - 1) * LEDGER_PAGE_SIZE) as i64;
+    let mut query = db.prepare(&format!(
+        "SELECT d.id, c.host, d.route, d.session, d.epoch, d.task_id, d.attempt_id, d.mode,
+                d.provided, d.created_at,
+                (SELECT r.result FROM context_receipts r WHERE r.delivery_id=d.id AND r.kind='loaded'
+                 ORDER BY r.rowid DESC LIMIT 1),
+                {LEDGER_LATEST_LOADED},
+                (SELECT r.result FROM context_receipts r WHERE r.delivery_id=d.id AND r.kind='used'
+                 ORDER BY r.rowid DESC LIMIT 1),
+                COALESCE(e.handles,'[]')
+         FROM context_deliveries d JOIN context_clients c ON c.id=d.client_id
+         LEFT JOIN context_delivery_evidence e ON e.delivery_id=d.id{filters}
+         ORDER BY d.created_at DESC, d.rowid DESC LIMIT ?2 OFFSET ?3"
+    ))?;
+    let mut rows = query.query(params![host, LEDGER_PAGE_SIZE as i64, offset])?;
+    let mut items = Vec::new();
+    while let Some(row) = rows.next()? {
+        let loaded = row
+            .get::<_, Option<String>>(10)?
+            .map(|s| serde_json::from_str::<Value>(&s))
+            .transpose()?;
+        let complete = row.get::<_, Option<i64>>(11)?;
+        let used = row
+            .get::<_, Option<String>>(12)?
+            .map(|s| serde_json::from_str::<Value>(&s))
+            .transpose()?;
+        items.push(json!({
+            "delivery_id": row.get::<_, String>(0)?,
+            "host": row.get::<_, String>(1)?,
+            "route_ref": row.get::<_, String>(2)?,
+            "session_id": row.get::<_, String>(3)?,
+            "context_epoch": row.get::<_, String>(4)?,
+            "task_id": row.get::<_, Option<String>>(5)?,
+            "attempt_id": row.get::<_, Option<String>>(6)?,
+            "snapshot_mode": row.get::<_, String>(7)?,
+            "provided_revision_ids": serde_json::from_str::<Vec<String>>(&row.get::<_, String>(8)?)?,
+            "provided_at": row.get::<_, String>(9)?,
+            "provided_evidence_handles": serde_json::from_str::<Vec<String>>(&row.get::<_, String>(13)?)?,
+            "loaded": loaded,
+            "used": used,
+            "loaded_state": match complete {
+                None => "pending",
+                Some(0) => "partial",
+                Some(_) => "observed",
+            },
+            "used_state": if used.is_some() { "observed" } else { "pending" },
+        }));
+    }
+    Ok(json!({
+        "deliveries": items,
+        "summary": {"provided": total, "loaded": loaded_count, "used": used_count},
+        "total": total,
+        "page": page,
+        "page_size": LEDGER_PAGE_SIZE,
+        "window_days": 7,
+    }))
+}
+
+#[cfg(test)]
+#[path = "../../../../tests/v2/context_ledger.rs"]
+mod tests;

@@ -44,3 +44,10 @@ npm-debug.log*
 .archify/
 .hallmark/
 /docs/assets/ui-refs/
+
+# ---- 并发开发 worktree 与隔离构建产物（T044）----
+.worktrees/
+**/target-*/
+
+# ---- 机器生成的调研简报（含本机路径，不入库）----
+specs/005-agent-mcp-interface/research-brief.md

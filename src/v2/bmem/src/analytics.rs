@@ -2,19 +2,117 @@
 //! source, scope and assertion keys; drawing a link never asserts a new fact.
 use crate::error::{Error, Result};
 use chrono::{Days, Utc};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Transaction, params};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 
-pub fn migrate(db: &Connection) -> Result<()> {
+pub fn migrate(db: &mut Connection) -> Result<()> {
     db.execute_batch(
         "CREATE INDEX IF NOT EXISTS dashboard_statements ON authority_statements(known, id) WHERE revoked=0;
          CREATE INDEX IF NOT EXISTS dashboard_events ON ing_event_versions(received_at, event_id) WHERE active=1;
          CREATE INDEX IF NOT EXISTS dashboard_event_kinds ON ing_event_versions(actor_kind) WHERE active=1;
          CREATE INDEX IF NOT EXISTS dashboard_job_status ON ing_jobs(status);
          CREATE INDEX IF NOT EXISTS dashboard_deliveries ON context_deliveries(created_at);
-         CREATE INDEX IF NOT EXISTS dashboard_revision_statement ON authority_revisions(statement_id);",
+         CREATE INDEX IF NOT EXISTS dashboard_revision_statement ON authority_revisions(statement_id);
+         CREATE TABLE IF NOT EXISTS dashboard_counts (
+             metric TEXT NOT NULL, bucket TEXT NOT NULL, tally INTEGER NOT NULL,
+             PRIMARY KEY(metric,bucket)
+         ) WITHOUT ROWID;",
     )?;
+    let ready: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM dashboard_counts WHERE metric='schema' AND bucket='1')",
+        [],
+        |r| r.get(0),
+    )?;
+    if ready {
+        return Ok(());
+    }
+
+    // The legacy backfill and all triggers become visible together. Counts
+    // then follow the same transaction as the underlying inserts or revocations.
+    let tx = db.transaction()?;
+    install_counts(
+        &tx,
+        "authority_statements",
+        "revoked,known",
+        "revoked=0",
+        &[
+            ("statements", "''"),
+            ("statement_day", "substr({row}.known,1,10)"),
+        ],
+    )?;
+    install_counts(
+        &tx,
+        "ing_event_versions",
+        "active,actor_kind,received_at",
+        "active=1",
+        &[
+            ("event_kind", "{row}.actor_kind"),
+            ("event_day", "substr({row}.received_at,1,10)"),
+        ],
+    )?;
+    install_counts(
+        &tx,
+        "ing_jobs",
+        "status",
+        "",
+        &[("job_status", "{row}.status")],
+    )?;
+    install_counts(
+        &tx,
+        "context_deliveries",
+        "created_at",
+        "",
+        &[
+            ("deliveries", "''"),
+            ("delivery_day", "substr({row}.created_at,1,10)"),
+        ],
+    )?;
+    tx.execute("INSERT INTO dashboard_counts VALUES('schema','1',1)", [])?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn install_counts(
+    tx: &Transaction<'_>,
+    table: &str,
+    update_columns: &str,
+    filter: &str,
+    metrics: &[(&str, &str)],
+) -> Result<()> {
+    // SQL identifiers and bucket expressions come only from the static migration.
+    let where_clause = if filter.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE t.{filter}")
+    };
+    let mut insert = String::new();
+    let mut remove = String::new();
+    for (metric, bucket) in metrics {
+        let initial_bucket = bucket.replace("{row}", "t");
+        tx.execute_batch(&format!(
+            "INSERT INTO dashboard_counts
+             SELECT '{metric}',{initial_bucket},count(*) FROM {table} t{where_clause} GROUP BY 2;"
+        ))?;
+        for (row, delta, statements) in [("NEW", 1, &mut insert), ("OLD", -1, &mut remove)] {
+            let condition = if filter.is_empty() {
+                "1".to_string()
+            } else {
+                format!("{row}.{filter}")
+            };
+            let bucket = bucket.replace("{row}", row);
+            statements.push_str(&format!(
+                "INSERT INTO dashboard_counts SELECT '{metric}',{bucket},{delta} WHERE {condition}
+                 ON CONFLICT(metric,bucket) DO UPDATE SET tally=tally+excluded.tally;"
+            ));
+        }
+    }
+    tx.execute_batch(&format!(
+        "CREATE TRIGGER dashboard_{table}_insert AFTER INSERT ON {table} BEGIN {insert} END;
+         CREATE TRIGGER dashboard_{table}_delete AFTER DELETE ON {table} BEGIN {remove} END;
+         CREATE TRIGGER dashboard_{table}_update AFTER UPDATE OF {update_columns} ON {table}
+         BEGIN {remove} {insert} END;"
+    ))?;
     Ok(())
 }
 
@@ -71,15 +169,13 @@ pub fn overview(db: &Connection, days: Option<&str>) -> Result<Value> {
     };
     let now = Utc::now();
     let first = now.date_naive() - Days::new(days - 1);
-    // A fixed set of day ranges can count directly on the time indexes,
-    // without sorting a temporary row for every event inside the window.
     let mut daily = db.prepare_cached(
         "WITH RECURSIVE days(day) AS (
              VALUES(?1) UNION ALL SELECT date(day,'+1 day') FROM days WHERE day<?2
          ) SELECT day,
-             (SELECT count(*) FROM authority_statements WHERE revoked=0 AND known>=day AND known<date(day,'+1 day')),
-             (SELECT count(*) FROM ing_event_versions WHERE active=1 AND received_at>=day AND received_at<date(day,'+1 day')),
-             (SELECT count(*) FROM context_deliveries WHERE created_at>=day AND created_at<date(day,'+1 day'))
+             coalesce((SELECT tally FROM dashboard_counts WHERE metric='statement_day' AND bucket=day),0),
+             coalesce((SELECT tally FROM dashboard_counts WHERE metric='event_day' AND bucket=day),0),
+             coalesce((SELECT tally FROM dashboard_counts WHERE metric='delivery_day' AND bucket=day),0)
            FROM days ORDER BY day",
     )?;
     let activity = daily
@@ -95,14 +191,14 @@ pub fn overview(db: &Connection, days: Option<&str>) -> Result<Value> {
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let (statements, sources, deliveries): (i64, i64, i64) = db.query_row(
-        "SELECT (SELECT count(*) FROM authority_statements WHERE revoked=0),
-                (SELECT count(*) FROM ing_sources), (SELECT count(*) FROM context_deliveries)",
+        "SELECT coalesce((SELECT tally FROM dashboard_counts WHERE metric='statements' AND bucket=''),0),
+                (SELECT count(*) FROM ing_sources),
+                coalesce((SELECT tally FROM dashboard_counts WHERE metric='deliveries' AND bucket=''),0)",
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?;
-    let mut kinds = db.prepare_cached(
-        "SELECT actor_kind,count(*) FROM ing_event_versions WHERE active=1 GROUP BY actor_kind",
-    )?;
+    let mut kinds =
+        db.prepare_cached("SELECT bucket,tally FROM dashboard_counts WHERE metric='event_kind'")?;
     let event_counts = kinds
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
         .collect::<rusqlite::Result<HashMap<_, _>>>()?;
@@ -113,7 +209,7 @@ pub fn overview(db: &Connection, days: Option<&str>) -> Result<Value> {
     }
     let events: i64 = event_counts.values().sum();
     let mut job_counts =
-        db.prepare_cached("SELECT status,count(*) FROM ing_jobs GROUP BY status ORDER BY status")?;
+        db.prepare_cached("SELECT bucket,tally FROM dashboard_counts WHERE metric='job_status' AND tally>0 ORDER BY bucket")?;
     let mut job_total = 0i64;
     let jobs = job_counts
         .query_map([], |r| {
@@ -237,8 +333,7 @@ pub fn graph(db: &Connection, limit: Option<&str>) -> Result<Value> {
         hubs.push(json!({"id":id,"kind":group.kind,"label":group.label,"size":size}));
     }
     let total: i64 = db.query_row(
-        "SELECT (SELECT count(*) FROM authority_statements WHERE revoked=0)
-              + (SELECT count(*) FROM ing_event_versions WHERE active=1)",
+        "SELECT coalesce(sum(tally),0) FROM dashboard_counts WHERE metric IN ('statements','event_kind')",
         [],
         |r| r.get(0),
     )?;
@@ -295,8 +390,9 @@ pub fn job_page(
             return Ok(json!({"jobs":jobs,"next_cursor":last.to_string()}));
         }
         last = r.get(0)?;
+        let id: String = r.get(1)?;
         jobs.push(json!({
-            "job_id":r.get::<_,String>(1)?, "source_id":r.get::<_,String>(2)?, "source_label":r.get::<_,String>(3)?,
+            "job_id":id, "id":id, "source_id":r.get::<_,String>(2)?, "source_label":r.get::<_,String>(3)?,
             "event_id":r.get::<_,String>(4)?, "actor_kind":r.get::<_,String>(5)?, "status":r.get::<_,String>(6)?,
             "attempts":r.get::<_,i64>(7)?, "available_at":r.get::<_,String>(8)?, "updated_at":r.get::<_,String>(9)?,
             "fail_reason":r.get::<_,Option<String>>(10)?, "candidates_recorded":r.get::<_,i64>(11)?

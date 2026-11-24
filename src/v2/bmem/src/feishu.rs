@@ -72,6 +72,7 @@ pub fn cli() -> Option<PathBuf> {
 pub struct Account {
     pub label: String,
     pub key: String,
+    pub credential_state: &'static str,
 }
 
 pub fn authorize(flow: &Mutex<Flow>, stop: impl Fn() -> bool) -> Result<Account> {
@@ -154,27 +155,30 @@ pub fn authorize(flow: &Mutex<Flow>, stop: impl Fn() -> bool) -> Result<Account>
         &stop,
         |_| {},
     )?)?;
+    authorized_account(&reply)
+        .ok_or_else(|| Error::unavailable("飞书授权完成后未发现可用的用户身份，请重试"))
+}
+
+pub fn authorized_account(reply: &Value) -> Option<Account> {
     let user = &reply["identities"]["user"];
-    if reply["brand"] != "feishu" || user["available"] != true || user["status"] != "ready" {
-        return Err(Error::unavailable(
-            "飞书授权完成后未发现可用的用户身份，请重试",
-        ));
+    if reply["brand"] != "feishu" || user["available"] != true {
+        return None;
     }
-    let open_id = user["openId"]
-        .as_str()
-        .filter(|id| !id.is_empty())
-        .ok_or_else(|| Error::unavailable("飞书 CLI 未返回已授权的用户身份"))?;
-    let app_id = reply["appId"]
-        .as_str()
-        .filter(|id| !id.is_empty())
-        .ok_or_else(|| Error::unavailable("飞书 CLI 未返回应用身份"))?;
+    let credential_state = match user["status"].as_str()? {
+        "ready" => "ready",
+        "needs_refresh" => "needs_refresh",
+        _ => return None,
+    };
+    let open_id = user["openId"].as_str().filter(|id| !id.is_empty())?;
+    let app_id = reply["appId"].as_str().filter(|id| !id.is_empty())?;
     let fingerprint = format!(
         "{:x}",
         Sha256::digest(json!(["feishu", app_id, open_id]).to_string())
     );
-    Ok(Account {
+    Some(Account {
         label: user["userName"].as_str().unwrap_or("飞书用户").to_owned(),
         key: format!("feishu-{}", &fingerprint[..20]),
+        credential_state,
     })
 }
 

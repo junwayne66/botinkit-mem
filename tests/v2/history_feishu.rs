@@ -29,17 +29,31 @@ fn maps_edited_text_and_recalled_messages_with_stable_ids() {
         "update_time":"1763337608000","sender":{"sender_type":"user"},
         "body":{"content":"{\"text\":\"已经复验\"}"},
     });
-    let event = normalize(&item).unwrap().unwrap();
+    let event = normalize(&item, false).unwrap().unwrap();
     assert_eq!(event["actor_kind"], "user_message");
     assert_eq!(event["native_object"], "om_fixture");
     assert_eq!(event["native_version"], "1763337608000");
     assert_eq!(event["change_kind"], "updated");
     assert_eq!(event["text"], "已经复验");
     item["deleted"] = json!(true);
-    let revoked = normalize(&item).unwrap().unwrap();
+    let revoked = normalize(&item, false).unwrap().unwrap();
     assert_eq!(revoked["native_object"], event["native_object"]);
     assert_eq!(revoked["change_kind"], "revoked");
     assert!(revoked.get("text").is_none());
+}
+
+#[test]
+fn bulk_import_keeps_attachment_record_without_the_download_key() {
+    let item = json!({
+        "message_id":"om_document","msg_type":"file","create_time":"1763337600000",
+        "sender":{"sender_type":"user"},
+        "body":{"content":{"file_name":"fixture.pdf","file_key":"private-fixture-key"}},
+    });
+    assert!(normalize(&item, false).unwrap().is_none());
+    let event = normalize(&item, true).unwrap().unwrap();
+    assert_eq!(event["native_object"], "om_document");
+    assert_eq!(event["text"], "飞书文件 · fixture.pdf");
+    assert!(!event.to_string().contains("private-fixture-key"));
 }
 
 #[test]
@@ -103,7 +117,7 @@ esac
     let account = Account {
         binary,
         profile: "pinned".into(),
-        key: account_fingerprint(&status).unwrap(),
+        identity: feishu::authorized_account(&status).unwrap(),
     };
     let page = account
         .thread_messages("omt_fixture", Some("resume"), &|| false)

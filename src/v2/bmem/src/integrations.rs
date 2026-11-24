@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use crate::{context, ingestion, platform::Instance};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Map, Value, json};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -11,10 +11,62 @@ const HOSTS: [(&str, &str); 3] = [
     ("claude-code", "claude"),
     ("dsh", "dsh"),
 ];
+
 const MCP_NAME: &str = "bmem-v2";
 const HOOKS: [&str; 3] = ["SessionStart", "UserPromptSubmit", "PostToolUse"];
 const DSH_BEGIN: &str = "# BEGIN bmem-v2";
 const DSH_END: &str = "# END bmem-v2";
+
+pub fn migrate(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS integration_hosts (
+            host TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL REFERENCES context_clients(id),
+            source_id TEXT NOT NULL REFERENCES ing_sources(source_id)
+         );
+         CREATE TABLE IF NOT EXISTS integration_feishu_accounts (
+            source_id TEXT PRIMARY KEY REFERENCES ing_sources(source_id),
+            account_name TEXT NOT NULL,
+            authorized_at TEXT NOT NULL,
+            credential_state TEXT NOT NULL DEFAULT 'ready'
+         );",
+    )?;
+    let has_state: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('integration_feishu_accounts') WHERE name='credential_state')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_state {
+        conn.execute_batch(
+            "ALTER TABLE integration_feishu_accounts ADD COLUMN credential_state TEXT NOT NULL DEFAULT 'ready';",
+        )?;
+    }
+    Ok(())
+}
+
+pub fn migrate_legacy_hosts(instance: &Instance, db: &Connection) -> Result<()> {
+    for (host, _) in HOSTS {
+        if binding(db, host)?.is_some() {
+            continue;
+        }
+        let Ok(saved) = read_json(&manifest(instance, host)) else {
+            continue;
+        };
+        if saved["state"] == "configured"
+            && let (Some(client), Some(source)) =
+                (saved["client_id"].as_str(), saved["source_id"].as_str())
+        {
+            db.execute(
+                "INSERT OR IGNORE INTO integration_hosts(host,client_id,source_id)
+                 SELECT c.host,c.id,s.source_id FROM context_clients c, ing_sources s
+                 WHERE c.id=?1 AND s.source_id=?2 AND c.host=?3
+                   AND s.kind=c.host AND s.account='local'",
+                rusqlite::params![client, source, host],
+            )?;
+        }
+    }
+    Ok(())
+}
 
 pub fn executable(name: &str) -> Option<PathBuf> {
     let mut names = vec![name.to_owned()];
@@ -68,17 +120,72 @@ fn manifest(instance: &Instance, host: &str) -> PathBuf {
         .join(format!("{host}.json"))
 }
 
-pub fn status(instance: &Instance) -> Value {
-    let hosts = HOSTS
-        .into_iter()
-        .map(|(host, bin)| {
-            let saved = read_json(&manifest(instance, host)).unwrap_or_default();
-            let installed = saved["state"] == "configured";
-            json!({"host":host,"available":executable(bin).is_some(),"configured":installed,
-            "source_id":saved["source_id"],"client_id":saved["client_id"]})
+fn binding(db: &Connection, host: &str) -> Result<Option<(String, String)>> {
+    Ok(db
+        .query_row(
+            "SELECT client_id, source_id FROM integration_hosts WHERE host=?1",
+            [host],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?)
+}
+
+fn grants(db: &Connection, source: &str, client: &str) -> Result<(bool, bool)> {
+    Ok(db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM ing_grants
+                       WHERE source_id=?1 AND purpose='capture' AND active=1),
+                EXISTS(SELECT 1 FROM context_clients WHERE id=?2 AND shared=1)",
+        [source, client],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?)
+}
+
+pub fn status(conn: &Connection) -> Result<Value> {
+    let mut hosts = Vec::new();
+    for (host, bin) in HOSTS {
+        let installed = binding(conn, host)?;
+        let (client, source, capture, shared) = if let Some((client, source)) = installed.as_ref() {
+            let (capture, shared) = grants(conn, source, client)?;
+            (Some(client), Some(source), capture, shared)
+        } else {
+            (None, None, false, false)
+        };
+        hosts.push(json!({"host":host,"available":executable(bin).is_some(),
+            "configured":installed.is_some(),"source_id":source,"client_id":client,
+            "capture_enabled":capture,"share_statements":shared,"shared_statements":shared}));
+    }
+    Ok(json!({"hosts":hosts,"source_activity":compute_source_activity(conn)?}))
+}
+
+fn compute_source_activity(conn: &Connection) -> Result<Vec<Value>> {
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(7)).to_rfc3339();
+    let mut stmt = conn.prepare(
+        "SELECT s.source_id,
+                (SELECT count(*) FROM ing_event_versions e
+                 WHERE e.source_id=s.source_id AND e.received_at>=?1),
+                (SELECT max(e.received_at) FROM ing_event_versions e WHERE e.source_id=s.source_id),
+                s.kind
+         FROM ing_sources s ORDER BY s.source_id",
+    )?;
+    let rows = stmt.query_map([cutoff], |r| {
+        Ok(json!({
+            "source_id": r.get::<_, String>(0)?,
+            "event_count": r.get::<_, i64>(1)?,
+            "last_received_at": r.get::<_, Option<String>>(2)?,
+            "type": r.get::<_, String>(3)?,
+        }))
+    })?;
+    Ok(rows.collect::<std::result::Result<_, _>>()?)
+}
+
+fn install_flag(body: &Value, key: &str) -> Result<Option<bool>> {
+    body.get(key)
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or_else(|| Error::invalid(format!("{key} must be boolean")))
         })
-        .collect::<Vec<_>>();
-    json!({"hosts":hosts})
+        .transpose()
 }
 
 pub fn install(
@@ -97,9 +204,14 @@ pub fn install(
             "未检测到 {bin}。安装后可重新添加集成。"
         )));
     }
+    let capture = install_flag(body, "capture")?;
+    let share = install_flag(body, "share_statements")?;
     let (root, dir) = host_root(host)?;
     let location = manifest(instance, host);
-    let mut saved = read_json(&location)?;
+    let mut saved = match binding(db, host)? {
+        Some((id, source_id)) => json!({"state":"configured","client_id":id,"source_id":source_id}),
+        None => read_json(&location)?,
+    };
     let id = if let Some(id) = saved["client_id"].as_str() {
         id.to_owned()
     } else {
@@ -141,16 +253,24 @@ pub fn install(
         "dsh" => install_dsh(instance, &dir, binary, &mcp, &hook)?,
         _ => unreachable!(),
     }
-    if body["capture"] == true {
-        ingestion::set_capture(db, source_id, true)?;
+
+    let tx = db.transaction()?;
+    if let Some(capture) = capture {
+        ingestion::set_capture(&tx, source_id, capture)?;
     }
-    if body["share_statements"] == true {
-        context::set_shared(db, &id, true)?;
+    if let Some(share) = share {
+        context::set_shared(&tx, &id, share)?;
     }
-    saved["state"] = json!("configured");
-    saved["host"] = json!(host);
-    saved["source_id"] = json!(source_id);
+    let (capture, share) = grants(&tx, source_id, &id)?;
+    saved = json!({"state":"configured","host":host,"client_id":id,"source_id":source_id,
+        "capture_enabled":capture,"share_statements":share,"shared_statements":share});
+    tx.execute(
+        "INSERT INTO integration_hosts(host,client_id,source_id) VALUES(?1,?2,?3)
+         ON CONFLICT(host) DO UPDATE SET client_id=excluded.client_id,source_id=excluded.source_id",
+        rusqlite::params![host, id, source_id],
+    )?;
     atomic(&location, &serde_json::to_vec(&saved)?, false)?;
+    tx.commit()?;
     Ok(saved)
 }
 
@@ -364,4 +484,65 @@ fn install_dsh(
         )
     };
     atomic(&path, next.as_bytes(), true)
+}
+
+pub fn record_feishu(
+    conn: &Connection,
+    source_id: &str,
+    account: Option<&crate::feishu::Account>,
+) -> Result<()> {
+    let label = account.map(|account| account.label.as_str());
+    let credential_state = account.map_or("reauthorization_required", |a| a.credential_state);
+    conn.execute(
+        "INSERT INTO integration_feishu_accounts(source_id,account_name,authorized_at,credential_state)
+         SELECT source_id,coalesce(?2,'飞书账号'),datetime('now'),?3 FROM ing_sources
+         WHERE source_id=?1 AND kind='feishu' AND account LIKE 'feishu-%'
+         ON CONFLICT(source_id) DO UPDATE SET
+             account_name=coalesce(?2,account_name),credential_state=excluded.credential_state
+         WHERE credential_state<>excluded.credential_state OR account_name<>coalesce(?2,account_name)",
+        rusqlite::params![source_id, label, credential_state],
+    )?;
+    Ok(())
+}
+
+pub fn feishu_status(conn: &Connection) -> Result<Value> {
+    let mut stmt = conn.prepare(
+        "SELECT s.source_id,s.account,f.account_name,f.credential_state
+         FROM ing_sources s LEFT JOIN integration_feishu_accounts f ON s.source_id=f.source_id
+         WHERE s.kind='feishu' AND s.account LIKE 'feishu-%'
+         ORDER BY f.authorized_at DESC,s.created_at DESC,s.source_id",
+    )?;
+    let accounts = stmt
+        .query_map([], |row| {
+            let credential_state: Option<String> = row.get(3)?;
+            let authorization = match credential_state.as_deref() {
+                Some("ready" | "needs_refresh") => "connected",
+                Some("reauthorization_required") => "reauthorization_required",
+                _ => "registered_unverified",
+            };
+            Ok(json!({
+                "source_id":row.get::<_, String>(0)?,"account":row.get::<_, String>(1)?,
+                "account_name":row.get::<_, Option<String>>(2)?,
+                "authorization":authorization,
+                "credential_state":credential_state,
+            }))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let registered = !accounts.is_empty();
+    let authorization = if accounts
+        .iter()
+        .any(|account| account["authorization"] == "connected")
+    {
+        "connected"
+    } else if accounts
+        .iter()
+        .any(|account| account["authorization"] == "reauthorization_required")
+    {
+        "reauthorization_required"
+    } else if registered {
+        "registered_unverified"
+    } else {
+        "unregistered"
+    };
+    Ok(json!({"registered":registered,"accounts":accounts,"authorization":authorization}))
 }

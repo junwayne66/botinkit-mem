@@ -574,6 +574,284 @@ fn tool_result(output: &Value, limit: usize) -> Option<Value> {
     (!result.is_empty()).then_some(Value::Object(result))
 }
 
+// ---------------------------------------------------------------------------
+// Selective history import (T036)
+// ---------------------------------------------------------------------------
+
+const SESSION_PAGE_SIZE: usize = 50;
+const IMPORT_PAGE_EVENTS: usize = 100;
+
+/// List local assistant sessions as import targets. `account_or_host` is the
+/// host name (`codex`, `claude-code`, `dsh`) and `kind` must be `sessions`.
+/// Targets carry a stable opaque id (a hash of the transcript path, never the
+/// path itself), a readable session label, and an optional project folder name.
+/// `query` filters label/project case-insensitively; `cursor` is the opaque
+/// index returned as `next_cursor`. Filesystem paths are never exposed.
+///
+/// Returns `{"targets":[{"id","label","project"?}], "next_cursor":<string|null>}`.
+pub fn options(
+    account_or_host: &str,
+    kind: &str,
+    query: Option<&str>,
+    cursor: Option<&str>,
+    stop: &impl Fn() -> bool,
+) -> Result<Value> {
+    if kind != "sessions" {
+        return Err(Error::invalid("本机历史导入仅支持 sessions"));
+    }
+    let adapter = Host::parse(account_or_host)?;
+    let paths = files(account_or_host)?;
+    let start = cursor
+        .and_then(|c| c.parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(paths.len());
+    let end = (start + SESSION_PAGE_SIZE).min(paths.len());
+    let needle = query
+        .map(|q| q.trim().to_lowercase())
+        .filter(|q| !q.is_empty());
+    let mut targets = Vec::new();
+    for path in &paths[start..end] {
+        if stop() {
+            return Err(Error::unavailable("历史导入已暂停"));
+        }
+        let (label, project) = describe_session(adapter, path);
+        if let Some(n) = &needle {
+            let haystack =
+                format!("{label} {}", project.clone().unwrap_or_default()).to_lowercase();
+            if !haystack.contains(n) {
+                continue;
+            }
+        }
+        let mut target = json!({"id": target_id(path), "label": label});
+        if let Some(project) = project {
+            target["project"] = json!(project);
+        }
+        targets.push(target);
+    }
+    let next_cursor = if end < paths.len() {
+        json!(end.to_string())
+    } else {
+        Value::Null
+    };
+    Ok(json!({"targets": targets, "next_cursor": next_cursor}))
+}
+
+/// Read one page of importable events from a local session. `target` must be an
+/// opaque id previously returned by [`options`] — it is resolved against the
+/// current transcript set, so an arbitrary path can never be read. `from`/`to`
+/// bound the event time and `content` is an optional case-insensitive keyword
+/// filter over text and tool receipts; filtering never changes the native dedup
+/// ids. `cursor` is the byte offset returned as `next_cursor`. Returns
+/// `(events, next_cursor)`; `None` means the transcript is exhausted.
+pub fn read_import_page(
+    account_or_host: &str,
+    kind: &str,
+    target: &str,
+    window: (Option<&str>, Option<&str>),
+    content: &str,
+    cursor: Option<&Value>,
+    stop: &impl Fn() -> bool,
+) -> Result<(Vec<Value>, Option<Value>)> {
+    let (from, to) = window;
+    if kind != "sessions" {
+        return Err(Error::invalid("本机历史导入仅支持 sessions"));
+    }
+    Host::parse(account_or_host)?;
+    let path = files(account_or_host)?
+        .into_iter()
+        .find(|path| target_id(path) == target)
+        .ok_or_else(|| Error::invalid("会话目标无效或已不可用"))?;
+    if stop() {
+        return Err(Error::unavailable("历史导入已暂停"));
+    }
+    let from = from.map(parse_time_bound).transpose()?;
+    let to = to.map(parse_time_bound).transpose()?;
+    let offset = cursor.and_then(Value::as_u64).unwrap_or(0);
+    let page = read_page(account_or_host, &path, offset, IMPORT_PAGE_EVENTS)?;
+    let events = page
+        .events
+        .into_iter()
+        .filter(|event| {
+            in_window(event, from, to) && (content == "all" || event["actor_kind"] != "tool_result")
+        })
+        .collect::<Vec<_>>();
+    let next = if page.eof {
+        None
+    } else {
+        Some(json!(page.offset))
+    };
+    Ok((events, next))
+}
+
+pub fn discover_sessions(
+    host: &str,
+    stop: &impl Fn() -> bool,
+) -> Result<Vec<(String, Option<Value>)>> {
+    let mut targets = Vec::new();
+    let home = Host::parse(host)?.home()?;
+    for path in files(host)? {
+        if stop() {
+            return Err(Error::unavailable("历史导入已暂停"));
+        }
+        let relative = path
+            .strip_prefix(&home)
+            .ok()
+            .and_then(Path::to_str)
+            .ok_or_else(|| Error::invalid("本机会话路径无效"))?;
+        targets.push((target_id(&path), Some(json!({"file":relative,"offset":0}))));
+    }
+    Ok(targets)
+}
+
+pub fn read_discovered_page(
+    host: &str,
+    cursor: Option<&Value>,
+    stop: &impl Fn() -> bool,
+) -> Result<(Vec<Value>, Option<Value>)> {
+    let cursor = cursor.ok_or_else(|| Error::internal("历史会话缺少检查点"))?;
+    let file = cursor["file"]
+        .as_str()
+        .ok_or_else(|| Error::internal("历史会话路径无效"))?;
+    let offset = cursor["offset"]
+        .as_u64()
+        .ok_or_else(|| Error::internal("历史会话偏移无效"))?;
+    let invalid = || Error::missing("本机会话文件已移动或不可读");
+    let mut path = Host::parse(host)?.home()?;
+    for component in Path::new(file).components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(invalid());
+        };
+        path.push(name);
+        let metadata = directory_metadata(&path)?.ok_or_else(invalid)?;
+        if metadata.file_type().is_symlink() {
+            return Err(invalid());
+        }
+    }
+    if stop() {
+        return Err(Error::unavailable("历史导入已暂停"));
+    }
+    let page = read_page(host, &path, offset, IMPORT_PAGE_EVENTS)?;
+    let checkpoint = (!page.eof).then(|| json!({"file":file,"offset":page.offset}));
+    Ok((page.events, checkpoint))
+}
+
+/// Stable opaque target id for a transcript path. The id reveals nothing about
+/// the filesystem and is only ever resolved by matching against [`files`].
+fn target_id(path: &Path) -> String {
+    format!(
+        "sess_{:x}",
+        Sha256::digest(path.to_string_lossy().as_bytes())
+    )
+}
+
+/// Read a small prefix of a transcript to derive a readable session label and
+/// an optional project folder name (the last component of the working directory,
+/// never the full path). Falls back to the file stem when the head is unreadable.
+fn describe_session(adapter: Host, path: &Path) -> (String, Option<String>) {
+    let stem = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("session");
+    let fallback = stem.trim_end_matches(".jsonl").to_owned();
+    let compressed = path.to_string_lossy().ends_with(".jsonl.zstd");
+    let Ok((reader, _, _)) = open_at(path, compressed, 0) else {
+        return (fallback, None);
+    };
+    let mut head = BufReader::new(reader.take(256 * 1024));
+    let mut line = Vec::new();
+    let mut label = None;
+    let mut cwd = None;
+    for _ in 0..6 {
+        line.clear();
+        if head.read_until(b'\n', &mut line).unwrap_or(0) == 0 {
+            break;
+        }
+        let Ok(record) = serde_json::from_slice::<Value>(&line) else {
+            continue;
+        };
+        match adapter {
+            Host::Codex => {
+                if record["type"] == "session_meta" {
+                    label =
+                        first_string(&record["payload"], &["id", "session_id"]).map(str::to_owned);
+                    cwd = first_string(&record["payload"], &["cwd"]).map(str::to_owned);
+                }
+            }
+            Host::Claude => {
+                if label.is_none() {
+                    label = first_string(&record, &["sessionId", "session_id"]).map(str::to_owned);
+                }
+                if cwd.is_none() {
+                    cwd = first_string(&record, &["cwd"]).map(str::to_owned);
+                }
+            }
+            Host::Dsh => {
+                if record["type"] == "session" {
+                    label = first_string(&record, &["id", "session_id"]).map(str::to_owned);
+                    cwd = first_string(&record, &["cwd"]).map(str::to_owned);
+                }
+            }
+        }
+        if label.is_some() && cwd.is_some() {
+            break;
+        }
+    }
+    (
+        label.unwrap_or(fallback),
+        cwd.as_deref().and_then(project_name),
+    )
+}
+
+/// The readable project folder name from a working directory: its last non-empty
+/// component, rejecting anything that still looks like a path or a hidden dir so
+/// no full filesystem path leaks into a target label.
+fn project_name(cwd: &str) -> Option<String> {
+    let name = cwd.rsplit(['/', '\\']).find(|part| !part.is_empty())?;
+    if name == "." || name == ".." || name.starts_with('.') || name.contains(['/', '\\']) {
+        return None;
+    }
+    Some(name.to_owned())
+}
+
+fn parse_time_bound(value: &str) -> Result<DateTime<Utc>> {
+    let value = value.trim();
+    if let Ok(time) = DateTime::parse_from_rfc3339(value) {
+        return Ok(time.with_timezone(&Utc));
+    }
+    if let Ok(number) = value.parse::<i64>() {
+        let time = if number.unsigned_abs() > 100_000_000_000 {
+            DateTime::from_timestamp_millis(number)
+        } else {
+            DateTime::from_timestamp(number, 0)
+        };
+        if let Some(time) = time {
+            return Ok(time);
+        }
+    }
+    Err(Error::invalid("历史时间窗口格式无效"))
+}
+
+fn in_window(event: &Value, from: Option<DateTime<Utc>>, to: Option<DateTime<Utc>>) -> bool {
+    let Some(at) = event["at"]
+        .as_str()
+        .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+    else {
+        return true;
+    };
+    let at = at.with_timezone(&Utc);
+    if let Some(from) = from
+        && at < from
+    {
+        return false;
+    }
+    if let Some(to) = to
+        && at >= to
+    {
+        return false;
+    }
+    true
+}
+
 #[cfg(test)]
 #[path = "../../../../tests/v2/history_hosts.rs"]
 mod tests;

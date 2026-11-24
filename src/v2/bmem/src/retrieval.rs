@@ -681,7 +681,10 @@ fn operate_committed(
             if let Some(id) = request["target"]["statement_id"].as_str() {
                 authority::revoke_statement(db, id)?
             } else {
-                ingestion::forget(db, field(&request["target"], "source_id")?)?
+                let source = field(&request["target"], "source_id")?;
+                let result = ingestion::forget(db, source)?;
+                crate::history_tasks::withdraw_source(db, source)?;
+                result
             }
         }
         _ => unreachable!(),
