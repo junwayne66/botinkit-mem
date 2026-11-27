@@ -1,0 +1,96 @@
+#view-settings {
+  --cfg-panel: #101923;
+  --cfg-field: #0a131d;
+  --cfg-line: #253542;
+  --cfg-muted: #9db0c0;
+  --cfg-accent: #76dfda;
+  --cfg-violet: #c1adf3;
+}
+#view-settings .settings-lead,
+#view-settings .settings-note { color: var(--cfg-muted); line-height: 1.65; }
+.settings-lead { margin: 5px 0 0; }
+.settings-lead code { color: var(--cfg-accent); }
+#view-settings .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+#view-settings > .settings-grid,
+#view-settings > .settings-panel,
+#view-settings > .settings-links { margin-top: 16px; }
+#view-settings .settings-panel {
+  margin-bottom: 0; min-width: 0; padding: clamp(16px, 2.1vw, 28px);
+  border: 1px solid var(--cfg-line); border-radius: 14px; background: var(--cfg-panel);
+}
+.settings-title { display: flex; align-items: center; gap: 11px; margin: 0 0 16px; }
+.settings-title h3 { font-size: 1.05rem; letter-spacing: .025em; margin: 0; }
+.settings-icon {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px;
+  color: var(--cfg-accent); border: 1px solid #285052; background: #122e32;
+}
+.settings-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.settings-icon--violet { color: var(--cfg-violet); border-color: #473b5d; background: #251f35; }
+#view-settings .settings-form { display: grid; align-content: start; gap: 13px; min-width: 0; }
+#view-settings .settings-form > button { justify-self: start; }
+#view-settings .field { display: grid; gap: 7px; min-width: 0; }
+#view-settings .field label { font-size: .85rem; }
+#view-settings .field input, #view-settings .field select {
+  width: 100%; min-width: 0; min-height: 44px; padding: 9px 12px;
+  color: #e8f1f7; background-color: var(--cfg-field); border: 1px solid #344755; border-radius: 7px; font: inherit;
+}
+#view-settings .settings-note { margin: 0; font-size: .84rem; }
+.settings-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; cursor: pointer; }
+.settings-toggle input {
+  appearance: none; width: 39px; height: 23px; border-radius: 30px; border: 1px solid #637485;
+  background: #283642; cursor: pointer; margin: 0; position: relative;
+}
+.settings-toggle input::before {
+  content: ''; position: absolute; inset: 3px auto auto 3px; width: 15px; height: 15px;
+  border-radius: 50%; background: #dbe6ea; transition: transform 150ms ease-out;
+}
+.settings-toggle input:checked { background: #78dad5; border-color: #78dad5; }
+.settings-toggle input:checked::before { background: #132f31; transform: translateX(16px); }
+.settings-editor {
+  margin-top: 12px; border: 1px solid var(--cfg-line); border-radius: 9px; background: var(--cfg-field);
+}
+.settings-editor summary { padding: 11px 15px; cursor: pointer; color: var(--cfg-accent); min-height: 44px; }
+.settings-editor[open] summary { border-bottom: 1px solid var(--cfg-line); }
+.settings-editor .settings-form { padding: 16px; }
+#view-settings #models-list { margin: 12px 0; }
+#view-settings #models-list .card { background: var(--cfg-field); }
+#view-settings .settings-readiness { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+#view-settings .settings-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 22px; color: var(--cfg-muted); }
+.settings-links a { display: inline-flex; align-items: center; min-height: 44px; text-underline-offset: 3px; color: var(--cfg-accent); }
+#view-settings .settings-feedback, #view-settings .settings-error { display: block; overflow-wrap: anywhere; font-size: .84rem; }
+#view-settings .settings-feedback { color: var(--cfg-accent); }
+#view-settings .settings-error { color: #ffb9a6; }
+#view-settings .settings-feedback + .btn, #view-settings .settings-error + .btn { margin-top: 8px; }
+#view-settings .resultline:empty, #view-settings [hidden] { display: none !important; }
+#view-settings .btn, #view-settings button, #view-settings select { min-height: 40px; }
+@media (max-width: 760px) {
+  #view-settings .settings-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  #view-settings .settings-panel .settings-grid { gap: 14px; }
+  #view-settings .btn, #view-settings button, #view-settings select { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .settings-toggle input::before { transition: none; } }
+@media (forced-colors: active) { .settings-toggle input { appearance: auto; } }
+
+#model-form .settings-check { display: flex; align-items: center; gap: 8px; color: var(--cfg-muted); font-size: .85rem; }
+#model-form .settings-discovery { padding: 12px; border: 1px solid var(--cfg-line); border-radius: 8px; }
+#md-ollama-options { display: grid; gap: 6px; }
+#md-ollama-download .row-actions { margin-top: 6px; }
+#md-ollama-status.loading-line { display: flex; align-items: center; gap: 8px; }
+
+/* 提交按钮 + 未保存草稿标记：窄屏自动换行，不产生横向溢出 */
+#view-settings .settings-submit-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-self: start; }
+#view-settings .settings-draft-pill { white-space: nowrap; }
+
+/* 每张模型卡片独立的测试状态行（并发测试互不覆盖） */
+#view-settings .settings-probe-status { margin: 8px 0 0; font-size: .84rem; overflow-wrap: anywhere; }
+#view-settings .settings-probe-status .diagnostic { margin-top: 4px; font-size: 12px; color: var(--cfg-muted); }
+#view-settings .settings-bound-hint { color: var(--warn, #ffb9a6); }
+
+/* 待重试 / 放弃按钮与错误行保持间距 */
+#view-settings .cfg-discard { margin-top: 8px; margin-left: 8px; }
+
+/* 首次读取配置时的骨架卡片 */
+#view-settings .settings-skeleton { display: grid; gap: 10px; }
+#view-settings .settings-skeleton__title { width: 45%; min-height: 16px; }
+#view-settings .settings-skeleton__line { width: 85%; }
+#view-settings .settings-skeleton__actions { width: 60%; min-height: 30px; }
