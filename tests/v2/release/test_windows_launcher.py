@@ -1,8 +1,10 @@
 """Native Task Scheduler acceptance for an explicitly isolated Windows profile."""
 
+import base64
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import time
@@ -112,13 +114,14 @@ class WindowsTaskSchedulerAcceptance(unittest.TestCase):
         self.update.assert_windows_native_images(self.update.legacy, self.update.test_binary)
         self.addCleanup(self.remove_fixture_locator)
 
-    def scheduler(self, stage):
+    def scheduler(self, stage, task=None):
         powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+        name, executable, arguments = task or (self.task_name, self.update.launcher, self.arguments)
         result = subprocess.run(
             [str(powershell), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", TASK_FIXTURE],
-            env={**self.update.env, "BMEM_FIXTURE_TASK_NAME": self.task_name,
-                 "BMEM_FIXTURE_TASK_STAGE": stage, "BMEM_FIXTURE_TASK_EXE": str(self.update.launcher),
-                 "BMEM_FIXTURE_TASK_ARGS": self.arguments}, cwd=self.update.work,
+            env={**self.update.env, "BMEM_FIXTURE_TASK_NAME": name,
+                 "BMEM_FIXTURE_TASK_STAGE": stage, "BMEM_FIXTURE_TASK_EXE": str(executable),
+                 "BMEM_FIXTURE_TASK_ARGS": arguments}, cwd=self.update.work,
             capture_output=True, text=True, encoding="utf-8", timeout=25,
         )
         self.assertEqual(result.returncode, 0, (stage, result.stderr))
@@ -154,7 +157,51 @@ class WindowsTaskSchedulerAcceptance(unittest.TestCase):
         self.assertFalse(metadata.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
         self.assertTrue((stat.S_ISDIR if directory else stat.S_ISREG)(metadata.st_mode))
 
-    def wait_for_task_state(self, running):
+    def initial_task_diagnostic(self):
+        stderr = self.update.work / "scheduled-service.stderr"
+        done = self.update.work / "scheduled-service.result"
+        powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+
+        def ps_string(value):
+            return "'" + str(value).replace("'", "''") + "'"
+
+        script = f"""
+$ErrorActionPreference = 'Stop'
+$binary = {ps_string(self.update.launcher)}
+$arguments = {ps_string(self.arguments)}
+$stderr = {ps_string(stderr)}
+$child = Start-Process -FilePath $binary -ArgumentList $arguments -RedirectStandardError $stderr -PassThru
+if ($child.WaitForExit(6000)) {{
+    $result = [string]$child.ExitCode
+}} else {{
+    $child.Kill()
+    $null = $child.WaitForExit(1000)
+    $result = 'timeout'
+}}
+[IO.File]::WriteAllText({ps_string(done)}, $result)
+"""
+        encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+        task = (f"{self.task_name} diagnostic", powershell,
+                f"-NoLogo -NoProfile -NonInteractive -EncodedCommand {encoded}")
+        try:
+            self.scheduler("create", task)
+            self.scheduler("start", task)
+            deadline = time.monotonic() + 12
+            while not done.is_file() and time.monotonic() < deadline:
+                time.sleep(0.2)
+            observed = self.scheduler("read", task)
+            output = ""
+            if stderr.is_file():
+                with stderr.open("rb") as stream:
+                    output = stream.read(900).decode("utf-8", errors="replace").strip()
+                for directory in (self.update.work, Path.home()):
+                    output = re.sub(re.escape(str(directory)), "<fixture>", output, flags=re.IGNORECASE)
+            result = done.read_text(encoding="utf-8") if done.is_file() else observed["last_task_result"]
+            return {"exit": result, "stderr": output}
+        finally:
+            self.scheduler("delete", task)
+
+    def wait_for_task_state(self, running, *, initial=False):
         deadline = time.monotonic() + 30
         last = None
         while time.monotonic() < deadline:
@@ -173,6 +220,11 @@ class WindowsTaskSchedulerAcceptance(unittest.TestCase):
                     and state == ("running" if running else "stopped")):
                 return task
             time.sleep(0.2)
+        if initial and last and not last["task_instances"] and last["task_result"] != "0x00000000":
+            try:
+                last["diagnostic"] = self.initial_task_diagnostic()
+            except (OSError, subprocess.SubprocessError, AssertionError):
+                last["diagnostic"] = "could not collect native stderr"
         self.fail(f"Task Scheduler did not reach the expected running state ({running}): {last}")
 
     def test_registered_task_restores_running_or_stopped_state(self):
@@ -180,7 +232,7 @@ class WindowsTaskSchedulerAcceptance(unittest.TestCase):
         self.addCleanup(self.scheduler, "delete")
         baseline = self.scheduler("create")
         self.scheduler("start")
-        old = self.wait_for_task_state(running=True)
+        old = self.wait_for_task_state(running=True, initial=True)
         self.update.completed(self.update.install(adopt=True), "installed")
         current = self.wait_for_task_state(running=True)
         self.assertNotEqual(old["instance"], current["instance"])

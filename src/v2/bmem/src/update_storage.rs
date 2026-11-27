@@ -4,7 +4,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, backup::Backup};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::Path;
 use std::time::Duration;
@@ -66,7 +66,8 @@ fn transfer(source: &Connection, destination: &Path) -> Result<()> {
     }
     integrity(&copy)?;
     drop(copy);
-    File::open(destination)?.sync_all()?;
+    // FlushFileBuffers on Windows needs a handle opened for writing.
+    OpenOptions::new().write(true).open(destination)?.sync_all()?;
     Ok(())
 }
 
