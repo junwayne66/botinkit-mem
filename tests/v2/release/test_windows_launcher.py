@@ -77,6 +77,8 @@ $instances = $task.GetInstances(0)
     instance = if ($instances.Count -eq 1) { [string]$instances.Item(1).InstanceGuid } else { $null }
     count = $instances.Count
     enabled = [bool]$task.Enabled
+    state = [int]$task.State
+    last_task_result = '0x{0:X8}' -f ([int64]$task.LastTaskResult -band 4294967295L)
     xml = [string]$task.Xml
 }))
 """
@@ -139,7 +141,8 @@ class WindowsTaskSchedulerAcceptance(unittest.TestCase):
             self.assert_real_path(folder / name, directory=False)
         for name in ("active.json", "registration.json"):
             document = json.loads((folder / name).read_text(encoding="utf-8"))
-            self.assertEqual(Path(document["root"]).resolve(), self.update.root.resolve())
+            self.assertTrue(Path(document["root"]).samefile(self.update.root),
+                            "preserving locator for a different data root")
             self.assertEqual(document["instance_id"], self.instance_id)
         for name in owned:
             (folder / name).unlink()
@@ -153,14 +156,24 @@ class WindowsTaskSchedulerAcceptance(unittest.TestCase):
 
     def wait_for_task_state(self, running):
         deadline = time.monotonic() + 30
+        last = None
         while time.monotonic() < deadline:
             task = self.scheduler("read")
             self.assertLessEqual(task["count"], 1)
-            state = self.update.status()["state"]
-            if bool(task["instance"]) == running and state == ("running" if running else "stopped"):
+            result = self.update.call("status", timeout=10)
+            try:
+                status = json.loads(result.stdout or result.stderr)
+            except json.JSONDecodeError:
+                status = {}
+            state = status.get("state")
+            last = {"task_state": task["state"], "task_result": task["last_task_result"],
+                    "task_instances": task["count"], "bmem_exit": result.returncode,
+                    "bmem_state": state, "bmem_code": status.get("code")}
+            if (result.returncode == 0 and bool(task["instance"]) == running
+                    and state == ("running" if running else "stopped")):
                 return task
             time.sleep(0.2)
-        self.fail(f"Task Scheduler did not reach the expected running state ({running})")
+        self.fail(f"Task Scheduler did not reach the expected running state ({running}): {last}")
 
     def test_registered_task_restores_running_or_stopped_state(self):
         self.instance_id = self.update.legacy_installation()

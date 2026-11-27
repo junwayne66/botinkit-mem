@@ -667,11 +667,17 @@ class UpdateAcceptance(unittest.TestCase):
             self.assertEqual(handoff["operation_id"], receipt["operation_id"])
             matched = receipt["status"] == expected and (phase is None or receipt["phase"] == phase)
             if matched and receipt.get("recovery_cleanup") != "pending":
+                if receipt.get("error_code") == "internal_error":
+                    print(self.windows_update_trace(), file=sys.stderr)
                 return receipt
             if not matched and receipt["phase"] in ("published", "rolled_back"):
                 break
             time.sleep(0.1)
-        self.fail(f"Windows helper did not reach {expected}/{phase}: {receipt}")
+        self.fail(f"Windows helper did not reach {expected}/{phase}: {receipt}\n{self.windows_update_trace()}")
+
+    def windows_update_trace(self):
+        log = self.root / "run/service.stderr.log"
+        return log.read_text(encoding="utf-8", errors="replace")[-4096:] if log.is_file() else ""
 
     def resume_interrupted_windows(self, operation, expected, binary, *, expect_handoff=False):
         deadline = time.monotonic() + 30

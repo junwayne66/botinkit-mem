@@ -822,7 +822,12 @@ fn handoff(state: &State, tx: &Transaction, action: &str) -> Result<Value> {
 }
 
 fn apply(state: &State, tx: &mut Transaction) -> Result<Value> {
-    match switch(state, tx) {
+    let result = switch(state, tx);
+    #[cfg(feature = "update-test")]
+    if let Err(error) = &result {
+        eprintln!("update transaction failed at {:?} ({}): {error}", tx.phase, error.code);
+    }
+    match result {
         Ok(()) => Ok(tx.status()),
         Err(error) if matches!(tx.phase, Phase::Committed | Phase::Published) => {
             tx.error_code = Some(error.code);
