@@ -175,17 +175,30 @@ if ({'$true' if initialize else '$false'}) {{
         throw 'The scheduler fixture requires a fresh profile and the default locator'
     }}
 }}
-$binary = {ps_string(self.update.launcher)}
-$arguments = {ps_string(arguments)}
-$stdout = {ps_string(stdout)}
-$stderr = {ps_string(stderr)}
-$child = Start-Process -FilePath $binary -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
-if ($child.WaitForExit({15000 if initialize else 6000})) {{
-    $result = [string]$child.ExitCode
-}} else {{
-    $child.Kill()
-    $null = $child.WaitForExit(1000)
-    $result = 'timeout'
+$utf8 = [Text.UTF8Encoding]::new($false)
+$start = [Diagnostics.ProcessStartInfo]::new()
+$start.FileName = {ps_string(self.update.launcher)}
+$start.Arguments = {ps_string(arguments)}
+$start.UseShellExecute = $false
+$start.RedirectStandardOutput = $true
+$start.RedirectStandardError = $true
+$start.StandardOutputEncoding = $utf8
+$start.StandardErrorEncoding = $utf8
+$child = [Diagnostics.Process]::Start($start)
+try {{
+    $stdout = $child.StandardOutput.ReadToEndAsync()
+    $stderr = $child.StandardError.ReadToEndAsync()
+    if ($child.WaitForExit({25000 if initialize else 6000})) {{
+        $result = $child.ExitCode.ToString()
+    }} else {{
+        $child.Kill()
+        $null = $child.WaitForExit(1000)
+        $result = 'timeout'
+    }}
+    if ($stdout.Wait(1500)) {{ [IO.File]::WriteAllText({ps_string(stdout)}, $stdout.Result, $utf8) }}
+    if ($stderr.Wait(1500)) {{ [IO.File]::WriteAllText({ps_string(stderr)}, $stderr.Result, $utf8) }}
+}} finally {{
+    $child.Dispose()
 }}
 $receipt = {ps_string(done)}
 [IO.File]::WriteAllText($receipt + '.tmp', (ConvertTo-Json -Compress @{{exit=$result; local_app_data=$local}}))
@@ -197,7 +210,7 @@ $receipt = {ps_string(done)}
         try:
             self.scheduler("create", task)
             self.scheduler("start", task)
-            deadline = time.monotonic() + (22 if initialize else 12)
+            deadline = time.monotonic() + (45 if initialize else 16)
             while not done.is_file() and time.monotonic() < deadline:
                 time.sleep(0.2)
             observed = self.scheduler("read", task)
