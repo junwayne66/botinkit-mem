@@ -62,6 +62,7 @@ jobs:
           asset="$("$python_command" -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset"])' "candidate/$TARGET.record.json")"
           cp "$bin" "candidate/$asset"
       - name: Verify first run, Web authorization and agent grants
+        timeout-minutes: 4
         if: inputs.public_preview
         shell: bash
         run: |

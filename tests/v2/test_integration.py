@@ -89,25 +89,28 @@ class BmemIntegration(unittest.TestCase):
         self.cli("--home", str(self.root), "init", "--non-interactive")
 
     def cli(self, *arguments, ok=True, timeout=15):
-        result = subprocess.run(
-            [self.binary, "--json", *arguments],
-            cwd=self.work,
-            env=self.environment,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            # Same as native_hosts.VaultFixture.cli: an inherited stdin that
-            # never closes (nohup/CI gate) must not reach a child that could
-            # wait on input.  None of these CLI commands reads stdin today.
-            stdin=subprocess.DEVNULL,
-            timeout=timeout,
-        )
+        # Detached Windows services can retain inherited pipe handles.
+        with (tempfile.TemporaryFile(mode="w+", encoding="utf-8", dir=self.work) as stdout,
+              tempfile.TemporaryFile(mode="w+", encoding="utf-8", dir=self.work) as stderr):
+            result = subprocess.run(
+                [self.binary, "--json", *arguments],
+                cwd=self.work,
+                env=self.environment,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=stderr,
+                timeout=timeout,
+            )
+            stdout.seek(0)
+            stderr.seek(0)
+            output = stdout.read()
+            errors = stderr.read()
         if ok:
-            self.assertEqual(result.returncode, 0, result.stderr)
-            return json.loads(result.stdout)
-        self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(result.stdout, "")
-        return json.loads(result.stderr)
+            self.assertEqual(result.returncode, 0, errors)
+            return json.loads(output)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertEqual(output, "")
+        return json.loads(errors)
 
     def start(self):
         self.daemon_log = tempfile.TemporaryFile(mode="w+b")
