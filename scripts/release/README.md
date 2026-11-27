@@ -12,7 +12,7 @@ python3 scripts/release/preview.py \
   --tag v0.3.0-preview.1 --commit "$release_commit"
 ```
 
-将 tag 固定到产物的提交，在 GitHub Release 草稿上传六个压缩包与 `SHA256SUMS`。校验资料、资产与签名状态，确认标记为 **Pre-release** 后发布。用匿名下载重新核对六个包的字节。公开预览的用户手动下载和安装。详情见[用户说明](../../docs/quick-start.md)。
+将 tag 固定到产物的提交，在 GitHub Release 草稿上传六个压缩包与 `SHA256SUMS`。也可运行 `preview-draft.yml`，输入六目标构建的 run ID 和已推送的 tag，由托管运行器核对来源并暂存草稿。校验资料、资产与签名状态，确认标记为 **Pre-release** 后发布。用匿名下载重新核对六个包的字节。公开预览的用户手动下载和安装。详情见[用户说明](../../docs/quick-start.md)。
 
 ## 正式发布授权与配置
 

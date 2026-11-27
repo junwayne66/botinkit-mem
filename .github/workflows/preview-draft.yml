@@ -1,0 +1,77 @@
+name: Stage bmem public preview draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: Successful six-target public preview build run ID
+        required: true
+        type: string
+      release_tag:
+        description: Existing preview tag that points at the tested build
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  stage:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN: ${{ inputs.build_run }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the run and the release tag
+        id: source
+        shell: bash
+        run: |
+          [[ "$BUILD_RUN" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[1-9][0-9]*$ ]]
+          sha="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          git merge-base --is-ancestor "$sha" HEAD
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" |
+            jq -e --arg sha "$sha" --arg repo "$GITHUB_REPOSITORY" '
+              .path == ".github/workflows/release-candidate.yml" and .event == "workflow_dispatch"
+              and .head_branch == "main" and .head_repository.full_name == $repo
+              and .head_sha == $sha and .conclusion == "success"
+            '
+          gh run view "$BUILD_RUN" --json jobs |
+            jq -e '(.jobs|length) == 6 and all(.jobs[]; .conclusion == "success")'
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Verify and package native build artifacts
+        shell: bash
+        env:
+          BUILD_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          gh run download "$BUILD_RUN" --pattern 'bmem-unsigned-*' --dir native-artifacts
+          mkdir verified-builds
+          for folder in native-artifacts/bmem-unsigned-*; do
+            target="${folder##*/bmem-unsigned-}"
+            record="$folder/$target.record.json"
+            asset="$(jq -er '.asset' "$record")"
+            case "$asset" in
+              bmem-*-"$target"|bmem-*-"$target.exe") ;;
+              *) exit 1 ;;
+            esac
+            cp -- "$record" "$folder/$asset" verified-builds/
+          done
+          python3 -B scripts/release/preview.py \
+            --assets verified-builds --output attachments \
+            --tag "$RELEASE_TAG" --commit "$BUILD_SHA"
+          (cd attachments && sha256sum -c SHA256SUMS)
+      - name: Upload only to a draft prerelease
+        shell: bash
+        run: |
+          gh release create "$RELEASE_TAG" attachments/* \
+            --verify-tag --draft --prerelease --latest=false \
+            --title "bmem $RELEASE_TAG" \
+            --notes "Public preview. Manual installation. See docs/quick-start.md."
