@@ -25,7 +25,7 @@ jobs:
     env:
       TARGET: ${{ matrix.target }}
       NATIVE_ARCH: ${{ matrix.architecture }}
-      LEGACY_COMMIT: ${{ inputs.legacy_commit }}
+      LEGACY_COMMIT: ${{ inputs.legacy_commit || 'bbd7a39ef393717f597d5fcccc467f6bffbf0d41' }}
       REVIEWED_LEGACY_COMMIT: 12ba926685005eb236045b0aaea5072ffe4c6cb5
       LEGACY_RUST_TREE: aa4b9e2a60e6225121afb0221ecf7a50a1fc9487
       LEGACY_WEB_TREE: 6c999f2ae44e99307706ee5cec1ee59d3a931b47
@@ -33,22 +33,21 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          fetch-depth: 2
           persist-credentials: false
       - name: Choose the commit containing the reviewed legacy source trees
-        id: legacy
         shell: pwsh
         run: |
-          $legacy = $env:LEGACY_COMMIT
-          if ($env:GITHUB_EVENT_NAME -eq 'push') { $legacy = git rev-parse HEAD^ }
-          if ($legacy -cnotmatch '^[0-9a-f]{40}$') { throw 'Use a full lowercase Git SHA' }
-          "commit=$legacy" >> $env:GITHUB_OUTPUT
-          "LEGACY_COMMIT=$legacy" >> $env:GITHUB_ENV
+          if ($env:LEGACY_COMMIT -cnotmatch '^[0-9a-f]{40}$') { throw 'Use a full lowercase Git SHA' }
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ steps.legacy.outputs.commit }}
+          ref: ${{ env.LEGACY_COMMIT }}
           path: legacy-source
           persist-credentials: false
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: cargo-cache
+        with:
+          path: ${{ runner.temp }}/bmem-u08-target
+          key: bmem-u08-rust-1.100.0-${{ matrix.target }}-${{ hashFiles('src/v2/bmem/Cargo.lock', 'legacy-source/src/v2/bmem/Cargo.lock') }}
       - name: Build three native executables for the isolated signing fixture
         id: fixture
         shell: pwsh
@@ -88,6 +87,11 @@ jobs:
           "BMEM_UPDATE_TEST_BIN=$(Join-Path $folder '0.3.0.exe')" >> $env:GITHUB_ENV
           "BMEM_UPDATE_NEXT_BIN=$(Join-Path $folder '0.3.1.exe')" >> $env:GITHUB_ENV
           "BMEM_UPDATE_TEST_OPENSSL=$((Get-Command openssl.exe -CommandType Application | Select-Object -First 1).Source)" >> $env:GITHUB_ENV
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: steps.cargo-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/bmem-u08-target
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
       - name: Exercise the actual Windows executable lock and updater helper
         shell: pwsh
         run: ./scripts/release/windows-acceptance.ps1 -Scenario U08 -EvidenceDirectory windows-u08-evidence

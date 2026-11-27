@@ -1,0 +1,30 @@
+{
+  "source": {
+    "type": "fixture",
+    "account": "creek-local",
+    "categories": ["user_message", "tool_result"]
+  },
+  "page": {
+    "cursor": null,
+    "next_cursor": "offset-2",
+    "events": [
+      {
+        "native_object": "run-plan",
+        "native_version": "1",
+        "actor_kind": "user_message",
+        "at": "2026-11-19T10:00:00+08:00",
+        "text": "准备复验解析与入库。"
+      },
+      {
+        "native_object": "run-result",
+        "native_version": "1",
+        "actor_kind": "tool_result",
+        "at": "2026-11-19T10:02:00+08:00",
+        "checks": {
+          "parse": "passed",
+          "write": "timeout"
+        }
+      }
+    ]
+  }
+}
