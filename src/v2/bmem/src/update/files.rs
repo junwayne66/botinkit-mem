@@ -128,6 +128,50 @@ pub fn replace(source: &Path, destination: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
+pub fn wait_for_legacy_processes(path: &Path) -> Result<()> {
+    use std::path::PathBuf;
+    use std::process::{Command, Stdio};
+
+    let system = std::env::var_os("SystemRoot")
+        .ok_or_else(|| Error::conflict("Windows system root is unavailable"))?;
+    let shell = PathBuf::from(system).join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    let command = r#"
+$ErrorActionPreference = 'Stop'
+$binary = $env:BMEM_UPDATER_LEGACY_EXE
+if ($binary.StartsWith('\\?\')) { $binary = $binary.Substring(4) }
+$name = [Management.Automation.WildcardPattern]::Escape([IO.Path]::GetFileNameWithoutExtension($binary))
+$timer = [Diagnostics.Stopwatch]::StartNew()
+do {
+    $holders = @(Get-Process -Name $name -ErrorAction SilentlyContinue | Where-Object { $_.Path -ieq $binary })
+    if ($holders.Count -eq 0) { exit 0 }
+    Start-Sleep -Milliseconds 125
+} while ($timer.Elapsed.TotalSeconds -lt 12)
+exit 10
+"#;
+    let status = Command::new(shell)
+        .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command])
+        .env("BMEM_UPDATER_LEGACY_EXE", path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    match status.code() {
+        Some(0) => Ok(()),
+        Some(10) => Err(executable_in_use()),
+        _ => Err(Error::unavailable("could not check for Windows processes using the old bmem program")),
+    }
+}
+
+#[cfg(windows)]
+fn executable_in_use() -> Error {
+    Error::new(
+        503,
+        "executable_in_use",
+        "close the bmem CLI and bmem stdio sessions that still hold this installation, then retry",
+    )
+}
+
+#[cfg(windows)]
 fn replace_windows(source: &Path, destination: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::null_mut;
@@ -179,13 +223,7 @@ fn replace_windows(source: &Path, destination: &Path) -> Result<()> {
             Some(5 | 32 | 33 | 1175) if Instant::now() < end => {
                 std::thread::sleep(Duration::from_millis(125))
             }
-            Some(5 | 32 | 33 | 1175) => {
-                return Err(Error::new(
-                    503,
-                    "executable_in_use",
-                    "close the bmem CLI and bmem stdio sessions that still hold this installation, then retry",
-                ));
-            }
+            Some(5 | 32 | 33 | 1175) => return Err(executable_in_use()),
             _ => return Err(error.into()),
         }
     }

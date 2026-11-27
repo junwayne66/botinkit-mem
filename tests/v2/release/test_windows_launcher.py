@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import subprocess
 import time
@@ -105,14 +106,11 @@ class WindowsTaskSchedulerAcceptance(unittest.TestCase):
         local = Path(profile["local_app_data"])
         user = Path(profile["profile"])
         self.assertTrue(local.is_dir() and user.is_dir(), "Windows default profile paths are unavailable")
-        self.locator_parent = local / "bmem"
-        for path in (self.locator_parent, user / ".bmem"):
+        for path in (local / "bmem", user / ".bmem"):
             if os.path.lexists(path):
                 self.skipTest("the Windows profile already has bmem state; use a fresh profile")
         self.update.env.pop("BMEM_LOCATOR_DIR")
-        self.update.env["LOCALAPPDATA"] = str(local)
         self.update.assert_windows_native_images(self.update.legacy, self.update.test_binary)
-        self.addCleanup(self.remove_fixture_locator)
 
     def scheduler(self, stage, task=None):
         powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
@@ -157,9 +155,10 @@ class WindowsTaskSchedulerAcceptance(unittest.TestCase):
         self.assertFalse(metadata.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
         self.assertTrue((stat.S_ISDIR if directory else stat.S_ISREG)(metadata.st_mode))
 
-    def initial_task_diagnostic(self):
-        stderr = self.update.work / "scheduled-service.stderr"
-        done = self.update.work / "scheduled-service.result"
+    def scheduled_command(self, name, arguments, *, initialize=False):
+        stdout = self.update.work / f"scheduled-{name}.stdout"
+        stderr = self.update.work / f"scheduled-{name}.stderr"
+        done = self.update.work / f"scheduled-{name}.result"
         powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
 
         def ps_string(value):
@@ -167,26 +166,38 @@ class WindowsTaskSchedulerAcceptance(unittest.TestCase):
 
         script = f"""
 $ErrorActionPreference = 'Stop'
+$local = [Environment]::GetFolderPath('LocalApplicationData')
+$profile = [Environment]::GetFolderPath('UserProfile')
+if ({'$true' if initialize else '$false'}) {{
+    if (!$local -or !$profile -or $env:BMEM_LOCATOR_DIR -or
+        (Test-Path -LiteralPath (Join-Path $local 'bmem')) -or
+        (Test-Path -LiteralPath (Join-Path $profile '.bmem'))) {{
+        throw 'The scheduler fixture requires a fresh profile and the default locator'
+    }}
+}}
 $binary = {ps_string(self.update.launcher)}
-$arguments = {ps_string(self.arguments)}
+$arguments = {ps_string(arguments)}
+$stdout = {ps_string(stdout)}
 $stderr = {ps_string(stderr)}
-$child = Start-Process -FilePath $binary -ArgumentList $arguments -RedirectStandardError $stderr -PassThru
-if ($child.WaitForExit(6000)) {{
+$child = Start-Process -FilePath $binary -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+if ($child.WaitForExit({15000 if initialize else 6000})) {{
     $result = [string]$child.ExitCode
 }} else {{
     $child.Kill()
     $null = $child.WaitForExit(1000)
     $result = 'timeout'
 }}
-[IO.File]::WriteAllText({ps_string(done)}, $result)
+$receipt = {ps_string(done)}
+[IO.File]::WriteAllText($receipt + '.tmp', (ConvertTo-Json -Compress @{{exit=$result; local_app_data=$local}}))
+[IO.File]::Move($receipt + '.tmp', $receipt)
 """
         encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-        task = (f"{self.task_name} diagnostic", powershell,
+        task = (f"{self.task_name} {name}", powershell,
                 f"-NoLogo -NoProfile -NonInteractive -EncodedCommand {encoded}")
         try:
             self.scheduler("create", task)
             self.scheduler("start", task)
-            deadline = time.monotonic() + 12
+            deadline = time.monotonic() + (22 if initialize else 12)
             while not done.is_file() and time.monotonic() < deadline:
                 time.sleep(0.2)
             observed = self.scheduler("read", task)
@@ -196,10 +207,29 @@ if ($child.WaitForExit(6000)) {{
                     output = stream.read(900).decode("utf-8", errors="replace").strip()
                 for directory in (self.update.work, Path.home()):
                     output = re.sub(re.escape(str(directory)), "<fixture>", output, flags=re.IGNORECASE)
-            result = done.read_text(encoding="utf-8") if done.is_file() else observed["last_task_result"]
-            return {"exit": result, "stderr": output}
+            receipt = (json.loads(done.read_text(encoding="utf-8")) if done.is_file()
+                       else {"exit": observed["last_task_result"]})
+            receipt["stderr"] = output
+            return receipt, stdout
         finally:
             self.scheduler("delete", task)
+
+    def initialize_legacy_from_scheduler(self):
+        shutil.copy2(self.update.legacy, self.update.canonical)
+        arguments = subprocess.list2cmdline(["--home", str(self.update.root), "--json", "init", "--non-interactive"])
+        receipt, stdout = self.scheduled_command("init", arguments, initialize=True)
+        self.assertEqual(receipt["exit"], "0", {"exit": receipt["exit"], "stderr": receipt["stderr"]})
+        self.instance_id = json.loads(stdout.read_text(encoding="utf-8"))["instance_id"]
+        self.locator_parent = Path(receipt["local_app_data"]) / "bmem"
+        self.addCleanup(self.remove_fixture_locator)
+        self.assert_real_path(self.locator_parent, directory=True)
+        entries = list(self.locator_parent.iterdir())
+        self.assertEqual(len(entries), 1)
+        folder = entries[0]
+        self.assertRegex(folder.name, r"^[0-9a-f]{64}$")
+        self.assert_real_path(folder, directory=True)
+        self.update.env["BMEM_LOCATOR_DIR"] = str(folder)
+        self.assertEqual(self.update.status()["instance_id"], self.instance_id)
 
     def wait_for_task_state(self, running, *, initial=False):
         deadline = time.monotonic() + 30
@@ -222,13 +252,14 @@ if ($child.WaitForExit(6000)) {{
             time.sleep(0.2)
         if initial and last and not last["task_instances"] and last["task_result"] != "0x00000000":
             try:
-                last["diagnostic"] = self.initial_task_diagnostic()
+                receipt, _ = self.scheduled_command("diagnostic", self.arguments)
+                last["diagnostic"] = {"exit": receipt["exit"], "stderr": receipt["stderr"]}
             except (OSError, subprocess.SubprocessError, AssertionError):
                 last["diagnostic"] = "could not collect native stderr"
         self.fail(f"Task Scheduler did not reach the expected running state ({running}): {last}")
 
     def test_registered_task_restores_running_or_stopped_state(self):
-        self.instance_id = self.update.legacy_installation()
+        self.initialize_legacy_from_scheduler()
         self.addCleanup(self.scheduler, "delete")
         baseline = self.scheduler("create")
         self.scheduler("start")

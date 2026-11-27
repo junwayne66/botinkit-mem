@@ -876,6 +876,8 @@ fn switch(state: &State, tx: &mut Transaction) -> Result<()> {
         .filter(|old| old.build_id.starts_with("legacy-"))
     {
         prove_legacy_fence(state, tx, old)?;
+        #[cfg(windows)]
+        files::wait_for_legacy_processes(&old.executable)?;
     }
     state.phase(tx, Phase::Swapping)?;
     files::replace(&state.stage(tx), &tx.next.executable)?;
