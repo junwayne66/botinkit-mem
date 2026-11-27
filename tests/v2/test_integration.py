@@ -653,6 +653,41 @@ class BmemIntegration(unittest.TestCase):
         self.assertEqual(missing["code"], "not_available")
         self.assertEqual(self.post(owner, "/v2/search", {"query": "复验解析"})["results"], [])
 
+    def test_search_exclusions_before_limit_and_during_fallback(self):
+        self.start()
+        owner, _ = self.web()
+        event = fixture("source_page.json")["page"]["events"][0]
+        noise = [{**event, "native_object": f"om_{i}", "text": "needle"} for i in range(32)]
+        legacy_doc = {**event, "native_object": "docx:fixture", "text": "needle document"}
+        keep = {**event, "text": "some longer text containing needle"}
+        tool = fixture("source_page.json")["page"]["events"][1]
+        for kind, events in [("feishu", [*noise, legacy_doc]), ("codex", [keep, {**tool, "checks": {"needle": "ok"}}])]:
+            source = self.post(owner, "/v2/sources", {"type": kind, "account": "test"}, kind)
+            sid = source["source_id"]
+            self.operation(owner, {"kind": "resume_capture", "source_id": sid}, kind)
+            self.post(owner, "/v2/events", {"source_id": sid, "next_cursor": "1", "events": events}, kind)
+        self.cli("declare", FIXTURE["initial"] + " needle", "--scope", "global")
+
+        def search(exclude, mode="lexical"):
+            return self.post(owner, "/v2/search", {"query": "needle", "mode": mode, "exclude": exclude})
+
+        unfiltered = search([])["results"]
+        self.assertEqual(len([row for row in unfiltered if row.get("handle")]), 30)
+        self.assertTrue(any(row.get("fact_id") for row in unfiltered))
+        exclusions = ["feishu", "tool_result", "statement"]
+        for mode in ("lexical", "vector"):
+            found = search(exclusions, mode)
+            self.assertEqual(found["retrieval"], "lexical")
+            [row] = found["results"]
+            self.assertEqual(row["actor_kind"], "user_message")
+            self.assertEqual(self.post(owner, "/v2/evidence/expand", {"handle": row["handle"]})["text"], keep["text"])
+
+        [doc] = search(["feishu_unclassified", "codex", "statement"])["results"]
+        self.assertEqual(self.post(owner, "/v2/evidence/expand", {"handle": doc["handle"]})["text"], legacy_doc["text"])
+        self.assertEqual(search(["feishu_unclassified", "docs", "codex", "statement"])["results"], [])
+        self.assertEqual(len(search(["dm", "group", "docs", "codex", "statement"])["results"]), 30)
+        self.assertEqual(owner.request("/v2/search", "POST", {"query": "needle", "exclude": ["bogus"]})[0], 422)
+
     def test_backup_preview_refuses_pre_forget_state(self):
         self.start()
         owner, _ = self.web()

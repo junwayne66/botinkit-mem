@@ -1,0 +1,524 @@
+[
+  {
+    "id": "F05-01",
+    "title": "同一快照试算两位助手，核对真实授权和凭单",
+    "covers": ["dual_reader_preview", "immutable_snapshot", "preview_side_effects"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "policy_version": "rank.1",
+      "budget": 128,
+      "deliveries": [],
+      "receipts": []
+    },
+    "steps": [
+      {"id": "preview", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "deny_root", "reader": "A", "purpose": "task_delivery", "root": "r1"}, "comparison": {"query": "青禾写入耗时", "task": "青禾排查", "readers": ["A", "B"], "budget": 128}}},
+      {"id": "audit", "action": "读取本次预演登记、调用日志及生效授权", "args": {"actor": "u", "preview_step": "preview"}},
+      {"id": "actual", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}}
+    ],
+    "checks": [
+      {"at": "preview", "path": "/A/before", "op": "contains", "value": "r1.1"},
+      {"at": "preview", "path": "/A/after", "op": "eq", "value": ["r2.1"]},
+      {"at": "preview", "path": "/B/before", "op": "contains", "value": "r1.1"},
+      {"at": "preview", "path": "/B/after", "op": "contains", "value": "r1.1"},
+      {"at": "audit", "path": "/comparison_snapshot_count", "op": "eq", "value": 1},
+      {"at": "audit", "path": "/registered_preview_count", "op": "eq", "value": 1},
+      {"at": "audit", "path": "/new_deliveries", "op": "eq", "value": 0},
+      {"at": "audit", "path": "/new_receipts", "op": "eq", "value": 0},
+      {"at": "audit", "path": "/model_calls", "op": "eq", "value": 0},
+      {"at": "audit", "path": "/stored_command", "op": "eq", "value": {"kind": "deny_root", "reader": "A", "purpose": "task_delivery", "root": "r1"}},
+      {"at": "actual", "path": "/root_versions", "op": "contains", "value": "r1.1"}
+    ]
+  },
+  {
+    "id": "F05-02",
+    "title": "确认只撤 A 对单根的权限，旧句柄和待发包同样失效",
+    "covers": ["recipient_root_deny", "old_handle", "pending_delivery", "allowed_sibling"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ]
+    },
+    "steps": [
+      {"id": "prepare", "action": "为 A 准备含 r1.1 的待发包并取得 r1.1 的补读句柄", "args": {"reader": "A", "task": "青禾排查", "root": "r1"}},
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "deny_root", "reader": "A", "purpose": "task_delivery", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "deny_root", "reader": "A", "purpose": "task_delivery", "root": "r1"}}},
+      {"id": "open", "action": "按原句柄补读", "args": {"reader": "A", "handle_from_step": "prepare"}},
+      {"id": "deliver", "action": "实际投递先前准备的包并记录最终输入", "args": {"reader": "A", "delivery_from_step": "prepare"}},
+      {"id": "a", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "b", "action": "从真实接手入口读取当前证据包", "args": {"reader": "B", "task": "青禾排查", "query": "青禾写入耗时"}}
+    ],
+    "checks": [
+      {"at": "prepare", "path": "/prepared_versions", "op": "contains", "value": "r1.1"},
+      {"at": "open", "path": "/text", "op": "absent"},
+      {"at": "deliver", "path": "/model_input", "op": "excludes", "value": "灰雀"},
+      {"at": "a", "path": "/root_versions", "op": "eq", "value": ["r2.1"]},
+      {"at": "b", "path": "/root_versions", "op": "contains", "value": "r1.1"},
+      {"at": "b", "path": "/root_versions", "op": "contains", "value": "r2.1"}
+    ]
+  },
+  {
+    "id": "F05-03",
+    "title": "受限助手收不到标题、摘要、计数和对照描述",
+    "covers": ["recipient_redaction", "forbidden_metadata", "owner_only_comparison"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ]
+    },
+    "steps": [
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "deny_root", "reader": "A", "purpose": "task_delivery", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "deny_root", "reader": "A", "purpose": "task_delivery", "root": "r1"}}},
+      {"id": "a", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "compare", "action": "以助手身份请求所有者双读者试算", "args": {"actor": "A", "readers": ["A", "B"], "query": "青禾写入耗时", "command": {"kind": "deny_root", "reader": "A", "purpose": "task_delivery", "root": "r1"}}}
+    ],
+    "checks": [
+      {"at": "a", "path": "/rendered", "op": "contains", "value": "蓝鹭"},
+      {"at": "a", "path": "/rendered", "op": "excludes", "value": "青禾支线"},
+      {"at": "a", "path": "/rendered", "op": "excludes", "value": "灰雀"},
+      {"at": "a", "path": "/blocked_count", "op": "absent"},
+      {"at": "a", "path": "/blocked_items", "op": "absent"},
+      {"at": "compare", "path": "/comparison", "op": "absent"},
+      {"at": "compare", "path": "/status", "op": "eq", "value": "forbidden"}
+    ]
+  },
+  {
+    "id": "F05-04",
+    "title": "所有者试算也按本人当前可读范围裁剪",
+    "covers": ["owner_visibility", "intersection_scope", "comparative_preview"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ]
+    },
+    "steps": [
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "deny_root", "reader": "B", "purpose": "task_delivery", "root": "r2"}, "comparison": {"readers": ["A", "B"], "query": "青禾写入耗时", "task": "青禾排查"}}},
+      {"id": "b", "action": "从真实接手入口读取当前证据包", "args": {"reader": "B", "task": "青禾排查", "query": "青禾写入耗时"}}
+    ],
+    "checks": [
+      {"at": "pv", "path": "/owner_visible_before_ids", "op": "eq", "value": ["r2.1"]},
+      {"at": "pv", "path": "/rendered", "op": "excludes", "value": "灰雀"},
+      {"at": "pv", "path": "/rendered", "op": "excludes", "value": "青禾支线"},
+      {"at": "b", "path": "/root_versions", "op": "contains", "value": "r1.1"},
+      {"at": "b", "path": "/root_versions", "op": "contains", "value": "r2.1"}
+    ]
+  },
+  {
+    "id": "F05-05",
+    "title": "经历降温后可按原句找回，低频声明仍生效",
+    "covers": ["cooling", "targeted_recall", "restore_default", "low_frequency_rule"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "rules": [
+        {"id": "lang", "text": "青禾报告用中文。", "reads_in_90_days": 0, "authority": "u", "scope": "青禾排查", "valid": true}
+      ]
+    },
+    "steps": [
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "cool_episode", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "cool_episode", "root": "r1"}}},
+      {"id": "cold", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "find", "action": "用获准的专门查询读取原句", "args": {"reader": "A", "task": "青禾排查", "query": "灰雀"}},
+      {"id": "wp", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "restore_default_handoff", "root": "r1"}}},
+      {"id": "warm", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "wp", "command": {"kind": "restore_default_handoff", "root": "r1"}}},
+      {"id": "again", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}}
+    ],
+    "checks": [
+      {"at": "cold", "path": "/root_versions", "op": "excludes", "value": "r1.1"},
+      {"at": "cold", "path": "/root_versions", "op": "contains", "value": "r2.1"},
+      {"at": "cold", "path": "/active_rule_ids", "op": "contains", "value": "lang"},
+      {"at": "find", "path": "/text", "op": "contains", "value": "青禾支线代号灰雀"},
+      {"at": "again", "path": "/root_versions", "op": "contains", "value": "r1.1"}
+    ]
+  },
+  {
+    "id": "F05-06",
+    "title": "临时覆盖到期后重选默认值，历史查询保留时点解释",
+    "covers": ["temporary_expiry", "fallback_to_default", "history_as_of"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "rules": [
+        {"id": "base", "scope": "global", "text": "报告用中文。", "start": "2026-11-01T00:00:00Z", "author": "u"},
+        {"id": "temp", "scope": "青禾排查", "text": "青禾报告暂用英文。", "start": "2026-11-25T00:00:00Z", "end_exclusive": "2026-11-27T00:00:00Z", "author": "u"}
+      ],
+      "rule_readers": ["u", "A"]
+    },
+    "steps": [
+      {"id": "before", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "clock", "action": "将服务时钟推进至临时覆盖失效的边界", "args": {"to": "2026-11-27T00:00:00Z"}},
+      {"id": "after", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "history", "action": "按历史时刻回看获准的当时声明", "args": {"actor": "u", "task": "青禾排查", "as_of": "2026-11-26T12:00:00Z"}}
+    ],
+    "checks": [
+      {"at": "before", "path": "/active_rule_ids", "op": "contains", "value": "temp"},
+      {"at": "after", "path": "/active_rule_ids", "op": "eq", "value": ["base"]},
+      {"at": "history", "path": "/selected_rule_id", "op": "eq", "value": "temp"},
+      {"at": "history", "path": "/text", "op": "contains", "value": "英文"}
+    ]
+  },
+  {
+    "id": "F05-07",
+    "title": "永久纠正项撤回后，被替换的旧值不能自动复活",
+    "covers": ["permanent_correction", "no_resurrection", "retained_history"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "rules": [
+        {"id": "old", "scope": "global", "text": "报告用英文。", "author": "u"},
+        {"id": "new", "scope": "global", "text": "今后报告用中文。", "corrects_revision_id": "old", "author": "u"}
+      ],
+      "rule_readers": ["A", "u"]
+    },
+    "steps": [
+      {"id": "before", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "withdraw_revision", "revision": "new"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "withdraw_revision", "revision": "new"}}},
+      {"id": "after", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "audit", "action": "由所有者读取已保留的修订关系", "args": {"actor": "u", "revision": "old"}}
+    ],
+    "checks": [
+      {"at": "before", "path": "/active_rule_ids", "op": "eq", "value": ["new"]},
+      {"at": "after", "path": "/active_rule_ids", "op": "excludes", "value": "old"},
+      {"at": "after", "path": "/active_rule_ids", "op": "excludes", "value": "new"},
+      {"at": "audit", "path": "/superseded_by", "op": "eq", "value": "new"}
+    ]
+  },
+  {
+    "id": "F05-08",
+    "title": "讨论所含根集合变化，旧凭单不能扩大确认范围",
+    "covers": ["scope_drift", "preview_fingerprint", "reconfirmation"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "discussions": {"支线议题": ["r1"]}
+    },
+    "steps": [
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "deny_discussion", "reader": "A", "purpose": "task_delivery", "discussion": "支线议题"}}},
+      {"id": "change", "action": "把另一条原生对象关联到同一讨论", "args": {"discussion": "支线议题", "add_root": "r2"}},
+      {"id": "confirm_old", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "deny_discussion", "reader": "A", "purpose": "task_delivery", "discussion": "支线议题"}}},
+      {"id": "actual", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "fresh", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "deny_discussion", "reader": "A", "purpose": "task_delivery", "discussion": "支线议题"}}}
+    ],
+    "checks": [
+      {"at": "pv", "path": "/selected_roots", "op": "eq", "value": ["r1"]},
+      {"at": "confirm_old", "path": "/requires_new_preview", "op": "eq", "value": true},
+      {"at": "actual", "path": "/root_versions", "op": "contains", "value": "r1.1"},
+      {"at": "actual", "path": "/root_versions", "op": "contains", "value": "r2.1"},
+      {"at": "fresh", "path": "/selected_roots", "op": "contains", "value": "r2"}
+    ]
+  },
+  {
+    "id": "F05-09",
+    "title": "联合前提缺一时立即屏蔽旧结论及其下游",
+    "covers": ["and_group", "chained_derivation", "tombstone", "immediate_read_block"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "derived": [
+        {"id": "s1", "text": "灰雀和蓝鹭都需要复查。", "support_groups": [["r1.1", "r2.1"]]},
+        {"id": "s2", "text": "两支线的复查已排期。", "support_groups": [["s1"]]}
+      ]
+    },
+    "steps": [
+      {"id": "before", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "after", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "old", "action": "补读旧下游结论", "args": {"reader": "A", "task": "青禾排查", "id": "s2"}}
+    ],
+    "checks": [
+      {"at": "before", "path": "/derived_ids", "op": "contains", "value": "s2"},
+      {"at": "after", "path": "/derived_ids", "op": "excludes", "value": "s1"},
+      {"at": "after", "path": "/derived_ids", "op": "excludes", "value": "s2"},
+      {"at": "old", "path": "/text", "op": "absent"},
+      {"at": "after", "path": "/root_versions", "op": "contains", "value": "r2.1"}
+    ]
+  },
+  {
+    "id": "F05-10",
+    "title": "备用支持组可独立证明结论，重建文本清除撤回细节",
+    "covers": ["or_group", "independent_rebuild", "old_wording_hidden"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "灰雀记录：两条线均有写入超时。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "独立计时器测得主线、支线各有一次写入超时。"}
+      ],
+      "derived": [
+        {"id": "summary.1", "text": "灰雀记录表明两条线均有写入超时。", "support_groups": [["r1.1"], ["r2.1"]]}
+      ]
+    },
+    "steps": [
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "old", "action": "按旧摘要版本读取", "args": {"reader": "A", "revision": "summary.1"}},
+      {"id": "drain", "action": "运行已排队的依赖重算直至完成", "args": {"root": "r1"}},
+      {"id": "rebuilt", "action": "从接手检索定位重建后的超时结论及引用", "args": {"reader": "A", "task": "青禾排查", "query": "两条线均超时"}}
+    ],
+    "checks": [
+      {"at": "old", "path": "/text", "op": "absent"},
+      {"at": "rebuilt", "path": "/evidence", "op": "eq", "value": ["r2.1"]},
+      {"at": "rebuilt", "path": "/text", "op": "contains", "value": "超时"},
+      {"at": "rebuilt", "path": "/text", "op": "excludes", "value": "灰雀"},
+      {"at": "rebuilt", "path": "/published_ids", "op": "excludes", "value": "summary.1"}
+    ]
+  },
+  {
+    "id": "F05-11",
+    "title": "遗忘先提交，持旧租约的提炼结果不得再交付",
+    "covers": ["late_worker", "tombstoned_candidate", "lease_commit"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "distill_grants": ["r1", "r2"],
+      "jobs": [
+        {"id": "j1", "input": "r1.1", "state": "queued"}
+      ]
+    },
+    "steps": [
+      {"id": "lease", "action": "取得任务租约并在提交前暂停 worker", "args": {"job": "j1", "worker": "w1"}},
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "return", "action": "持旧租约提交提炼完成结果", "args": {"job": "j1", "lease_from_step": "lease", "candidate": {"id": "late", "input": "r1.1", "text": "灰雀写入七秒。"}}},
+      {"id": "after", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}},
+      {"id": "audit", "action": "查看权威修订与任务结束原因", "args": {"actor": "u", "job": "j1"}}
+    ],
+    "checks": [
+      {"at": "audit", "path": "/published_candidate_ids", "op": "excludes", "value": "late"},
+      {"at": "audit", "path": "/termination_reason", "op": "eq", "value": "input_withdrawn"},
+      {"at": "after", "path": "/rendered", "op": "excludes", "value": "灰雀"},
+      {"at": "after", "path": "/root_versions", "op": "contains", "value": "r2.1"}
+    ]
+  },
+  {
+    "id": "F05-12",
+    "title": "迟到的历史导入页重送已遗忘版本和同源合法版本",
+    "covers": ["late_import", "replay_idempotency", "sibling_preserved"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "source_account": "account.synthetic",
+      "page": {"cursor": "c1", "items": ["r1.1", "r2.1"]},
+      "capture_grants": ["r1", "r2"]
+    },
+    "steps": [
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "import", "action": "两次提交同一旧页，保持原始根 ID 和版本键", "args": {"cursor": "c1", "versions": ["r1.1", "r2.1"], "repeat": 2}},
+      {"id": "roots", "action": "所有者按根检查现行墓碑、可读版本及后台队列", "args": {"actor": "u", "roots": ["r1", "r2"]}},
+      {"id": "after", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}}
+    ],
+    "checks": [
+      {"at": "roots", "path": "/tombstoned_roots", "op": "contains", "value": "r1"},
+      {"at": "roots", "path": "/readable_version_ids", "op": "eq", "value": ["r2.1"]},
+      {"at": "roots", "path": "/pending_distill_inputs", "op": "excludes", "value": "r1.1"},
+      {"at": "after", "path": "/root_versions", "op": "eq", "value": ["r2.1"]}
+    ]
+  },
+  {
+    "id": "F05-13",
+    "title": "原机旧备份恢复预览应用本机更新的撤回清单",
+    "covers": ["old_backup", "restoration_preview", "watermark", "positive_control"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "backup": {"id": "snap8", "watermark": 8, "versions": ["r1.1", "r2.1"]},
+      "authority_watermark": 8
+    },
+    "steps": [
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "restore", "action": "在原机隔离区预览旧备份并应用当前撤回清单", "args": {"actor": "u", "backup": "snap8"}},
+      {"id": "search", "action": "在该预览的允许视图分别搜两个唯一词", "args": {"preview_step": "restore", "terms": ["灰雀", "蓝鹭"]}},
+      {"id": "prod", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}}
+    ],
+    "checks": [
+      {"at": "restore", "path": "/input_watermark", "op": "eq", "value": 8},
+      {"at": "restore", "path": "/applied_tombstones", "op": "contains", "value": "r1"},
+      {"at": "restore", "path": "/activated", "op": "eq", "value": false},
+      {"at": "search", "path": "/灰雀/hit_ids", "op": "eq", "value": []},
+      {"at": "search", "path": "/蓝鹭/hit_ids", "op": "contains", "value": "r2.1"},
+      {"at": "prod", "path": "/root_versions", "op": "eq", "value": ["r2.1"]}
+    ]
+  },
+  {
+    "id": "F05-14",
+    "title": "空实例只剩旧备份时标明可证明截止点",
+    "covers": ["isolated_restore", "missing_revocation_log", "proven_cutoff"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "backup": {"id": "snap5", "watermark": 5, "at": "2026-11-20T00:00:00Z", "versions": ["r1.1", "r2.1"]},
+      "target_instance": {"id": "empty", "empty": true, "has_later_revocation_log": false}
+    },
+    "steps": [
+      {"id": "restore", "action": "在空实例仅用旧包发起隔离恢复预览", "args": {"actor": "u", "instance": "empty", "backup": "snap5"}},
+      {"id": "read", "action": "通过恢复目标的普通助手入口查询唯一词", "args": {"instance": "empty", "reader": "A", "query": "灰雀"}}
+    ],
+    "checks": [
+      {"at": "restore", "path": "/provable_until", "op": "eq", "value": "2026-11-20T00:00:00Z"},
+      {"at": "restore", "path": "/later_revocations", "op": "eq", "value": "unknown"},
+      {"at": "restore", "path": "/activated", "op": "eq", "value": false},
+      {"at": "read", "path": "/text", "op": "absent"},
+      {"at": "read", "path": "/normal_read_enabled", "op": "eq", "value": false}
+    ]
+  },
+  {
+    "id": "F05-15",
+    "title": "受管清理失败时禁读继续，已发的外部副本单独列示",
+    "covers": ["managed_cleanup_failure", "external_copy_unknown", "immutable_receipt"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "prior_deliveries": [
+        {"id": "out1", "recipient": "external-A", "version": "r1.1", "delivered": true, "remote_erase_proof": null}
+      ],
+      "fault": {"vector_cleanup": "io_error"}
+    },
+    "steps": [
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "forget_root", "root": "r1"}}},
+      {"id": "cleanup", "action": "执行受管清理并保留向量清理错误", "args": {"root": "r1"}},
+      {"id": "status", "action": "所有者查看治理受理单的各位置状态", "args": {"actor": "u", "root": "r1"}},
+      {"id": "after", "action": "从真实接手入口读取当前证据包", "args": {"reader": "A", "task": "青禾排查", "query": "青禾写入耗时"}}
+    ],
+    "checks": [
+      {"at": "status", "path": "/logical_read", "op": "eq", "value": "blocked"},
+      {"at": "status", "path": "/vector_cleanup", "op": "eq", "value": "failed"},
+      {"at": "status", "path": "/previously_sent", "op": "contains", "value": "out1"},
+      {"at": "status", "path": "/external_erase", "op": "eq", "value": "unverified"},
+      {"at": "after", "path": "/rendered", "op": "excludes", "value": "灰雀"},
+      {"at": "after", "path": "/rendered", "op": "contains", "value": "蓝鹭"}
+    ]
+  },
+  {
+    "id": "F05-16",
+    "title": "按旧日期查历史仍受今天的接收端许可约束",
+    "covers": ["current_grant_on_history", "purpose_scoped_deny"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾排查",
+      "source": "青禾讨论",
+      "read_grants": {"owner_read": {"u": ["r1", "r2"]}, "task_delivery": {"A": ["r1", "r2"], "B": ["r1", "r2"]}},
+      "roots": [
+        {"id": "r1", "version": "r1.1", "title": "青禾支线", "text": "青禾支线代号灰雀，写入耗时七秒。"},
+        {"id": "r2", "version": "r2.1", "title": "青禾主线", "text": "青禾主线代号蓝鹭，写入耗时九秒。"}
+      ],
+      "history": [
+        {"at": "2026-11-25T12:00:00Z", "versions": ["r1.1", "r2.1"], "reader": "A"}
+      ]
+    },
+    "steps": [
+      {"id": "pv", "action": "所有者预览治理命令", "args": {"actor": "u", "command": {"kind": "deny_root", "reader": "A", "purpose": "task_delivery", "root": "r1"}}},
+      {"id": "ok", "action": "所有者用上步凭单确认原命令", "args": {"actor": "u", "preview_step": "pv", "command": {"kind": "deny_root", "reader": "A", "purpose": "task_delivery", "root": "r1"}}},
+      {"id": "history", "action": "以同一助手查旧日期的任务证据", "args": {"reader": "A", "purpose": "task_delivery", "task": "青禾排查", "as_of": "2026-11-25T12:00:00Z"}},
+      {"id": "owner", "action": "所有者定向检查仍保留的原文", "args": {"actor": "u", "purpose": "owner_read", "root": "r1"}}
+    ],
+    "checks": [
+      {"at": "history", "path": "/root_versions", "op": "eq", "value": ["r2.1"]},
+      {"at": "history", "path": "/rendered", "op": "excludes", "value": "灰雀"},
+      {"at": "owner", "path": "/text", "op": "contains", "value": "灰雀"}
+    ]
+  }
+]

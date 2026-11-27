@@ -1,0 +1,1047 @@
+{
+  "date": "2026-11-27",
+  "timezone": "Asia/Shanghai",
+  "version": "0.2.0",
+  "repository_head": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+  "binary_sha256": "d0e36329b8de767013e0dd3a58c220df67e1d634aa04d9efb6689509226f02b1",
+  "codex_cli": "0.172.0",
+  "claude_code_cli": "2.1.308",
+  "suite_sha256": {
+    "F01": "73c2fc662bb4a8c74d4a8cbafee2770faaa4c90d6c6cc35a5fa537617d8951d2",
+    "F02": "2c01e3f8c53bd714b7ac76ebf84e6fc23ecf3875afbd2635c01d0a11f8ce6be7",
+    "F03": "2bb2614f72fd3d18073d9df542a0f01db5ed38615a3103dd11d36db04758d78a",
+    "F04": "dcf9c5de381e26fe3bd59025bf3b990fb5af23a8bf4da347d260f780d760fb65",
+    "F05": "8ee746d58ee5d5d72530390709cb724b1809e1923dc974bc62788579dab4b810",
+    "F06": "6e92d6828ac97ad399da6e71ac4e05f8adc0a32c729d0197775047e1af27e156",
+    "F07": "f408aa9c425476ef7c7c76d5cbdd0c0c567e31677c8898af6ecefd73b4999ba7",
+    "X01": "347e6349e61725b7196666511d963461286cba3b992e111743c85efa8774a578",
+    "E2E": "72a977ef0bd136b9c1f18621b08a8b710216c617461d8474ad0f9651ff51a848"
+  },
+  "counts": {
+    "FAIL": 10,
+    "NOT_RUN": 120,
+    "PASS": 4
+  },
+  "cases": [
+    {
+      "id": "F01-01",
+      "title": "新维度与已有报告维度同时生效",
+      "status": "FAIL",
+      "reason": "原话返回报告语言 zh 和开头 conclusion。查询中缺代码语言 Rust。",
+      "check_failures": [
+        "q/dimensions/code_example.language/value eq \"rust\"",
+        "b/dimensions/code_example.language/scope/kind eq \"global\""
+      ],
+      "run_scope": "bmem_replay",
+      "evidence_pointer": "/replays/F01-01"
+    },
+    {
+      "id": "F01-02",
+      "title": "一句原话中项目例外按当地周五结束",
+      "status": "FAIL",
+      "reason": "包含全局默认和项目例外的原话返回 pending，生成零条修订。周五查看不到 Python，周六也没有全局 Rust。",
+      "run_scope": "decisive_partial_replay",
+      "check_failures": [
+        "fri/dimensions/code_example.language/value",
+        "sat/dimensions/code_example.language/value",
+        "other/dimensions/code_example.language/value"
+      ],
+      "evidence_pointer": "/replays/F01-02"
+    },
+    {
+      "id": "F01-03",
+      "title": "追溯后来才收到的过去生效声明",
+      "status": "NOT_RUN",
+      "reason_code": "clock_and_clause",
+      "reason": "当前版只读系统时间写 known_from，无法重现给定的收件时间和具名时区分句。原句写入可探测，时点验收缺控制面。",
+      "evidence_pointer": "/replays/F01-03"
+    },
+    {
+      "id": "F01-04",
+      "title": "单次要求限定任务，任务结束即退出",
+      "status": "NOT_RUN",
+      "reason_code": "task_override",
+      "reason": "未提供任务约定覆盖和任务结束撤销约定的入口。",
+      "evidence_pointer": "/replays/F01-04"
+    },
+    {
+      "id": "F01-05",
+      "title": "已支持分句继续生效，陌生维度保留原文",
+      "status": "FAIL",
+      "reason": "支持的代码语言分句和未支持的流程图颜色一起返回 pending。当前查询看不到应生效的 Rust。",
+      "run_scope": "decisive_partial_replay",
+      "check_failures": [
+        "q/dimensions/code_example.language/value"
+      ],
+      "evidence_pointer": "/replays/F01-05"
+    },
+    {
+      "id": "F01-06",
+      "title": "任务指代不明时保留候选，明确条件后可重申",
+      "status": "FAIL",
+      "reason": "补交明确的青禾项目原话后仍是 pending，查询不到应生效的 Python。",
+      "run_scope": "decisive_partial_replay",
+      "check_failures": [
+        "still_default/dimensions/code_example.language/value",
+        "resolved/dimensions/code_example.language/value",
+        "other/dimensions/code_example.language/value"
+      ],
+      "evidence_pointer": "/replays/F01-06"
+    },
+    {
+      "id": "F01-07",
+      "title": "相对截止日缺时区时只等待该分句",
+      "status": "FAIL",
+      "reason": "补交具名时区后仍没有代码语言修订。截止前查询不到应生效的 Python。",
+      "run_scope": "decisive_partial_replay",
+      "check_failures": [
+        "without/dimensions/code_example.language/value",
+        "correct/dimensions/code_example.language/value",
+        "past/dimensions/code_example.language/value"
+      ],
+      "evidence_pointer": "/replays/F01-07"
+    },
+    {
+      "id": "F01-08",
+      "title": "跨夏令时的周末按项目当地午夜到期",
+      "status": "NOT_RUN",
+      "reason_code": "clock_and_clause",
+      "reason": "当前版只读系统时间写 known_from，无法重现给定的收件时间和具名时区分句。原句写入可探测，时点验收缺控制面。",
+      "evidence_pointer": "/replays/F01-08"
+    },
+    {
+      "id": "F01-09",
+      "title": "永久纠正只改目标维度，遗忘后不能复活旧值",
+      "status": "NOT_RUN",
+      "reason_code": "revision_prerequisite",
+      "reason": "首条合成原话只产生 report.language 修订，缺少可绑定的代码语言修订 ID，无法执行目标纠正与撤回。",
+      "evidence_pointer": "/replays/F01-09"
+    },
+    {
+      "id": "F01-10",
+      "title": "重投同一命令复用修订，不同正文不能复用键",
+      "status": "FAIL",
+      "reason": "原请求与重试返回同一 statement ID，异文复用键返回 key_conflict。修订数为 0，Rust 未生效。",
+      "check_failures": [
+        "audit/revision_count eq 1",
+        "current/dimensions/code_example.language/value eq \"rust\""
+      ],
+      "run_scope": "bmem_replay",
+      "evidence_pointer": "/replays/F01-10"
+    },
+    {
+      "id": "F01-11",
+      "title": "助手的转述不覆盖本人约定，私有分句不交付",
+      "status": "FAIL",
+      "reason": "全局 Rust 与私有项目 Go 分别提交成功，但都返回 pending。所有者读不到应有的两种值，本例的宿主分享边界未进一步执行。",
+      "run_scope": "decisive_partial_replay",
+      "check_failures": [
+        "owner/dimensions/code_example.language/value",
+        "other/dimensions/code_example.language/value"
+      ],
+      "evidence_pointer": "/replays/F01-11"
+    },
+    {
+      "id": "F01-12",
+      "title": "旧修订无分句表仍能查询，新增维度不改变旧格式",
+      "status": "NOT_RUN",
+      "reason_code": "migration_target",
+      "reason": "现有版本可读旧报告维度。整例需要升级版迁移目标，再验证代码语言维度。",
+      "evidence_pointer": "/replays/F01-12"
+    },
+    {
+      "id": "F01-13",
+      "title": "CLI 和 Web 对同一候选时点试算，查询不产生动作",
+      "status": "FAIL",
+      "reason": "CLI 与所有者 HTTP 读取均没有该时刻的 Python 修订。读操作前后核对声明、投递及治理记录无变化。",
+      "check_failures": [
+        "cli/language eq \"python\"",
+        "web/language eq \"python\"",
+        "web/same_revision_as_cli eq true",
+        "after/changes eq {\"authority_seq\": 0, \"deliveries\": 0, \"receipts\": 0}"
+      ],
+      "run_scope": "bmem_replay",
+      "evidence_pointer": "/replays/F01-13"
+    },
+    {
+      "id": "F01-14",
+      "title": "两款真实宿主跨两个项目输出最小示例",
+      "status": "NOT_RUN",
+      "reason_code": "host_and_statement",
+      "reason": "原句写入未产生代码语言修订。已有双宿主回环端点可观测输入，其固定回复无法判定模型是否按项目生成代码语言。",
+      "evidence_pointer": "/replays/F01-14"
+    },
+    {
+      "id": "F01-15",
+      "title": "只查询与实际装入在两个客户端分别显示",
+      "status": "NOT_RUN",
+      "reason_code": "revision_prerequisite",
+      "reason": "代码语言修订未产生，无法按该修订对照 Codex 装入、只查询客户端和采用状态。",
+      "evidence_pointer": "/replays/F01-15"
+    },
+    {
+      "id": "F01-16",
+      "title": "同一范围同时给出两种互斥语言",
+      "status": "NOT_RUN",
+      "reason_code": "pending_details",
+      "reason": "现有报告语言出现，代码语言未生效。缺少按分句列出互斥键及其原因的解释面。",
+      "evidence_pointer": "/replays/F01-16"
+    },
+    {
+      "id": "F01-17",
+      "title": "纽约秋季回拨的 01:30 出现两次，明确偏移后采用第二次",
+      "status": "NOT_RUN",
+      "reason_code": "clock_and_clause",
+      "reason": "当前版只读系统时间写 known_from，无法重现给定的收件时间和具名时区分句。原句写入可探测，时点验收缺控制面。",
+      "evidence_pointer": "/replays/F01-17"
+    },
+    {
+      "id": "F01-18",
+      "title": "纽约春季跳时跳过 02:30，重报 03:30 后生效",
+      "status": "NOT_RUN",
+      "reason_code": "clock_and_clause",
+      "reason": "当前版只读系统时间写 known_from，无法重现给定的收件时间和具名时区分句。原句写入可探测，时点验收缺控制面。",
+      "evidence_pointer": "/replays/F01-18"
+    },
+    {
+      "id": "F02-01",
+      "title": "真实交接 Claude Code → Codex",
+      "status": "NOT_RUN",
+      "reason_code": "tool_handoff_observation",
+      "reason": "两款宿主的现有双向插入已在旁路实测。样本内的 package_mode、真实修复步选择和独立工件归因仍缺完整观测链。"
+    },
+    {
+      "id": "F02-02",
+      "title": "真实交接 Codex → Claude Code",
+      "status": "NOT_RUN",
+      "reason_code": "tool_handoff_observation",
+      "reason": "两款宿主的现有双向插入已在旁路实测。样本内的 package_mode、真实修复步选择和独立工件归因仍缺完整观测链。"
+    },
+    {
+      "id": "F02-03",
+      "title": "同一上下文已证实保有基线后只发送变化",
+      "status": "NOT_RUN",
+      "reason_code": "evidence_receipt",
+      "reason": "旧装入 complete 只确认声明。留存证据清单、摘要绑定、部分证据装入与差量验收缺接口。"
+    },
+    {
+      "id": "F02-04",
+      "title": "同一宿主另开空会话必须补回基线",
+      "status": "NOT_RUN",
+      "reason_code": "context_checkpoint",
+      "reason": "新会话能装包，缺当前版本的证据留存凭据、压缩代次与全包标志，无法验收新会话回补和历史变化标注。"
+    },
+    {
+      "id": "F02-05",
+      "title": "压缩重新建上下文后旧摘要不作留存凭证",
+      "status": "NOT_RUN",
+      "reason_code": "context_checkpoint",
+      "reason": "新会话能装包，缺当前版本的证据留存凭据、压缩代次与全包标志，无法验收新会话回补和历史变化标注。"
+    },
+    {
+      "id": "F02-06",
+      "title": "旧宿主只出具声明 complete 回执",
+      "status": "NOT_RUN",
+      "reason_code": "package_mode",
+      "reason": "已实测旧声明回执 complete=true，下一次 snapshot_mode=unchanged，原检查和新重试均交付。响应缺独立的 package_mode 字段。",
+      "evidence_pointer": "/replays/F02-06"
+    },
+    {
+      "id": "F02-07",
+      "title": "宿主只装入前半份证据，必须重给整包",
+      "status": "NOT_RUN",
+      "reason_code": "evidence_receipt",
+      "reason": "旧装入 complete 只确认声明。留存证据清单、摘要绑定、部分证据装入与差量验收缺接口。"
+    },
+    {
+      "id": "F02-08",
+      "title": "声明与证据预算独立，预算不足时显示缺口",
+      "status": "PASS",
+      "reason": "证据预算为 0 时没有证据且标为 budget_zero，声明 zh 仍在。增大预算后解析与写入两个字段均交付。",
+      "check_failures": [],
+      "run_scope": "bmem_replay",
+      "evidence_pointer": "/replays/F02-08"
+    },
+    {
+      "id": "F02-09",
+      "title": "第 51 条工具失败越过旧版前 50 条截断",
+      "status": "FAIL",
+      "reason": "51 个活动事件已入库，e51 确认排在第 51。按用例给定预算的服务包未提供 e51，真实 Codex 请求也未带 e51 的解析或写入字段。",
+      "check_failures": [
+        "input/refs contains \"e51#/checks/write\"",
+        "input/refs contains \"e51#/checks/parse\""
+      ],
+      "run_scope": "bmem_replay",
+      "evidence_pointer": "/replays/F02-09"
+    },
+    {
+      "id": "F02-10",
+      "title": "同仓另一任务的成功不能抵消本任务失败",
+      "status": "PASS",
+      "reason": "真实 Codex 的 T1 输入含 check 写入超时，无 foreign；T2 含 foreign 写入通过，无 check。",
+      "check_failures": [],
+      "run_scope": "bmem_replay",
+      "evidence_pointer": "/replays/F02-10"
+    },
+    {
+      "id": "F02-11",
+      "title": "同名任务只能提示获准区分的候选",
+      "status": "NOT_RUN",
+      "reason_code": "task_resolution",
+      "reason": "现有宿主按绑定 task_id 装包，未提供按同名任务返回经权限裁剪的候选选择。"
+    },
+    {
+      "id": "F02-12",
+      "title": "只有准备执行的计划，查不到真实结果",
+      "status": "NOT_RUN",
+      "reason_code": "handoff_summary",
+      "reason": "已注入样本计划并取到任务包。没有所需 package_mode、执行结果未知和上次接手位置的投影。",
+      "evidence_pointer": "/replays/F02-12"
+    },
+    {
+      "id": "F02-13",
+      "title": "撤权限后仅追加宿主拒用旧包，重开保留合法检查",
+      "status": "NOT_RUN",
+      "reason_code": "evidence_receipt",
+      "reason": "现有来源级撤权、旧句柄与仅追加上下文回归已验证。该样本还需证据装入回执及旧保留依据的同会话复用。"
+    },
+    {
+      "id": "F02-14",
+      "title": "交付回包丢失与较迟回执均不能制造装入或采用",
+      "status": "NOT_RUN",
+      "reason_code": "receipt_contract",
+      "reason": "旧服务支持交付幂等和声明回执，缺独立的任务包模式及本例新旧证据交付对账。"
+    },
+    {
+      "id": "F02-15",
+      "title": "证明的摘要或路由不匹配时不得省略必需证据",
+      "status": "NOT_RUN",
+      "reason_code": "retained_manifest",
+      "reason": "绑定身份支持路由拒绝。任务包不暴露 retained_manifest 的核验结果和回退模式。"
+    },
+    {
+      "id": "F02-16",
+      "title": "四类观测分别计数，未知结果保留在接手分母",
+      "status": "NOT_RUN",
+      "reason_code": "handoff_metrics",
+      "reason": "有投递账本和独立结果入口，缺最终必需证据覆盖、采用和补背景轮数的组合汇总。"
+    },
+    {
+      "id": "F03-01",
+      "title": "选中对象和日期只在所有者确认后开始采集",
+      "status": "NOT_RUN",
+      "reason_code": "history_results",
+      "reason": "作业列表可读。目标或页到原生版本的去向明细和分页接口在 release 返回 404。03/04 另用同样本直接提交来源页并读取回执。"
+    },
+    {
+      "id": "F03-02",
+      "title": "作业含空目标与失败目标时保留各自状态",
+      "status": "NOT_RUN",
+      "reason_code": "history_results",
+      "reason": "作业列表可读。目标或页到原生版本的去向明细和分页接口在 release 返回 404。03/04 另用同样本直接提交来源页并读取回执。"
+    },
+    {
+      "id": "F03-03",
+      "title": "同一提交页重试只推进一次游标",
+      "status": "NOT_RUN",
+      "reason_code": "history_results",
+      "reason": "作业列表可读。目标或页到原生版本的去向明细和分页接口在 release 返回 404。03/04 另用同样本直接提交来源页并读取回执。",
+      "evidence_pointer": "/replays/F03-03"
+    },
+    {
+      "id": "F03-04",
+      "title": "独立作业重导同一原生版本显示重复",
+      "status": "NOT_RUN",
+      "reason_code": "history_results",
+      "reason": "作业列表可读。目标或页到原生版本的去向明细和分页接口在 release 返回 404。03/04 另用同样本直接提交来源页并读取回执。",
+      "evidence_pointer": "/replays/F03-04"
+    },
+    {
+      "id": "F03-05",
+      "title": "首屏水位在新增页后保持稳定，刷新可见末页",
+      "status": "NOT_RUN",
+      "reason_code": "history_results",
+      "reason": "作业列表可读。目标或页到原生版本的去向明细和分页接口在 release 返回 404。03/04 另用同样本直接提交来源页并读取回执。"
+    },
+    {
+      "id": "F03-06",
+      "title": "页提交中断后用同一游标重试不会跨过事件",
+      "status": "NOT_RUN",
+      "reason_code": "history_results",
+      "reason": "作业列表可读。目标或页到原生版本的去向明细和分页接口在 release 返回 404。03/04 另用同样本直接提交来源页并读取回执。"
+    },
+    {
+      "id": "F03-07",
+      "title": "暂停后收紧提炼授权，恢复仅处理仍获准的版本",
+      "status": "NOT_RUN",
+      "reason_code": "candidate_disposition",
+      "reason": "有后台提炼作业，缺导入版本到提炼资格和逐候选采纳、合并、待证或拒绝理由的联查。"
+    },
+    {
+      "id": "F03-08",
+      "title": "提炼完成且零候选仍可查看已采集原句",
+      "status": "NOT_RUN",
+      "reason_code": "candidate_disposition",
+      "reason": "有后台提炼作业，缺导入版本到提炼资格和逐候选采纳、合并、待证或拒绝理由的联查。"
+    },
+    {
+      "id": "F03-09",
+      "title": "提炼报错的版本在重试后仍只采集一次",
+      "status": "NOT_RUN",
+      "reason_code": "candidate_disposition",
+      "reason": "有后台提炼作业，缺导入版本到提炼资格和逐候选采纳、合并、待证或拒绝理由的联查。"
+    },
+    {
+      "id": "F03-10",
+      "title": "同片段两个候选归并到同一核验观察",
+      "status": "NOT_RUN",
+      "reason_code": "candidate_disposition",
+      "reason": "有后台提炼作业，缺导入版本到提炼资格和逐候选采纳、合并、待证或拒绝理由的联查。"
+    },
+    {
+      "id": "F03-11",
+      "title": "待证的建议和没有原句的提议分别保留裁定",
+      "status": "NOT_RUN",
+      "reason_code": "candidate_disposition",
+      "reason": "有后台提炼作业，缺导入版本到提炼资格和逐候选采纳、合并、待证或拒绝理由的联查。"
+    },
+    {
+      "id": "F03-12",
+      "title": "两个可证转述沿原文去重，独立运行回执单列",
+      "status": "NOT_RUN",
+      "reason_code": "provenance_graph",
+      "reason": "原生对象版本有根 ID。缺跨来源转述的稳定引用、独立案例数和同源未知的输出。"
+    },
+    {
+      "id": "F03-13",
+      "title": "跨来源同文且没有版本引用时保留未确定关系",
+      "status": "NOT_RUN",
+      "reason_code": "provenance_graph",
+      "reason": "原生对象版本有根 ID。缺跨来源转述的稳定引用、独立案例数和同源未知的输出。"
+    },
+    {
+      "id": "F03-14",
+      "title": "来源新增版本后掉线仍能回查本地获准旧版本",
+      "status": "NOT_RUN",
+      "reason_code": "historical_version",
+      "reason": "缺在同一次导入去向中解释远端覆盖缺口并按原生版本回查本地旧记录的入口。"
+    },
+    {
+      "id": "F03-15",
+      "title": "根撤回优先于迟到页及已在途的提炼结果",
+      "status": "NOT_RUN",
+      "reason_code": "root_forget_and_jobs",
+      "reason": "来源原生撤回和旧版本重投有现有回归。此例所需所有者单根遗忘与在途候选终态联查缺接口。"
+    },
+    {
+      "id": "F03-16",
+      "title": "一次回填保持持续采集开关，老作业只给历史汇总",
+      "status": "NOT_RUN",
+      "reason_code": "legacy_import_projection",
+      "reason": "持续采集与一次性回填已有独立控制。缺旧作业映射覆盖状态和逐项去向，无法完成对照。"
+    },
+    {
+      "id": "F04-01",
+      "title": "带连字符的完整错误码定位原句和版本",
+      "status": "NOT_RUN",
+      "reason_code": "hybrid_search",
+      "reason": "使用本例语料请求 mode=hybrid，release 实返 422，仅接受 lexical/vector。其余观察保存在回放文件。",
+      "evidence_pointer": "/replays/F04-01"
+    },
+    {
+      "id": "F04-02",
+      "title": "语义改写在真实搜索入口找回无共同关键词的原句",
+      "status": "NOT_RUN",
+      "reason_code": "hybrid_search",
+      "reason": "使用本例语料请求 mode=hybrid，release 实返 422，仅接受 lexical/vector。其余观察保存在回放文件。",
+      "evidence_pointer": "/replays/F04-02"
+    },
+    {
+      "id": "F04-03",
+      "title": "精确码和语义独有证据分别获得候选名额",
+      "status": "NOT_RUN",
+      "reason_code": "fusion",
+      "reason": "没有同时启用两路候选及配额、去重、通道名次与稳定同分输出的查询入口。"
+    },
+    {
+      "id": "F04-04",
+      "title": "同片段两路命中只占一格，保留每路名次",
+      "status": "NOT_RUN",
+      "reason_code": "fusion",
+      "reason": "没有同时启用两路候选及配额、去重、通道名次与稳定同分输出的查询入口。"
+    },
+    {
+      "id": "F04-05",
+      "title": "交换通道遍历顺序后，只有一席的同分结果保持稳定",
+      "status": "NOT_RUN",
+      "reason_code": "fusion",
+      "reason": "没有同时启用两路候选及配额、去重、通道名次与稳定同分输出的查询入口。"
+    },
+    {
+      "id": "F04-06",
+      "title": "诊断补读仅取同次工具调用的回执",
+      "status": "NOT_RUN",
+      "reason_code": "neighbor_expansion",
+      "reason": "现有补读需要直接给句柄。缺同次工具调用关联、剩余预算窗口、证据缺口和结果状态。"
+    },
+    {
+      "id": "F04-07",
+      "title": "附近只有计划时保留计划并标记结果未知",
+      "status": "NOT_RUN",
+      "reason_code": "neighbor_expansion",
+      "reason": "现有补读需要直接给句柄。缺同次工具调用关联、剩余预算窗口、证据缺口和结果状态。"
+    },
+    {
+      "id": "F04-08",
+      "title": "无依据的查询可以交付空证据包",
+      "status": "FAIL",
+      "reason": "所有者词法查询命中 0 条，Codex 实际收到不相关的 palette。实际输入不满足无依据查询交付空包。",
+      "check_failures": [
+        "input/model_input_evidence_refs eq []"
+      ],
+      "run_scope": "bmem_replay",
+      "evidence_pointer": "/replays/F04-08"
+    },
+    {
+      "id": "F04-09",
+      "title": "向量关闭和服务超时都继续返回词法精确命中",
+      "status": "NOT_RUN",
+      "reason_code": "hybrid_search",
+      "reason": "使用本例语料请求 mode=hybrid，release 实返 422，仅接受 lexical/vector。其余观察保存在回放文件。",
+      "evidence_pointer": "/replays/F04-09"
+    },
+    {
+      "id": "F04-10",
+      "title": "所有者仍能找同码的两个项目，助手实收只含本任务获准记录",
+      "status": "NOT_RUN",
+      "reason_code": "hybrid_search",
+      "reason": "使用本例语料请求 mode=hybrid，release 实返 422，仅接受 lexical/vector。其余观察保存在回放文件。",
+      "evidence_pointer": "/replays/F04-10"
+    },
+    {
+      "id": "F04-11",
+      "title": "加入更高匹配的禁读记录不改变助手所见顺序和解释",
+      "status": "NOT_RUN",
+      "reason_code": "recipient_rank",
+      "reason": "普通绑定客户端只搜索获准共享声明。缺按接收者产生候选、理由和可见计数的任务混合通道。"
+    },
+    {
+      "id": "F04-12",
+      "title": "命中获准但邻文被拒时，按授权跳过并保留可读结果",
+      "status": "NOT_RUN",
+      "reason_code": "neighbor_expansion",
+      "reason": "现有补读需要直接给句柄。缺同次工具调用关联、剩余预算窗口、证据缺口和结果状态。"
+    },
+    {
+      "id": "F04-13",
+      "title": "补读只能用剩余预算，预算增加后真实输入含结果",
+      "status": "NOT_RUN",
+      "reason_code": "neighbor_expansion",
+      "reason": "现有补读需要直接给句柄。缺同次工具调用关联、剩余预算窗口、证据缺口和结果状态。"
+    },
+    {
+      "id": "F04-14",
+      "title": "只给定向阅读许可的来源不进入助手接手上下文",
+      "status": "NOT_RUN",
+      "reason_code": "hybrid_search",
+      "reason": "现有来源用途与接收端授权可在真实宿主测试覆盖。整例依赖所有者混合搜索及两读者输入的同样本对照。"
+    },
+    {
+      "id": "F04-15",
+      "title": "区分找到原句、送入证据、最后任务验证失败",
+      "status": "NOT_RUN",
+      "reason_code": "evidence_attribution",
+      "reason": "缺以候选种子追溯到实际送入与独立验证的共同标识和结果观察。"
+    },
+    {
+      "id": "F04-16",
+      "title": "读取精确命中时只返回匹配时的版本，当前版本另可检索",
+      "status": "NOT_RUN",
+      "reason_code": "hybrid_search",
+      "reason": "使用本例语料请求 mode=hybrid，release 实返 422，仅接受 lexical/vector。其余观察保存在回放文件。",
+      "evidence_pointer": "/replays/F04-16"
+    },
+    {
+      "id": "F04-17",
+      "title": "四类题同预算对照三种召回，再冻结同一批候选比较补读",
+      "status": "NOT_RUN",
+      "reason_code": "paired_retrieval",
+      "reason": "缺并集通道，以及被冻结候选预算下邻文开关的记录和真实宿主对照。"
+    },
+    {
+      "id": "F05-01",
+      "title": "同一快照试算两位助手，核对真实授权和凭单",
+      "status": "NOT_RUN",
+      "reason_code": "dual_reader_preview",
+      "reason": "预览支持操作凭单。缺所有者按 A/B 读取同一快照前后的对照。单根拒读预检返回 404。"
+    },
+    {
+      "id": "F05-02",
+      "title": "确认只撤 A 对单根的权限，旧句柄和待发包同样失效",
+      "status": "NOT_RUN",
+      "reason_code": "root_grant",
+      "reason": "现有客户端授权按来源，缺对讨论根按用途拒读、根集合漂移重新确认及历史读取裁剪。"
+    },
+    {
+      "id": "F05-03",
+      "title": "受限助手收不到标题、摘要、计数和对照描述",
+      "status": "NOT_RUN",
+      "reason_code": "dual_reader_preview",
+      "reason": "预览支持操作凭单。缺所有者按 A/B 读取同一快照前后的对照。单根拒读预检返回 404。"
+    },
+    {
+      "id": "F05-04",
+      "title": "所有者试算也按本人当前可读范围裁剪",
+      "status": "NOT_RUN",
+      "reason_code": "dual_reader_preview",
+      "reason": "预览支持操作凭单。缺所有者按 A/B 读取同一快照前后的对照。单根拒读预检返回 404。"
+    },
+    {
+      "id": "F05-05",
+      "title": "经历降温后可按原句找回，低频声明仍生效",
+      "status": "NOT_RUN",
+      "reason_code": "aging",
+      "reason": "降温、恢复默认交付优先级的操作不存在，探测返回 404。"
+    },
+    {
+      "id": "F05-06",
+      "title": "临时覆盖到期后重选默认值，历史查询保留时点解释",
+      "status": "NOT_RUN",
+      "reason_code": "expiring_clause",
+      "reason": "当前有效起点可查，缺临时有效终点与自动回到下层默认约定的契约。"
+    },
+    {
+      "id": "F05-07",
+      "title": "永久纠正项撤回后，被替换的旧值不能自动复活",
+      "status": "PASS",
+      "reason": "撤前新修订生效，撤后旧值未恢复，隔离库只读核对旧修订到新修订的替代关系。",
+      "check_failures": [],
+      "run_scope": "bmem_replay",
+      "evidence_pointer": "/replays/F05-07"
+    },
+    {
+      "id": "F05-08",
+      "title": "讨论所含根集合变化，旧凭单不能扩大确认范围",
+      "status": "NOT_RUN",
+      "reason_code": "root_grant",
+      "reason": "现有客户端授权按来源，缺对讨论根按用途拒读、根集合漂移重新确认及历史读取裁剪。"
+    },
+    {
+      "id": "F05-09",
+      "title": "联合前提缺一时立即屏蔽旧结论及其下游",
+      "status": "NOT_RUN",
+      "reason_code": "support_groups",
+      "reason": "缺联合/替代支持组、依赖链级联及从仍获准证据重建摘要的状态。"
+    },
+    {
+      "id": "F05-10",
+      "title": "备用支持组可独立证明结论，重建文本清除撤回细节",
+      "status": "NOT_RUN",
+      "reason_code": "support_groups",
+      "reason": "缺联合/替代支持组、依赖链级联及从仍获准证据重建摘要的状态。"
+    },
+    {
+      "id": "F05-11",
+      "title": "遗忘先提交，持旧租约的提炼结果不得再交付",
+      "status": "NOT_RUN",
+      "reason_code": "root_forget",
+      "reason": "缺所有者单根遗忘操作及本例配套的迟到提炼/重导终态。来源级撤回已有回归。"
+    },
+    {
+      "id": "F05-12",
+      "title": "迟到的历史导入页重送已遗忘版本和同源合法版本",
+      "status": "NOT_RUN",
+      "reason_code": "root_forget",
+      "reason": "缺所有者单根遗忘操作及本例配套的迟到提炼/重导终态。来源级撤回已有回归。"
+    },
+    {
+      "id": "F05-13",
+      "title": "原机旧备份恢复预览应用本机更新的撤回清单",
+      "status": "NOT_RUN",
+      "reason_code": "restore_replay",
+      "reason": "已用样本创建管理备份。单根 forget 的预检不接受 target.root_id，恢复端也只提供管理备份预览。",
+      "evidence_pointer": "/replays/F05-13"
+    },
+    {
+      "id": "F05-14",
+      "title": "空实例只剩旧备份时标明可证明截止点",
+      "status": "NOT_RUN",
+      "reason_code": "restore_clock_and_observation",
+      "reason": "已把同样本管理备份复制到空实例。真实预览 blocked、can_apply=false、查询空；缺固定备份时钟及助手恢复面中的后续撤回状态字段。",
+      "evidence_pointer": "/replays/F05-14"
+    },
+    {
+      "id": "F05-15",
+      "title": "受管清理失败时禁读继续，已发的外部副本单独列示",
+      "status": "NOT_RUN",
+      "reason_code": "cleanup_receipts",
+      "reason": "缺受管清理异常注入、已外发副本和删除证明三者的联查账本。"
+    },
+    {
+      "id": "F05-16",
+      "title": "按旧日期查历史仍受今天的接收端许可约束",
+      "status": "NOT_RUN",
+      "reason_code": "root_grant",
+      "reason": "现有客户端授权按来源，缺对讨论根按用途拒读、根集合漂移重新确认及历史读取裁剪。"
+    },
+    {
+      "id": "F06-01",
+      "title": "同一方法在 v1 两次独立通过，v2 反例保留出处",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-02",
+      "title": "询问 v2 时先指出失败条件并给待验步骤",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-03",
+      "title": "输入没有工件版本时保留不确定性",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-04",
+      "title": "仅有一次成功时说明实际案例数，不能推及全版本",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-05",
+      "title": "转发和截图沿来源链折叠为一次运行",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-06",
+      "title": "来源关系无法证实的转述单列未知",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-07",
+      "title": "取消和待执行计划都不计为成功或失败案例",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-08",
+      "title": "唯一前提来源被撤回，其他方法仍能进入交接",
+      "status": "NOT_RUN",
+      "reason_code": "method_revision_lineage",
+      "reason": "缺方法修订及前提依赖，无法触发前提撤回、重算、恢复或算法回退后的可追溯对照。"
+    },
+    {
+      "id": "F06-09",
+      "title": "缺失的前提由新来源补齐，只发布新修订",
+      "status": "NOT_RUN",
+      "reason_code": "method_revision_lineage",
+      "reason": "缺方法修订及前提依赖，无法触发前提撤回、重算、恢复或算法回退后的可追溯对照。"
+    },
+    {
+      "id": "F06-10",
+      "title": "撤回唯一的 v2 失败证据后不得产生 v2 成功结论",
+      "status": "NOT_RUN",
+      "reason_code": "method_revision_lineage",
+      "reason": "缺方法修订及前提依赖，无法触发前提撤回、重算、恢复或算法回退后的可追溯对照。"
+    },
+    {
+      "id": "F06-11",
+      "title": "同名工件在另一项目的成功回执不能给当前方法背书",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-12",
+      "title": "部分步骤通过时保留阶段结果，整项修复仍失败",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-13",
+      "title": "同版本出现反例时按额外条件收窄建议",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-14",
+      "title": "提炼器提出全版本有效时必须经权威裁定",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F06-15",
+      "title": "关闭反例归纳器后，已裁定的修订继续受现行治理",
+      "status": "NOT_RUN",
+      "reason_code": "method_revision_lineage",
+      "reason": "缺方法修订及前提依赖，无法触发前提撤回、重算、恢复或算法回退后的可追溯对照。"
+    },
+    {
+      "id": "F06-16",
+      "title": "相同反例仅向当前获准读者说明失败细节",
+      "status": "NOT_RUN",
+      "reason_code": "method_cards",
+      "reason": "当前版可保存计划、工具结果并交付原文，缺按工件版本查询方法、条件、独立支持与获准反例的接口。"
+    },
+    {
+      "id": "F07-01",
+      "title": "关闭评测时纠正仍在下次调用生效",
+      "status": "NOT_RUN",
+      "reason_code": "correction_to_replay",
+      "reason": "通用声明纠正存在。缺针对本次错误投递创建回归用例的入口，以及本样本需要的代码语言维度。"
+    },
+    {
+      "id": "F07-02",
+      "title": "有评测许可的错项目反馈形成可重放用例",
+      "status": "NOT_RUN",
+      "reason_code": "evaluation_catalogue",
+      "reason": "当前版缺评测用例、评测/训练用途、冻结集、数据划分和训练工件依赖。"
+    },
+    {
+      "id": "F07-03",
+      "title": "获准评测的样本不能直接转为训练材料",
+      "status": "NOT_RUN",
+      "reason_code": "evaluation_catalogue",
+      "reason": "当前版缺评测用例、评测/训练用途、冻结集、数据划分和训练工件依赖。"
+    },
+    {
+      "id": "F07-04",
+      "title": "冻结后撤销评测授权会阻止旧集再次运行",
+      "status": "NOT_RUN",
+      "reason_code": "evaluation_catalogue",
+      "reason": "当前版缺评测用例、评测/训练用途、冻结集、数据划分和训练工件依赖。"
+    },
+    {
+      "id": "F07-05",
+      "title": "根来源、任务族和时间留出阻止转述泄入验证集",
+      "status": "NOT_RUN",
+      "reason_code": "evaluation_catalogue",
+      "reason": "当前版缺评测用例、评测/训练用途、冻结集、数据划分和训练工件依赖。"
+    },
+    {
+      "id": "F07-06",
+      "title": "四组配对使用独立空会话，逐组核对最终输入",
+      "status": "NOT_RUN",
+      "reason_code": "paired_release",
+      "reason": "缺四组配对执行、分宿主比较、预登记门槛与按项目/宿主激活策略的发布接口。"
+    },
+    {
+      "id": "F07-07",
+      "title": "分别报告两款宿主上的修复、退化与未知",
+      "status": "NOT_RUN",
+      "reason_code": "paired_release",
+      "reason": "缺四组配对执行、分宿主比较、预登记门槛与按项目/宿主激活策略的发布接口。"
+    },
+    {
+      "id": "F07-08",
+      "title": "服务提供、实际装入、采用与独立通过分别计数",
+      "status": "NOT_RUN",
+      "reason_code": "loaded_evidence",
+      "reason": "旧账本支持声明装入和独立任务结果，缺对 evidence_ref 的逐片段装入/使用联查，不能完整重放这一条。"
+    },
+    {
+      "id": "F07-09",
+      "title": "无答案题把借用另一项目的证据计为错用",
+      "status": "NOT_RUN",
+      "reason_code": "evaluation_catalogue",
+      "reason": "当前版缺评测用例、评测/训练用途、冻结集、数据划分和训练工件依赖。"
+    },
+    {
+      "id": "F07-10",
+      "title": "回退排序策略保留刚纠正的声明与删除标记",
+      "status": "NOT_RUN",
+      "reason_code": "policy_rollback",
+      "reason": "通用纠正与遗忘可执行，缺已发布排序策略的回切入口和按当前策略观察的字段。"
+    },
+    {
+      "id": "F07-11",
+      "title": "冻结集中的查询本身也受遗忘约束",
+      "status": "NOT_RUN",
+      "reason_code": "evaluation_catalogue",
+      "reason": "当前版缺评测用例、评测/训练用途、冻结集、数据划分和训练工件依赖。"
+    },
+    {
+      "id": "F07-12",
+      "title": "撤去训练授权后沿工件依赖停用受影响版本",
+      "status": "NOT_RUN",
+      "reason_code": "evaluation_catalogue",
+      "reason": "当前版缺评测用例、评测/训练用途、冻结集、数据划分和训练工件依赖。"
+    },
+    {
+      "id": "F07-13",
+      "title": "有收益但缺少足够独立核验时保留现行版本",
+      "status": "NOT_RUN",
+      "reason_code": "paired_release",
+      "reason": "缺四组配对执行、分宿主比较、预登记门槛与按项目/宿主激活策略的发布接口。"
+    },
+    {
+      "id": "F07-14",
+      "title": "收益达标仍会被禁止证据命中阻断",
+      "status": "NOT_RUN",
+      "reason_code": "paired_release",
+      "reason": "缺四组配对执行、分宿主比较、预登记门槛与按项目/宿主激活策略的发布接口。"
+    },
+    {
+      "id": "F07-15",
+      "title": "每成功任务成本含失败消耗，三个主指标分别计算",
+      "status": "NOT_RUN",
+      "reason_code": "evaluation_metrics",
+      "reason": "缺把固定遥测输入转换为指定业务指标、等待时间与发布判定的现有实现。"
+    },
+    {
+      "id": "F07-16",
+      "title": "按预登记口径报告查询尾延迟、采集等待和补背景轮数",
+      "status": "NOT_RUN",
+      "reason_code": "evaluation_metrics",
+      "reason": "缺把固定遥测输入转换为指定业务指标、等待时间与发布判定的现有实现。"
+    },
+    {
+      "id": "F07-17",
+      "title": "净收益下界和成本恰好达标时只发布到获准宿主与项目",
+      "status": "NOT_RUN",
+      "reason_code": "paired_release",
+      "reason": "缺四组配对执行、分宿主比较、预登记门槛与按项目/宿主激活策略的发布接口。"
+    },
+    {
+      "id": "X01-01",
+      "title": "直接复用 Hindsight 与独立公式在合成排名上逐条对照",
+      "status": "PASS",
+      "reason": "重新运行固定提交 Hindsight 和独立公式。重叠、空通道、并列及翻转顺序四组输出满足断言。",
+      "check_failures": [],
+      "run_scope": "standalone_upstream",
+      "evidence_pointer": "/replays/X01-01"
+    },
+    {
+      "id": "X01-02",
+      "title": "新版采集器从共同边界续读旧游标",
+      "status": "NOT_RUN",
+      "reason_code": "connector_switch",
+      "reason": "缺新版采集器与旧游标切换能力。现有单采集器的续读可在回归套件核对。"
+    },
+    {
+      "id": "X01-03",
+      "title": "换分段器后中文及标点仍能回指同一原句",
+      "status": "NOT_RUN",
+      "reason_code": "splitter_switch",
+      "reason": "缺可选分段器及两种片段位置与原文回指的同输入对照端口。"
+    },
+    {
+      "id": "X01-04",
+      "title": "有相同文字的两次原生运行不能由相似度算法合根",
+      "status": "NOT_RUN",
+      "reason_code": "dedup_strategy",
+      "reason": "原生版本幂等存在，缺转述级同源建议、独立支持裁定及计数的替换实现。"
+    },
+    {
+      "id": "X01-05",
+      "title": "提炼服务离线和无原文提议均不会污染正式声明",
+      "status": "NOT_RUN",
+      "reason_code": "extractor_adapter",
+      "reason": "现有模型端点授权与提炼重试有回归覆盖。缺针对该第三方提议契约的适配和重放。"
+    },
+    {
+      "id": "X01-06",
+      "title": "更新邻居元数据时以稳定版本标识定位",
+      "status": "NOT_RUN",
+      "reason_code": "evolution_adapter",
+      "reason": "缺按笔记版本提交邻居演化提议和拒绝迟到旧提案的产品端口。"
+    },
+    {
+      "id": "X01-07",
+      "title": "迟到的自进化提案不能覆盖新纠正",
+      "status": "NOT_RUN",
+      "reason_code": "evolution_adapter",
+      "reason": "缺按笔记版本提交邻居演化提议和拒绝迟到旧提案的产品端口。"
+    },
+    {
+      "id": "X01-08",
+      "title": "时态图仅在每一跳仍获准时提供路径",
+      "status": "NOT_RUN",
+      "reason_code": "graph_projection",
+      "reason": "缺可替代的时态关系存储以及逐跳授权的任务查询。"
+    },
+    {
+      "id": "X01-09",
+      "title": "更换冷热算法保住低频有效约定和历史定向查询",
+      "status": "NOT_RUN",
+      "reason_code": "eviction_strategy",
+      "reason": "缺可配置的冷热策略以及默认交付与定向查询联测入口。"
+    },
+    {
+      "id": "X01-10",
+      "title": "权威存储迁移在新库写入后必须追平再回切",
+      "status": "NOT_RUN",
+      "reason_code": "authority_backend",
+      "reason": "只提供 SQLite 权威库，缺第二个写端、迁移与完整回切路径。"
+    },
+    {
+      "id": "X01-11",
+      "title": "相同维度的新嵌入空间独立重建并核撤回水位",
+      "status": "NOT_RUN",
+      "reason_code": "projection_switch",
+      "reason": "现有向量单路与词法回退可运行，缺新旧空间并行对照、显式追平水位和切回指针。"
+    },
+    {
+      "id": "X01-12",
+      "title": "整系统黑盒在隔离副本比较，不可观察项记未知",
+      "status": "NOT_RUN",
+      "reason_code": "blackbox_comparison",
+      "reason": "当前版没有把三套实现按同一输入流和水位对照的执行器。"
+    },
+    {
+      "id": "X01-13",
+      "title": "新排序规则只用获准样本做影子评测",
+      "status": "NOT_RUN",
+      "reason_code": "shadow_policy",
+      "reason": "缺评测用途、候选规则工件和隔离影子运行入口。"
+    },
+    {
+      "id": "X01-14",
+      "title": "只有论文描述时区分本地复现与上游一致性",
+      "status": "NOT_RUN",
+      "reason_code": "paper_reproduction_adapter",
+      "reason": "样本是一份合成论文规则。release 无独立实现或复现适配器可作为被测对象。"
+    },
+    {
+      "id": "X01-15",
+      "title": "兼容读端加载旧修订和旧导入账目",
+      "status": "NOT_RUN",
+      "reason_code": "migration_target",
+      "reason": "需要升级读端、旧证据装入映射与旧历史账目标记，当前只有旧格式实例。"
+    },
+    {
+      "id": "E2E-01",
+      "title": "导入分散的排查记录，在另一款宿主从失败步骤继续",
+      "status": "NOT_RUN",
+      "reason_code": "cross_feature_handoff",
+      "reason": "缺导入逐项去向、代码语言、独立任务证据包模式及新尝试结果的整链对账。已验证旧宿主桥接。"
+    },
+    {
+      "id": "E2E-02",
+      "title": "撤权后旧句柄、可见候选、方法与空会话立即一致",
+      "status": "NOT_RUN",
+      "reason_code": "cross_feature_governance",
+      "reason": "缺所有者双读者试算、单根撤权和派生方法，无法执行组合演练。"
+    },
+    {
+      "id": "E2E-03",
+      "title": "纠正经进程重启、索引重建和算法回退后仍有效",
+      "status": "NOT_RUN",
+      "reason_code": "cross_feature_rollback",
+      "reason": "当前纠正和重启读回已有回归，缺具名算法回退与回归用例账本。"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+test_backup_preview_refuses_pre_forget_state (test_integration.BmemIntegration) ... ok
+test_concurrent_cli_and_web_save_one_settings_revision (test_integration.BmemIntegration) ... ok
+test_configuration_is_shared_versioned_and_replayed_after_restart (test_integration.BmemIntegration) ... ok
+test_explicit_root_is_registered_and_status_leaves_service_offline (test_integration.BmemIntegration) ... ok
+test_first_write_starts_the_registered_instance (test_integration.BmemIntegration) ... ok
+test_history_sync_preserves_offsets_and_pending_jobs_across_restart (test_integration.BmemIntegration) ... ok
+test_real_local_model_processes_fixture_page (test_integration.BmemIntegration) ... skipped 'set BMEM_V2_TEST_REAL_MODEL to opt in to the installed local Ollama model'
+test_restart_reuses_web_port_and_falls_back_when_occupied (test_integration.BmemIntegration) ... ok
+test_search_exclusions_before_limit_and_during_fallback (test_integration.BmemIntegration) ... ok
+test_source_page_and_outbox_commit_once_without_a_model (test_integration.BmemIntegration) ... ok
+test_source_revocation_blocks_an_unseen_older_version (test_integration.BmemIntegration) ... ok
+test_statement_correction_preserves_other_facts_and_isolates_scope (test_integration.BmemIntegration) ... ok
+test_synthetic_bound_host_receipts_and_revocation (test_integration.BmemIntegration) ... ok
+test_web_requires_owner_session_and_same_origin (test_integration.BmemIntegration) ... ok
+test_web_service_survives_its_launchers_process_group (test_integration.BmemIntegration) ... ok
+test_model_api_key_uses_database_without_echo_and_survives_restart (test_task_delivery.TaskDeliveryTest) ... ok
+test_server_extraction_requires_a_grant_for_the_current_endpoint (test_task_delivery.TaskDeliveryTest) ... ok
+test_task_source_permissions_budget_observations_and_append_only_resume (test_task_delivery.TaskDeliveryTest) ... ok
+test_exact_ranking_beyond_4096_candidates (test_vectors.VectorTest) ... ok
+test_long_events_are_complete_and_a_rejected_event_cannot_block_the_queue (test_vectors.VectorTest) ... ok
+test_opt_in_projection_ranking_and_lexical_fallback (test_vectors.VectorTest) ... ok
+test_allow_preview_without_ready_model_is_model_not_ready (test_governance_preview.GovernancePreviewTest) ... ok
+test_client_grant_previews_bind_target_rows (test_governance_preview.GovernancePreviewTest) ... ok
+test_concurrent_same_target_grant_change_requires_fresh_preview (test_governance_preview.GovernancePreviewTest) ... ok
+test_confirm_replay_returns_stored_receipt_and_consumes_preview (test_governance_preview.GovernancePreviewTest) ... ok
+test_embed_allow_preview_requires_enabled_vector_search (test_governance_preview.GovernancePreviewTest) ... ok
+test_extract_grant_confirm_survives_same_source_cursor_advance (test_governance_preview.GovernancePreviewTest) ... ok
+test_forget_source_binds_own_watermark_only (test_governance_preview.GovernancePreviewTest) ... ok
+test_forget_source_same_cursor_page_requires_fresh_preview (test_governance_preview.GovernancePreviewTest) ... ok
+test_forget_statement_binds_target_revision_only (test_governance_preview.GovernancePreviewTest) ... ok
+test_model_rebind_between_preview_and_confirm_conflicts (test_governance_preview.GovernancePreviewTest) ... ok
+test_stop_resume_capture_confirm_without_preview_unchanged (test_governance_preview.GovernancePreviewTest) ... ok
+test_task_delivery_preview_binds_recall_grant_row (test_governance_preview.GovernancePreviewTest) ... ok
+test_unrelated_activity_does_not_invalidate_grant_preview (test_governance_preview.GovernancePreviewTest) ... ok
+test_all_local_transcripts_include_archives_and_leave_capture_off (test_data_console.DataConsoleTest) ... ok
+test_data_export_and_import_receipts_come_from_the_same_vault (test_data_console.DataConsoleTest) ... ok
+test_manual_history_is_filtered_durable_and_deduplicated (test_data_console.DataConsoleTest) ... ok
+test_source_settings_reloaded_from_sqlite_after_service_restart (test_data_console.DataConsoleTest) ... ok
+
+----------------------------------------------------------------------
+Ran 38 tests in 65.239s
+
+OK (skipped=1)

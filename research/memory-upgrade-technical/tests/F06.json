@@ -1,0 +1,494 @@
+[
+  {
+    "id": "F06-01",
+    "title": "同一方法在 v1 两次独立通过，v2 反例保留出处",
+    "covers": ["independent_runs", "method_card", "versioned_evidence"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "a2", "root": "a2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "独立运行二：相同修复后实际写入 5/5。"},
+        {"id": "b1", "root": "b1.root", "artifact": "青禾转换器", "version": "v2", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "failed", "text": "运行三：相同做法在 v2 重放时写锁超时，实际写入 0/8。"}
+      ],
+      "grants": {"distill": ["a1.root", "a2.root", "b1.root"], "task_delivery": {"A": ["a1.root", "a2.root", "b1.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "v1", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？"}},
+      {"id": "evidence", "action": "按卡片引用补读所列证据原句", "args": {"reader": "A", "card_from_step": "v1", "evidence": ["a1", "a2", "b1"]}}
+    ],
+    "checks": [
+      {"at": "v1", "path": "/version_results/v1/independent_passed", "op": "eq", "value": 2},
+      {"at": "v1", "path": "/version_results/v2/independent_failed", "op": "eq", "value": 1},
+      {"at": "v1", "path": "/preconditions", "op": "contains", "value": "临时索引损坏"},
+      {"at": "v1", "path": "/steps", "op": "contains", "value": "先换临时索引，再重放写入"},
+      {"at": "evidence", "path": "/a1/text", "op": "contains", "value": "8/8"},
+      {"at": "evidence", "path": "/a2/text", "op": "contains", "value": "5/5"},
+      {"at": "evidence", "path": "/b1/text", "op": "contains", "value": "写锁超时"}
+    ]
+  },
+  {
+    "id": "F06-02",
+    "title": "询问 v2 时先指出失败条件并给待验步骤",
+    "covers": ["counterexample_first", "version_specific_next_check"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "a2", "root": "a2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "独立运行二：相同修复后实际写入 5/5。"},
+        {"id": "b1", "root": "b1.root", "artifact": "青禾转换器", "version": "v2", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "failed", "text": "运行三：相同做法在 v2 重放时写锁超时，实际写入 0/8。"}
+      ],
+      "grants": {"distill": ["a1.root", "a2.root", "b1.root"], "task_delivery": {"A": ["a1.root", "a2.root", "b1.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "v2", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v2", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "v2", "path": "/first_section", "op": "eq", "value": "known_failure"},
+      {"at": "v2", "path": "/first_evidence_ids", "op": "contains", "value": "b1"},
+      {"at": "v2", "path": "/first_section_text", "op": "contains", "value": "写锁超时"},
+      {"at": "v2", "path": "/next_step_status", "op": "eq", "value": "needs_verification"},
+      {"at": "v2", "path": "/confirmed_fix_ids", "op": "excludes", "value": "先换临时索引，再重放写入"}
+    ]
+  },
+  {
+    "id": "F06-03",
+    "title": "输入没有工件版本时保留不确定性",
+    "covers": ["unknown_version", "no_cross_version_promotion"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "a2", "root": "a2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "独立运行二：相同修复后实际写入 5/5。"},
+        {"id": "b1", "root": "b1.root", "artifact": "青禾转换器", "version": "v2", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "failed", "text": "运行三：相同做法在 v2 重放时写锁超时，实际写入 0/8。"}
+      ],
+      "grants": {"distill": ["a1.root", "a2.root", "b1.root"], "task_delivery": {"A": ["a1.root", "a2.root", "b1.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "unknown", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": null, "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "unknown", "path": "/applicability", "op": "eq", "value": "needs_verification"},
+      {"at": "unknown", "path": "/missing_conditions", "op": "contains", "value": "artifact_version"},
+      {"at": "unknown", "path": "/confirmed_fix_ids", "op": "excludes", "value": "先换临时索引，再重放写入"},
+      {"at": "unknown", "path": "/version_results/v2/independent_failed", "op": "eq", "value": 1}
+    ]
+  },
+  {
+    "id": "F06-04",
+    "title": "仅有一次成功时说明实际案例数，不能推及全版本",
+    "covers": ["single_observation", "scoped_claim", "untested_version"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"}
+      ],
+      "grants": {"distill": ["a1.root"], "task_delivery": {"A": ["a1.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "known", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？"}},
+      {"id": "other", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v3", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "known", "path": "/version_results/v1/independent_passed", "op": "eq", "value": 1},
+      {"at": "known", "path": "/version_results/v1/support_ids", "op": "eq", "value": ["a1"]},
+      {"at": "other", "path": "/applicability", "op": "eq", "value": "needs_verification"},
+      {"at": "other", "path": "/confirmed_fix_ids", "op": "excludes", "value": "先换临时索引，再重放写入"}
+    ]
+  },
+  {
+    "id": "F06-05",
+    "title": "转发和截图沿来源链折叠为一次运行",
+    "covers": ["same_origin_transitive", "forwarding", "deduplicate_cases"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "copy1", "root": "copy1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "reported", "text": "另一个会话抄录：修复后实际写入 8/8。", "cites": "a1", "kind": "forward"},
+        {"id": "copy2", "root": "copy2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "reported", "text": "截图转写：独立运行一写入 8/8。", "cites": "copy1", "kind": "transcription"},
+        {"id": "a2", "root": "a2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "独立运行二：相同修复后实际写入 5/5。"}
+      ],
+      "grants": {"distill": ["a1.root", "copy1.root", "copy2.root", "a2.root"], "task_delivery": {"A": ["a1.root", "copy1.root", "copy2.root", "a2.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "card", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "card", "path": "/version_results/v1/independent_passed", "op": "eq", "value": 2},
+      {"at": "card", "path": "/version_results/v1/support_ids", "op": "contains", "value": "a1"},
+      {"at": "card", "path": "/version_results/v1/support_ids", "op": "contains", "value": "a2"},
+      {"at": "card", "path": "/version_results/v1/support_ids", "op": "excludes", "value": "copy2"},
+      {"at": "card", "path": "/version_results/v1/support_ids", "op": "excludes", "value": "copy1"}
+    ]
+  },
+  {
+    "id": "F06-06",
+    "title": "来源关系无法证实的转述单列未知",
+    "covers": ["unknown_provenance", "uncertain_independence"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "unknown1", "root": "unknown1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "reported", "text": "听说也跑过并通过，原文和运行编号都没有保留。", "kind": "retelling", "cites": null}
+      ],
+      "grants": {"distill": ["a1.root", "unknown1.root"], "task_delivery": {"A": ["a1.root", "unknown1.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "card", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "card", "path": "/version_results/v1/independent_passed", "op": "eq", "value": 1},
+      {"at": "card", "path": "/unresolved_evidence_ids", "op": "contains", "value": "unknown1"},
+      {"at": "card", "path": "/version_results/v1/support_ids", "op": "excludes", "value": "unknown1"}
+    ]
+  },
+  {
+    "id": "F06-07",
+    "title": "取消和待执行计划都不计为成功或失败案例",
+    "covers": ["cancelled_attempt", "planned_only", "outcome_denominators"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "stop1", "root": "stop1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "cancelled", "text": "用户取消此次重放，写入尚未开始。"},
+        {"id": "todo1", "root": "todo1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "planned", "text": "准备在午后重放写入。", "kind": "plan"}
+      ],
+      "grants": {"distill": ["a1.root", "stop1.root", "todo1.root"], "task_delivery": {"A": ["a1.root", "stop1.root", "todo1.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "card", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？"}},
+      {"id": "audit", "action": "读取两个原始尝试的状态与工具回执", "args": {"actor": "u", "attempts": ["stop1", "todo1"]}}
+    ],
+    "checks": [
+      {"at": "card", "path": "/version_results/v1/independent_passed", "op": "eq", "value": 1},
+      {"at": "card", "path": "/version_results/v1/independent_failed", "op": "eq", "value": 0},
+      {"at": "card", "path": "/version_results/v1/counterexample_ids", "op": "excludes", "value": "stop1"},
+      {"at": "audit", "path": "/stop1/outcome", "op": "eq", "value": "cancelled"},
+      {"at": "audit", "path": "/todo1/verified_outcome", "op": "eq", "value": "unknown"}
+    ]
+  },
+  {
+    "id": "F06-08",
+    "title": "唯一前提来源被撤回，其他方法仍能进入交接",
+    "covers": ["unique_prerequisite", "support_and", "unrelated_method_preserved"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": null, "outcome": "passed", "text": "重放写入成功 8/8；工具没有记录索引状态。"},
+        {"id": "pre", "root": "pre.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "observed", "text": "维护日志确认青禾当前目录的临时索引已损坏。", "kind": "prerequisite"},
+        {"id": "keep", "root": "keep.root", "artifact": "青禾转换器", "version": "v1", "step": "改用合规目录", "observed_condition": "目录不可写", "outcome": "passed", "text": "独立方法“改用合规目录”已通过读写检查。"}
+      ],
+      "grants": {"distill": ["a1.root", "pre.root", "keep.root"], "task_delivery": {"A": ["a1.root", "pre.root", "keep.root"]}},
+      "method_dependencies": {"先换临时索引，再重放写入": [["a1", "pre"]], "改用合规目录": [["keep"]]}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "before", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？"}},
+      {"id": "withdraw", "action": "所有者完成根遗忘预览及确认", "args": {"actor": "u", "root": "pre.root"}},
+      {"id": "handoff", "action": "请求同工件 v1 的默认交接包", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1"}}
+    ],
+    "checks": [
+      {"at": "before", "path": "/steps", "op": "contains", "value": "先换临时索引，再重放写入"},
+      {"at": "handoff", "path": "/active_methods", "op": "excludes", "value": "先换临时索引，再重放写入"},
+      {"at": "handoff", "path": "/active_methods", "op": "contains", "value": "改用合规目录"},
+      {"at": "handoff", "path": "/evidence_ids", "op": "excludes", "value": "pre"}
+    ]
+  },
+  {
+    "id": "F06-09",
+    "title": "缺失的前提由新来源补齐，只发布新修订",
+    "covers": ["reacquired_prerequisite", "new_revision", "source_lineage"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": null, "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "p_old", "root": "p_old.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "observed", "text": "旧诊断：临时索引 CRC 错误。", "kind": "prerequisite"}
+      ],
+      "grants": {"distill": ["a1.root", "p_old.root"], "task_delivery": {"A": ["a1.root", "p_old.root"]}},
+      "stored_method": {"id": "m1", "revision": "m1.1", "supports": [["a1", "p_old"]]}
+    },
+    "steps": [
+      {"id": "drop", "action": "所有者确认遗忘唯一前提来源", "args": {"actor": "u", "root": "p_old.root"}},
+      {"id": "before", "action": "读取该方法当前可用状态", "args": {"reader": "A", "method": "先换临时索引，再重放写入"}},
+      {"id": "add", "action": "导入并授权独立的新诊断", "args": {"evidence": {"id": "p_new", "root": "p_new.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "observed", "text": "独立的新校验也确认临时索引 CRC 错误。", "kind": "prerequisite"}, "grant": {"distill": true, "task_delivery": ["A"]}}},
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "new", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "before", "path": "/default_delivery", "op": "eq", "value": false},
+      {"at": "new", "path": "/active_revision_ids", "op": "excludes", "value": "m1.1"},
+      {"at": "new", "path": "/evidence_ids", "op": "contains", "value": "p_new"},
+      {"at": "new", "path": "/evidence_ids", "op": "excludes", "value": "p_old"},
+      {"at": "new", "path": "/revision_ancestry", "op": "contains", "value": "m1.1"}
+    ]
+  },
+  {
+    "id": "F06-10",
+    "title": "撤回唯一的 v2 失败证据后不得产生 v2 成功结论",
+    "covers": ["withdraw_counterexample", "no_inferred_success", "independent_v1_survives"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "a2", "root": "a2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "独立运行二：相同修复后实际写入 5/5。"},
+        {"id": "b1", "root": "b1.root", "artifact": "青禾转换器", "version": "v2", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "failed", "text": "运行三：相同做法在 v2 重放时写锁超时，实际写入 0/8。"}
+      ],
+      "grants": {"distill": ["a1.root", "a2.root", "b1.root"], "task_delivery": {"A": ["a1.root", "a2.root", "b1.root"]}}
+    },
+    "steps": [
+      {"id": "initial", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "old", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v2", "query": "先换临时索引再重放写入，还适用吗？"}},
+      {"id": "drop", "action": "所有者确认遗忘 v2 的失败原文", "args": {"actor": "u", "root": "b1.root"}},
+      {"id": "recompute", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "v2", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v2", "query": "先换临时索引再重放写入，还适用吗？"}},
+      {"id": "v1", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "old", "path": "/first_evidence_ids", "op": "contains", "value": "b1"},
+      {"at": "v2", "path": "/evidence_ids", "op": "excludes", "value": "b1"},
+      {"at": "v2", "path": "/applicability", "op": "eq", "value": "needs_verification"},
+      {"at": "v2", "path": "/confirmed_fix_ids", "op": "excludes", "value": "先换临时索引，再重放写入"},
+      {"at": "v1", "path": "/version_results/v1/independent_passed", "op": "eq", "value": 2}
+    ]
+  },
+  {
+    "id": "F06-11",
+    "title": "同名工件在另一项目的成功回执不能给当前方法背书",
+    "covers": ["artifact_identity", "same_name_cross_project"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。", "project": "青禾", "display_name": "转换器"},
+        {"id": "outside", "root": "outside.root", "artifact": "海棠转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "同名转换器在海棠仓库跑完 24/24。", "project": "海棠", "display_name": "转换器"}
+      ],
+      "grants": {"distill": ["a1.root", "outside.root"], "task_delivery": {"A": ["a1.root", "outside.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "card", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "card", "path": "/artifact", "op": "eq", "value": "青禾转换器"},
+      {"at": "card", "path": "/version_results/v1/independent_passed", "op": "eq", "value": 1},
+      {"at": "card", "path": "/version_results/v1/support_ids", "op": "excludes", "value": "outside"},
+      {"at": "card", "path": "/rendered", "op": "excludes", "value": "24/24"}
+    ]
+  },
+  {
+    "id": "F06-12",
+    "title": "部分步骤通过时保留阶段结果，整项修复仍失败",
+    "covers": ["partial_verification", "stage_outcomes", "tool_receipt"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "part", "root": "part.root", "artifact": "青禾转换器", "version": "v2", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "failed", "text": "恢复阶段解析通过；重放实际写入时写锁超时，未提交。", "stage_receipts": {"parse": "passed", "write": "failed"}}
+      ],
+      "grants": {"distill": ["a1.root", "part.root"], "task_delivery": {"A": ["a1.root", "part.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "card", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v2", "query": "先换临时索引再重放写入，还适用吗？"}},
+      {"id": "trace", "action": "从失败案例引用回查同次工具运行", "args": {"reader": "A", "evidence_id": "part"}}
+    ],
+    "checks": [
+      {"at": "card", "path": "/version_results/v2/independent_failed", "op": "eq", "value": 1},
+      {"at": "card", "path": "/version_results/v2/independent_passed", "op": "eq", "value": 0},
+      {"at": "card", "path": "/first_evidence_ids", "op": "contains", "value": "part"},
+      {"at": "trace", "path": "/stages/parse", "op": "eq", "value": "passed"},
+      {"at": "trace", "path": "/stages/write", "op": "eq", "value": "failed"}
+    ]
+  },
+  {
+    "id": "F06-13",
+    "title": "同版本出现反例时按额外条件收窄建议",
+    "covers": ["same_version_conflict", "conditional_counterexample"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "a2", "root": "a2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "独立运行二：相同修复后实际写入 5/5。"},
+        {"id": "a3", "root": "a3.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "failed", "text": "同为 v1、临时索引损坏。目标卷只读，重放写入失败。", "extra_conditions": ["目标卷只读"]}
+      ],
+      "grants": {"distill": ["a1.root", "a2.root", "a3.root"], "task_delivery": {"A": ["a1.root", "a2.root", "a3.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "readonly", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v1", "query": "先换临时索引再重放写入，还适用吗？", "conditions": ["临时索引损坏", "目标卷只读"]}}
+    ],
+    "checks": [
+      {"at": "readonly", "path": "/first_evidence_ids", "op": "contains", "value": "a3"},
+      {"at": "readonly", "path": "/first_section_text", "op": "contains", "value": "只读"},
+      {"at": "readonly", "path": "/version_results/v1/independent_passed", "op": "eq", "value": 2},
+      {"at": "readonly", "path": "/version_results/v1/independent_failed", "op": "eq", "value": 1},
+      {"at": "readonly", "path": "/confirmed_fix_ids", "op": "excludes", "value": "先换临时索引，再重放写入"}
+    ]
+  },
+  {
+    "id": "F06-14",
+    "title": "提炼器提出全版本有效时必须经权威裁定",
+    "covers": ["candidate_only", "authoritative_adjudication", "scope_overclaim"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "a2", "root": "a2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "独立运行二：相同修复后实际写入 5/5。"},
+        {"id": "b1", "root": "b1.root", "artifact": "青禾转换器", "version": "v2", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "failed", "text": "运行三：相同做法在 v2 重放时写锁超时，实际写入 0/8。"}
+      ],
+      "grants": {"distill": ["a1.root", "a2.root", "b1.root"], "task_delivery": {"A": ["a1.root", "a2.root", "b1.root"]}},
+      "candidate": {"id": "proposal-wide", "text": "所有版本都能靠重放修复。", "supported_versions": ["v1", "v2"], "citations": ["a1", "a2"]}
+    },
+    "steps": [
+      {"id": "propose", "action": "暂停裁定，并通过社区提炼适配器提交候选", "args": {"candidate": "proposal-wide"}},
+      {"id": "pending", "action": "查询当前生效方法版本与候选箱", "args": {"actor": "u", "task": "青禾修复"}},
+      {"id": "judge", "action": "恢复权威裁定器并处理候选", "args": {"candidate": "proposal-wide"}},
+      {"id": "after", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v2", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "pending", "path": "/pending_candidates", "op": "contains", "value": "proposal-wide"},
+      {"at": "pending", "path": "/effective_candidate_ids", "op": "excludes", "value": "proposal-wide"},
+      {"at": "after", "path": "/confirmed_fix_ids", "op": "excludes", "value": "先换临时索引，再重放写入"},
+      {"at": "after", "path": "/rendered", "op": "excludes", "value": "所有版本都能靠重放修复"}
+    ]
+  },
+  {
+    "id": "F06-15",
+    "title": "关闭反例归纳器后，已裁定的修订继续受现行治理",
+    "covers": ["algorithm_rollback", "authority_history", "preserved_refutation"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "a2", "root": "a2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "独立运行二：相同修复后实际写入 5/5。"},
+        {"id": "b1", "root": "b1.root", "artifact": "青禾转换器", "version": "v2", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "failed", "text": "运行三：相同做法在 v2 重放时写锁超时，实际写入 0/8。"}
+      ],
+      "grants": {"distill": ["a1.root", "a2.root", "b1.root"], "task_delivery": {"A": ["a1.root", "a2.root", "b1.root"]}},
+      "strategies": {"previous": "baseline", "current": "counterexample.2"},
+      "stored_method": {"id": "m1", "revision": "m1.2", "parent": "m1.1", "version_results": {"v1": {"supports": ["a1", "a2"]}, "v2": {"failure": ["b1"]}}, "derived_by": "counterexample.2"}
+    },
+    "steps": [
+      {"id": "switch", "action": "将方法提炼策略指针切回上一合格版本", "args": {"actor": "u", "domain": "method_distillation", "target": "baseline"}},
+      {"id": "audit", "action": "读取当前策略及方法修订链", "args": {"actor": "u", "method_id": "m1"}},
+      {"id": "lookup", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v2", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "audit", "path": "/current_strategy", "op": "eq", "value": "baseline"},
+      {"at": "audit", "path": "/current_revision", "op": "eq", "value": "m1.2"},
+      {"at": "audit", "path": "/parent_revision", "op": "eq", "value": "m1.1"},
+      {"at": "lookup", "path": "/first_evidence_ids", "op": "contains", "value": "b1"}
+    ]
+  },
+  {
+    "id": "F06-16",
+    "title": "相同反例仅向当前获准读者说明失败细节",
+    "covers": ["reader_scoped_counterexample", "no_hidden_failure_count"],
+    "fixture": {
+      "now": "2026-11-26T09:00:00Z",
+      "owner": "u",
+      "task": "青禾修复",
+      "artifact": "青禾转换器",
+      "method": "先换临时索引，再重放写入",
+      "precondition": "临时索引损坏",
+      "evidence": [
+        {"id": "a1", "root": "a1.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "运行一：替换损坏的临时索引后重放，实际写入 8/8。"},
+        {"id": "a2", "root": "a2.root", "artifact": "青禾转换器", "version": "v1", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "passed", "text": "独立运行二：相同修复后实际写入 5/5。"},
+        {"id": "b1", "root": "b1.root", "artifact": "青禾转换器", "version": "v2", "step": "先换临时索引，再重放写入", "observed_condition": "临时索引损坏", "outcome": "failed", "text": "运行三：相同做法在 v2 重放时写锁超时，实际写入 0/8。"}
+      ],
+      "grants": {"distill": ["a1.root", "a2.root", "b1.root"], "task_delivery": {"A": ["a1.root", "a2.root"], "B": ["a1.root", "a2.root", "b1.root"]}}
+    },
+    "steps": [
+      {"id": "fit", "action": "用当前获准材料运行提炼并等待权威裁定", "args": {"task": "青禾修复", "method": "先换临时索引，再重放写入"}},
+      {"id": "a", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "A", "task": "青禾修复", "artifact": "青禾转换器", "version": "v2", "query": "先换临时索引再重放写入，还适用吗？"}},
+      {"id": "b", "action": "从任务接手入口查询方法及可定位的依据", "args": {"reader": "B", "task": "青禾修复", "artifact": "青禾转换器", "version": "v2", "query": "先换临时索引再重放写入，还适用吗？"}}
+    ],
+    "checks": [
+      {"at": "a", "path": "/applicability", "op": "eq", "value": "needs_verification"},
+      {"at": "a", "path": "/rendered", "op": "excludes", "value": "写锁超时"},
+      {"at": "a", "path": "/hidden_counterexample_count", "op": "absent"},
+      {"at": "a", "path": "/evidence_ids", "op": "excludes", "value": "b1"},
+      {"at": "b", "path": "/first_evidence_ids", "op": "contains", "value": "b1"},
+      {"at": "b", "path": "/first_section_text", "op": "contains", "value": "写锁超时"}
+    ]
+  }
+]

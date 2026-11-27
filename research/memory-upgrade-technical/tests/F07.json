@@ -1,0 +1,392 @@
+[
+  {
+    "id": "F07-01",
+    "title": "关闭评测时纠正仍在下次调用生效",
+    "covers": ["live_correction","no_eval_consent"],
+    "fixture": {
+      "project": "青禾",
+      "task": "T-修复",
+      "reader": "codex",
+      "attempt": "a-31",
+      "delivery": "d-9",
+      "query": "本项目的示例应该用什么语言？",
+      "sources": [{"id":"q@1#1","root":"q","project":"青禾","role":"owner","text":"青禾代码示例用 Rust。"},{"id":"m@1#1","root":"m","project":"木棉","role":"owner","text":"木棉示例用 Kotlin。"}],
+      "actual_input": ["m@1#1"],
+      "grant": ["task_delivery"],
+      "reply": "错项目了。青禾示例用 Rust，刚才那条属于木棉。"
+    },
+    "steps": [
+      {"id":"correct","action":"所有者在该错误交付旁提交原话纠正","args":{"delivery":"d-9","text_from":"fixture.reply"}},
+      {"id":"open","action":"在青禾的新会话发起相同问题并捕获真实模型输入","args":{}},
+      {"id":"cases","action":"所有者按原尝试查询回归用例","args":{}}
+    ],
+    "checks": [
+      {"at":"open","path":"/example_language","op":"eq","value":"Rust"},
+      {"at":"open","path":"/evidence_refs","op":"excludes","value":"m@1#1"},
+      {"at":"cases","path":"/case_count","op":"eq","value":0}
+    ]
+  },
+  {
+    "id": "F07-02",
+    "title": "有评测许可的错项目反馈形成可重放用例",
+    "covers": ["labeled_case","correct_refs","forbidden_refs"],
+    "fixture": {
+      "project": "青禾",
+      "task": "T-修复",
+      "reader": "codex",
+      "attempt": "a-31",
+      "delivery": "d-9",
+      "query": "本项目的示例应该用什么语言？",
+      "sources": [{"id":"q@1#1","root":"q","project":"青禾","role":"owner","text":"青禾代码示例用 Rust。"},{"id":"m@1#1","root":"m","project":"木棉","role":"owner","text":"木棉示例用 Kotlin。"}],
+      "actual_input": ["m@1#1"],
+      "grant": ["task_delivery","evaluation"],
+      "feedback": "这个是木棉的，请用青禾原话。",
+      "unrelated_note": "晚餐讨论与代码示例无关。"
+    },
+    "steps": [
+      {"id":"save","action":"所有者标记错用并选定两条原句作为正负标注","args":{"required":"q@1#1","forbidden":"m@1#1"}},
+      {"id":"read","action":"独立读取该尝试生成的用例及最小查询","args":{}}
+    ],
+    "checks": [
+      {"at":"read","path":"/required_refs","op":"contains","value":"q@1#1"},
+      {"at":"read","path":"/forbidden_refs","op":"contains","value":"m@1#1"},
+      {"at":"read","path":"/task","op":"eq","value":"T-修复"},
+      {"at":"read","path":"/query","op":"excludes","value":"晚餐"},
+      {"at":"read","path":"/attempt","op":"eq","value":"a-31"}
+    ]
+  },
+  {
+    "id": "F07-03",
+    "title": "获准评测的样本不能直接转为训练材料",
+    "covers": ["purpose_separation","evaluation_not_training"],
+    "fixture": {
+      "project": "青禾",
+      "task": "T-修复",
+      "reader": "codex",
+      "attempt": "a-31",
+      "delivery": "d-9",
+      "query": "本项目的示例应该用什么语言？",
+      "sources": [{"id":"q@1#1","root":"q","project":"青禾","role":"owner","text":"青禾代码示例用 Rust。"},{"id":"m@1#1","root":"m","project":"木棉","role":"owner","text":"木棉示例用 Kotlin。"}],
+      "actual_input": ["m@1#1"],
+      "grant": ["evaluation"],
+      "case_query": "按出处选择青禾示例语言",
+      "selection": ["q@1#1"]
+    },
+    "steps": [
+      {"id":"evaluate","action":"所有者为该输入建立评测集并读取成员","args":{}},
+      {"id":"train","action":"用相同输入尝试构造训练集并盘点可导出样本","args":{}}
+    ],
+    "checks": [
+      {"at":"evaluate","path":"/included_refs","op":"contains","value":"q@1#1"},
+      {"at":"train","path":"/included_refs","op":"excludes","value":"q@1#1"},
+      {"at":"train","path":"/training_examples_written","op":"eq","value":0}
+    ]
+  },
+  {
+    "id": "F07-04",
+    "title": "冻结后撤销评测授权会阻止旧集再次运行",
+    "covers": ["revoke_after_freeze","dataset_lineage"],
+    "fixture": {
+      "roots": [{"id":"r1","text":"合成日志：写入超时"},{"id":"r2","text":"对照日志：解析通过"}],
+      "granted_evaluation": ["r1","r2"],
+      "datasets": {"both":["r1","r2"],"control":["r2"]}
+    },
+    "steps": [
+      {"id":"freeze","action":"按成员分别构造并冻结两个数据集","args":{}},
+      {"id":"revoke","action":"所有者撤销根 r1 的评测用途，再按旧版本启动两个数据集","args":{}},
+      {"id":"inspect","action":"读取本次运行调度日志及冻结集可用状态","args":{}}
+    ],
+    "checks": [
+      {"at":"inspect","path":"/both/usable","op":"eq","value":false},
+      {"at":"inspect","path":"/both/model_calls","op":"eq","value":0},
+      {"at":"inspect","path":"/control/usable","op":"eq","value":true}
+    ]
+  },
+  {
+    "id": "F07-05",
+    "title": "根来源、任务族和时间留出阻止转述泄入验证集",
+    "covers": ["group_split","temporal_holdout","future_exclusion"],
+    "fixture": {
+      "cutoff": "2026-10-01T00:00:00Z",
+      "examples": [{"id":"early","root":"doc-a","family":"导入超时","time":"2026-09-20","text":"第一次排查写入超时"},{"id":"forward","root":"doc-a","family":"导入超时","time":"2026-10-02","text":"转发第一次排查"},{"id":"sibling","root":"run-b","family":"导入超时","time":"2026-10-03","text":"同类任务再现"},{"id":"fresh","root":"doc-z","family":"导出时区","time":"2026-10-08","text":"导出的日期提前一天"}],
+      "evaluation_granted": true
+    },
+    "steps": [
+      {"id":"split","action":"固定开发集 early；按根或任务族重合排除留出候选，在截止日后选独立题","args":{"dev_ids":["early"]}}
+    ],
+    "checks": [
+      {"at":"split","path":"/dev_ids","op":"eq","value":["early"]},
+      {"at":"split","path":"/holdout_ids","op":"eq","value":["fresh"]},
+      {"at":"split","path":"/holdout_ids","op":"excludes","value":"forward"},
+      {"at":"split","path":"/holdout_ids","op":"excludes","value":"sibling"}
+    ]
+  },
+  {
+    "id": "F07-06",
+    "title": "四组配对使用独立空会话，逐组核对最终输入",
+    "covers": ["four_arm_pairing","same_budget","fresh_context","no_cross_arm_leak"],
+    "fixture": {
+      "task": "T-7",
+      "query": "写入失败后要复验哪一步？",
+      "reader": "claude-code",
+      "engine": "fixture-v1",
+      "tool_version": "checks-v2",
+      "tokenizer": "按空格切词",
+      "budget": 6,
+      "segments": [{"ref":"N-5","text":"灯光 调整 后 成功"},{"ref":"A-7","text":"初查 写入 尚待 复验"},{"ref":"G-9","text":"复验 写入 回执 R57"}],
+      "arm_inputs": {"off":[],"noise":["N-5"],"auto":["A-7"],"oracle":["G-9"]}
+    },
+    "steps": [
+      {"id":"run","action":"按指定序列各启一个空会话测试同一问题。固定读者、模型、工具、原始任务快照及预算；只有评测驱动持有分组清单。捕获每次最终请求，记录真实调度顺序、上下文身份、按原句匹配到的片段和证据正文词数，并扫描全部输入是否混入其他组的原句或上一会话输出。","args":{"order":["oracle","noise","auto","off"]}}
+    ],
+    "checks": [
+      {"at":"run","path":"/arms","op":"eq","value":["oracle","noise","auto","off"]},
+      {"at":"run","path":"/unique_task_host_engine_tool_budget","op":"eq","value":1},
+      {"at":"run","path":"/distinct_context_count","op":"eq","value":4},
+      {"at":"run","path":"/evidence_tokens","op":"eq","value":{"off":0,"noise":4,"auto":4,"oracle":4}},
+      {"at":"run","path":"/actual_input_refs","op":"eq","value":{"off":[],"noise":["N-5"],"auto":["A-7"],"oracle":["G-9"]}},
+      {"at":"run","path":"/arm_inputs_with_prior_messages","op":"eq","value":[]}
+    ]
+  },
+  {
+    "id": "F07-07",
+    "title": "分别报告两款宿主上的修复、退化与未知",
+    "covers": ["paired_changes","per_host","unknown_separate"],
+    "fixture": {
+      "columns": ["host","task","baseline_independent_verdict","candidate_independent_verdict"],
+      "independent_verifier_log": [["codex","a","failed","passed"],["codex","b","passed","failed"],["codex","c","passed",null],["claude-code","d","failed","passed"],["claude-code","e","passed","passed"]]
+    },
+    "steps": [
+      {"id":"report","action":"将独立核验日志送入配对报告器，按 host、task 对齐，缺失核验单列","args":{}}
+    ],
+    "checks": [
+      {"at":"report","path":"/codex/gained","op":"eq","value":["a"]},
+      {"at":"report","path":"/codex/regressed","op":"eq","value":["b"]},
+      {"at":"report","path":"/codex/unknown","op":"eq","value":["c"]},
+      {"at":"report","path":"/claude-code/gained","op":"eq","value":["d"]},
+      {"at":"report","path":"/claude-code/regressed","op":"eq","value":[]}
+    ]
+  },
+  {
+    "id": "F07-08",
+    "title": "服务提供、实际装入、采用与独立通过分别计数",
+    "covers": ["independent_outcome","attribution"],
+    "fixture": {
+      "attempt": "a-8",
+      "executor": "host-A",
+      "provided": ["code-17","receipt-3"],
+      "model_call_capture": {"call_id":"c-3","input_refs":["code-17"],"output":"已看到错误码 code-17，准备再跑。","action_refs":["code-17"]},
+      "external_tool_log": null
+    },
+    "steps": [
+      {"id":"ledger","action":"运行器提交其装入和使用观测，并尝试自己把任务标为通过；查询该尝试及所用证据","args":{"executor_claim":"passed"}}
+    ],
+    "checks": [
+      {"at":"ledger","path":"/provided_count","op":"eq","value":2},
+      {"at":"ledger","path":"/loaded_refs","op":"eq","value":["code-17"]},
+      {"at":"ledger","path":"/used_refs","op":"eq","value":["code-17"]},
+      {"at":"ledger","path":"/independent_outcome","op":"eq","value":"unknown"}
+    ]
+  },
+  {
+    "id": "F07-09",
+    "title": "无答案题把借用另一项目的证据计为错用",
+    "covers": ["abstention","forbidden_answer"],
+    "fixture": {
+      "query": "青禾 v9 有通过回执吗？",
+      "context_project": "青禾",
+      "case_label": {"required":[],"forbidden":["m@1#run"],"answerability":"unanswerable"},
+      "observed_calls": [{"id":"one","output":"没有可验证回执。","cited":[]},{"id":"two","output":"已经通过，见木棉回执。","cited":["m@1#run"]}]
+    },
+    "steps": [
+      {"id":"score","action":"将两份冻结的实际回答交给无答案和禁现引用判定器","args":{}}
+    ],
+    "checks": [
+      {"at":"score","path":"/one/correct_abstention","op":"eq","value":true},
+      {"at":"score","path":"/two/correct_abstention","op":"eq","value":false},
+      {"at":"score","path":"/two/forbidden_hits","op":"contains","value":"m@1#run"}
+    ]
+  },
+  {
+    "id": "F07-10",
+    "title": "回退排序策略保留刚纠正的声明与删除标记",
+    "covers": ["policy_rollback","preserve_authority"],
+    "fixture": {
+      "policy": {"previous":"p1","active":"p2"},
+      "events": [{"id":"base","text":"青禾示例用 Python"},{"id":"replace","text":"更正为 Rust","supersedes":"base"},{"id":"ev-99","text":"这段旧排查不再保留"}],
+      "owner_command": "遗忘 ev-99"
+    },
+    "steps": [
+      {"id":"apply","action":"所有者先追加纠正、确认遗忘，再只回退策略到 p1","args":{}},
+      {"id":"read","action":"从新会话查当前约定、旧证据与激活的策略版本","args":{}}
+    ],
+    "checks": [
+      {"at":"read","path":"/active_policy","op":"eq","value":"p1"},
+      {"at":"read","path":"/current_language","op":"eq","value":"Rust"},
+      {"at":"read","path":"/visible_refs","op":"excludes","value":"ev-99"},
+      {"at":"read","path":"/current_revisions","op":"excludes","value":"base"}
+    ]
+  },
+  {
+    "id": "F07-11",
+    "title": "冻结集中的查询本身也受遗忘约束",
+    "covers": ["forget_query","text_lineage"],
+    "fixture": {
+      "roots": [{"id":"seed","text":"故障别名 靛灯-271，查询时这样称呼。"},{"id":"safe","text":"普通校验通过。"}],
+      "evaluation_granted": ["seed","safe"],
+      "query_built_from": "seed",
+      "independent_control": "safe"
+    },
+    "steps": [
+      {"id":"build","action":"用原查询和对照分别冻结回归样本","args":{}},
+      {"id":"forget","action":"所有者遗忘 seed，尝试重新导出查询和运行旧集","args":{}},
+      {"id":"audit","action":"核对导出文本、本次调度和对照样本","args":{}}
+    ],
+    "checks": [
+      {"at":"audit","path":"/exported_text","op":"excludes","value":"靛灯-271"},
+      {"at":"audit","path":"/affected_queries_run","op":"eq","value":0},
+      {"at":"audit","path":"/usable_roots","op":"contains","value":"safe"}
+    ]
+  },
+  {
+    "id": "F07-12",
+    "title": "撤去训练授权后沿工件依赖停用受影响版本",
+    "covers": ["training_revocation","artifact_lineage"],
+    "fixture": {
+      "manifests": {"p1":{"training_roots":["safe"],"scope":"青禾"},"p2":{"training_roots":["safe","withdraw"],"scope":"青禾"}},
+      "active": "p2",
+      "grants": {"safe":["training","evaluation"],"withdraw":["training"]},
+      "originals": {"safe":"解析校验","withdraw":"合成旧策略用例"}
+    },
+    "steps": [
+      {"id":"withdraw","action":"所有者撤销 withdraw 的训练用途，检查策略 p2 与 p1，再发起一次青禾请求","args":{}}
+    ],
+    "checks": [
+      {"at":"withdraw","path":"/p2/eligible","op":"eq","value":false},
+      {"at":"withdraw","path":"/p1/eligible","op":"eq","value":true},
+      {"at":"withdraw","path":"/serving_policies","op":"excludes","value":"p2"}
+    ]
+  },
+  {
+    "id": "F07-13",
+    "title": "有收益但缺少足够独立核验时保留现行版本",
+    "covers": ["release_gate","sample_insufficient"],
+    "fixture": {
+      "thresholds": {"min_independently_scored_pairs":4,"min_net_gained":1,"max_candidate_cost_units":8,"max_forbidden_hits":0},
+      "attempts": [{"task":"a","baseline":"failed","candidate":"passed","cost_units":2,"forbidden_refs":[]},{"task":"b","baseline":"passed","candidate":"passed","cost_units":2,"forbidden_refs":[]},{"task":"c","baseline":"passed","candidate":null,"cost_units":1,"forbidden_refs":[]}],
+      "active": "stable",
+      "candidate": "trial"
+    },
+    "steps": [
+      {"id":"assess","action":"在输入候选结果前登记全部门槛。只有两侧均有独立结果的任务进入收益计算，净增等于新增成功减退化数；资源包含所有尝试的成本。观察发布决定并回读实际启用版本。","args":{}}
+    ],
+    "checks": [
+      {"at":"assess","path":"/scored_pairs","op":"eq","value":2},
+      {"at":"assess","path":"/unknown_pairs","op":"eq","value":["c"]},
+      {"at":"assess","path":"/net_gained","op":"eq","value":1},
+      {"at":"assess","path":"/candidate_cost_units","op":"eq","value":5},
+      {"at":"assess","path":"/blocking_reasons","op":"eq","value":["insufficient_pairs"]},
+      {"at":"assess","path":"/active_policy","op":"eq","value":"stable"},
+      {"at":"assess","path":"/released","op":"eq","value":false}
+    ]
+  },
+  {
+    "id": "F07-14",
+    "title": "收益达标仍会被禁止证据命中阻断",
+    "covers": ["forbidden_release_gate","matched_quality_budget"],
+    "fixture": {
+      "thresholds": {"min_independently_scored_pairs":2,"min_net_gained":2,"max_candidate_cost_units":6,"max_forbidden_hits":0},
+      "attempts": [{"task":"a","baseline":"failed","candidate":"passed","cost_units":2,"forbidden_hits":[]},{"task":"b","baseline":"failed","candidate":"passed","cost_units":3,"forbidden_hits":["wrong-project"]}],
+      "active": "stable",
+      "candidate": "trial"
+    },
+    "steps": [
+      {"id":"assess","action":"先登记合成任务的门槛，再读入独立核验结果与候选成本；核对唯一阻断原因及对应任务。以实际版本指针检查结果。","args":{}}
+    ],
+    "checks": [
+      {"at":"assess","path":"/gained_count","op":"eq","value":2},
+      {"at":"assess","path":"/net_gained","op":"eq","value":2},
+      {"at":"assess","path":"/candidate_cost_units","op":"eq","value":5},
+      {"at":"assess","path":"/blocking_reasons","op":"eq","value":["forbidden_evidence"]},
+      {"at":"assess","path":"/released","op":"eq","value":false},
+      {"at":"assess","path":"/active_policy","op":"eq","value":"stable"},
+      {"at":"assess","path":"/blocking_tasks","op":"contains","value":"b"}
+    ]
+  },
+  {
+    "id": "F07-15",
+    "title": "每成功任务成本含失败消耗，三个主指标分别计算",
+    "covers": ["success_cost","metric_denominators"],
+    "fixture": {
+      "usage_log": [{"task":"A","cost_units":2,"authorized_sufficient":true,"input_complete":true,"asked_user":false,"verdict":"passed"},{"task":"B","cost_units":5,"authorized_sufficient":true,"input_complete":false,"asked_user":true,"verdict":"failed"},{"task":"C","cost_units":2,"authorized_sufficient":false,"input_complete":false,"asked_user":false,"verdict":null}],
+      "comparable_policy": "trial",
+      "declaration_columns": ["id","gold_value","gold_scope","gold_until_exclusive","effective_value","effective_scope","effective_until_exclusive"],
+      "required_declarations": [["x","Rust","青禾","2026-11-28T00:00:00Z","Rust","青禾","2026-11-28T00:00:00Z"],["y","zh","global",null,"en","global",null],["z","Go","木棉",null,"Go","global",null],["w","Python","青禾","2026-11-28T00:00:00Z","Python","青禾","2026-11-29T00:00:00Z"]],
+      "temporary_declarations": [{"id":"one-off","observed_scope":"global"}]
+    },
+    "steps": [
+      {"id":"report","action":"按 PRD 口径从事件计算分子、分母。对齐每条必记声明的值、作用域和独占截止时间，分别列出错值、错项目和已过期仍有效的声明。全部尝试消耗计入总成本，分母只计独立通过，缺核验结果单列。","args":{}}
+    ],
+    "checks": [
+      {"at":"report","path":"/correct_declarations","op":"eq","value":[1,4]},
+      {"at":"report","path":"/incorrect_declaration_ids","op":"eq","value":{"value":["y"],"scope":["z"],"validity":["w"]}},
+      {"at":"report","path":"/temporary_promoted","op":"eq","value":1},
+      {"at":"report","path":"/complete_input","op":"eq","value":[1,2]},
+      {"at":"report","path":"/unassisted_verified","op":"eq","value":[1,3]},
+      {"at":"report","path":"/unknown_outcomes","op":"eq","value":1},
+      {"at":"report","path":"/cost_per_verified_success","op":"eq","value":9}
+    ]
+  },
+  {
+    "id": "F07-16",
+    "title": "按预登记口径报告查询尾延迟、采集等待和补背景轮数",
+    "covers": ["latency_budget","capture_to_ready","manual_rebrief"],
+    "fixture": {
+      "policy": "candidate-v3",
+      "limits": {"p95_ms":75,"percentile":"nearest_rank"},
+      "query_duration_ms": [30,35,33,40,42,34,32,35,33,45,37,39,31,44,40,48,47,60,80,510],
+      "event_times": {"accepted":"2026-11-23T10:00:00Z","usable":"2026-11-23T10:00:12Z"},
+      "handoffs": [{"id":"first","asked_for_background":2},{"id":"repeat","asked_for_background":0}]
+    },
+    "steps": [
+      {"id":"report","action":"用上述合成遥测回放发布报告；将耗时升序取第 ceil(0.95×20) 项，对采集与首次可用时间做差，并保留两次接手各自的人工补述轮数。","args":{"budget_source":"fixture.limits"}}
+    ],
+    "checks": [
+      {"at":"report","path":"/p95_ms","op":"eq","value":80},
+      {"at":"report","path":"/latency_budget_met","op":"eq","value":false},
+      {"at":"report","path":"/capture_to_ready_seconds","op":"eq","value":12},
+      {"at":"report","path":"/rebrief_by_handoff","op":"eq","value":{"first":2,"repeat":0}}
+    ]
+  },
+  {
+    "id": "F07-17",
+    "title": "净收益下界和成本恰好达标时只发布到获准宿主与项目",
+    "covers": ["scoped_release","positive_control","paired_interval","resource_gate"],
+    "fixture": {
+      "scope": {"host":"codex","project":"青禾"},
+      "owner_authorized_trial": true,
+      "active_policy_by_target": {"codex/青禾":"stable","codex/木棉":"stable","claude-code/青禾":"stable"},
+      "thresholds": {"min_independently_scored_pairs":4,"min_paired_gain_lower_bound":0.25,"max_cost_per_success":2.5,"max_forbidden_hits":0},
+      "interval_rule": "每个任务代表一个独立留出任务族。对四个任务差值（候选成功指示值减基线成功指示值），穷举有放回的四次抽样，共 256 个均值。按升序取第 ceil(0.05×256) 项作为单侧 95% 下界。",
+      "columns": ["task_family","baseline_verdict","candidate_verdict","candidate_cost_units","forbidden_hits"],
+      "paired_holdout_log": [["a","failed","passed",2,0],["b","failed","passed",2,0],["c","failed","passed",3,0],["d","passed","passed",3,0]],
+      "over_budget_control": {"task_family":"d","additional_cost_units":1}
+    },
+    "steps": [
+      {"id":"assess","action":"冻结获准试用范围、四道留出题、门槛与区间规则，加载独立核验和用量日志，所有门槛含等号。累计候选成本除独立通过数。记录发布判定和区间。","args":{"candidate":"trial"}},
+      {"id":"sample","action":"按合格结果只切换获准的目标，用三次新请求独立观测提供服务的策略版本。","args":{"targets":["codex/青禾","codex/木棉","claude-code/青禾"]}},
+      {"id":"cost_control","action":"另起相同 stable 快照，只把 d 的计费用量加一，复算并检查实际启用版本。","args":{"candidate":"trial"}}
+    ],
+    "checks": [
+      {"at":"assess","path":"/scored_pairs","op":"eq","value":4},
+      {"at":"assess","path":"/net_gained","op":"eq","value":3},
+      {"at":"assess","path":"/paired_gain_lower_bound","op":"eq","value":0.25},
+      {"at":"assess","path":"/cost_per_verified_success","op":"eq","value":2.5},
+      {"at":"assess","path":"/released","op":"eq","value":true},
+      {"at":"sample","path":"/served_policies","op":"eq","value":{"codex/青禾":"trial","codex/木棉":"stable","claude-code/青禾":"stable"}},
+      {"at":"cost_control","path":"/cost_per_verified_success","op":"eq","value":2.75},
+      {"at":"cost_control","path":"/blocking_reasons","op":"eq","value":["cost_budget"]},
+      {"at":"cost_control","path":"/active_policy","op":"eq","value":"stable"}
+    ]
+  }
+]

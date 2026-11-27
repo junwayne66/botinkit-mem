@@ -1,0 +1,420 @@
+{
+  "F01-01": {
+    "add": {
+      "change_seq": 1,
+      "dimensions": [
+        {
+          "fact_id": "f_24576674991848028ce88ea85de9b168",
+          "key": "report.language",
+          "revision_id": "r_be0f754772d34f4c99a4e65db9859e80",
+          "status": "active",
+          "supersedes": null,
+          "value": "zh"
+        },
+        {
+          "fact_id": "f_00f0a882cfcf4935959620dc284077e5",
+          "key": "report.opening",
+          "revision_id": "r_e2bffde362ff4126806a4c83673cafe2",
+          "status": "active",
+          "supersedes": null,
+          "value": "conclusion"
+        }
+      ],
+      "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+      "status": "recorded"
+    },
+    "q": {
+      "dimensions": {
+        "report.language": {
+          "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+          "fact_id": "f_24576674991848028ce88ea85de9b168",
+          "key": "report.language",
+          "known_from": "2026-11-26T17:26:44.024066000Z",
+          "revision_id": "r_be0f754772d34f4c99a4e65db9859e80",
+          "scope": {
+            "kind": "global"
+          },
+          "share": "authorized_assistants",
+          "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+          "status": "active",
+          "valid_from": "2026-11-26T17:26:44.024066000Z",
+          "value": "zh"
+        },
+        "report.opening": {
+          "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+          "fact_id": "f_00f0a882cfcf4935959620dc284077e5",
+          "key": "report.opening",
+          "known_from": "2026-11-26T17:26:44.024066000Z",
+          "revision_id": "r_e2bffde362ff4126806a4c83673cafe2",
+          "scope": {
+            "kind": "global"
+          },
+          "share": "authorized_assistants",
+          "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+          "status": "active",
+          "valid_from": "2026-11-26T17:26:44.024066000Z",
+          "value": "conclusion"
+        }
+      }
+    },
+    "b": {
+      "dimensions": {
+        "report.language": {
+          "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+          "fact_id": "f_24576674991848028ce88ea85de9b168",
+          "key": "report.language",
+          "known_from": "2026-11-26T17:26:44.024066000Z",
+          "revision_id": "r_be0f754772d34f4c99a4e65db9859e80",
+          "scope": {
+            "kind": "global"
+          },
+          "share": "authorized_assistants",
+          "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+          "status": "active",
+          "valid_from": "2026-11-26T17:26:44.024066000Z",
+          "value": "zh"
+        },
+        "report.opening": {
+          "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+          "fact_id": "f_00f0a882cfcf4935959620dc284077e5",
+          "key": "report.opening",
+          "known_from": "2026-11-26T17:26:44.024066000Z",
+          "revision_id": "r_e2bffde362ff4126806a4c83673cafe2",
+          "scope": {
+            "kind": "global"
+          },
+          "share": "authorized_assistants",
+          "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+          "status": "active",
+          "valid_from": "2026-11-26T17:26:44.024066000Z",
+          "value": "conclusion"
+        }
+      }
+    }
+  },
+  "F01-10": {
+    "first": {
+      "change_seq": 1,
+      "dimensions": [],
+      "statement_id": "st_2ef09bda64f54af0b0a9e61c885fa6d6",
+      "status": "pending"
+    },
+    "retry": {
+      "change_seq": 1,
+      "dimensions": [],
+      "statement_id": "st_2ef09bda64f54af0b0a9e61c885fa6d6",
+      "status": "pending"
+    },
+    "conflict": {
+      "code": "key_conflict",
+      "message": "statement key already used with different content",
+      "request_id": "0ceb743a-c7f9-4750-8b38-8683ddced2d6",
+      "retryable": false
+    },
+    "current": {
+      "dimensions": {}
+    },
+    "audit": {
+      "same_statement_and_revisions": true,
+      "revision_count": 0
+    }
+  },
+  "F01-13": {
+    "add": {
+      "change_seq": 1,
+      "dimensions": [],
+      "statement_id": "st_8155f810b1414e3d949e5f031f425ad1",
+      "status": "pending"
+    },
+    "before": {
+      "changes": []
+    },
+    "cli": {
+      "language": null
+    },
+    "web": {
+      "dimensions": {},
+      "language": null
+    },
+    "after": {
+      "changes": []
+    }
+  },
+  "F02-08": {
+    "seed": {
+      "accepted_event_count": 2
+    },
+    "tiny": {
+      "refs": [],
+      "delivery_id": "delivery_a2925a9f857e4bfc97e7e07c788fd778",
+      "delivery_state": "provided",
+      "effective_profile": null,
+      "estimated_evidence_tokens": 0,
+      "estimated_statement_tokens": 91,
+      "evidence": [],
+      "fallback_reason": null,
+      "observations": [],
+      "package_id": "package_fa2ba9db4a994304a3c3bc1deeacee9f",
+      "package_state": "budget_zero",
+      "policy_version": 3,
+      "requested_profile": "balanced",
+      "snapshot_id": "snapshot_a7bd3941857aa1fc6220ba617ff5383e9f113d6c80ea16d80c3ce3330a1a6ac6",
+      "snapshot_mode": "replace",
+      "statements": [
+        {
+          "key": "report.language",
+          "revision_id": "r_6a0e9d4258434a70b75c361d13d8101f",
+          "value": "zh"
+        }
+      ],
+      "template_version": null
+    },
+    "ample": {
+      "refs": [
+        "plan#/text",
+        "check#/checks/parse",
+        "check#/checks/write"
+      ],
+      "delivery_id": "delivery_693b00c689384811b033b8ce2ba535f0",
+      "delivery_state": "provided",
+      "effective_profile": "balanced",
+      "estimated_evidence_tokens": 562,
+      "estimated_statement_tokens": 91,
+      "evidence": [
+        {
+          "actor_kind": "user_message",
+          "at": "2026-11-23T01:00:01+00:00",
+          "event_id": "evt_699d798c84f74b7a8b734aa04bf58ee1",
+          "handle": "event_evt_699d798c84f74b7a8b734aa04bf58ee1",
+          "task_id": "task_7e1206b73c9c4f819631b43e30fa2120",
+          "text": "我计划重新跑写入检查。"
+        },
+        {
+          "actor_kind": "tool_result",
+          "at": "2026-11-23T01:00:02+00:00",
+          "event_id": "evt_4f9a4c9a7fc143cebc718fc526f9395f",
+          "handle": "event_evt_4f9a4c9a7fc143cebc718fc526f9395f",
+          "task_id": "task_7e1206b73c9c4f819631b43e30fa2120",
+          "text": "{\"parse\":\"passed\",\"write\":\"timeout\"}"
+        }
+      ],
+      "fallback_reason": null,
+      "observations": [],
+      "package_id": "package_5e9604c22fe94c758a7bb9d4aa937423",
+      "package_state": "provided",
+      "policy_version": 3,
+      "requested_profile": "balanced",
+      "snapshot_id": "snapshot_a7bd3941857aa1fc6220ba617ff5383e9f113d6c80ea16d80c3ce3330a1a6ac6",
+      "snapshot_mode": "replace",
+      "statements": [
+        {
+          "key": "report.language",
+          "revision_id": "r_6a0e9d4258434a70b75c361d13d8101f",
+          "value": "zh"
+        }
+      ],
+      "template_version": "literal-v1"
+    },
+    "audit": {
+      "evidence_budget_exhausted": true,
+      "statement_values": [
+        "zh"
+      ]
+    }
+  },
+  "F02-09": {
+    "seed": {
+      "accepted_event_count": 51
+    },
+    "load": {
+      "refs": [
+        "filler-01#/text",
+        "filler-02#/text",
+        "filler-03#/text",
+        "filler-04#/text"
+      ],
+      "delivery_id": "delivery_3ec4e2d726454c5383cc5b865caf4d74",
+      "delivery_state": "provided",
+      "effective_profile": "balanced",
+      "estimated_evidence_tokens": 1132,
+      "estimated_statement_tokens": 0,
+      "evidence": [
+        {
+          "actor_kind": "assistant_message",
+          "at": "2026-11-23T01:00:01+00:00",
+          "event_id": "evt_de4f7f508a25435bb0c423d632d2f098",
+          "handle": "event_evt_de4f7f508a25435bb0c423d632d2f098",
+          "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+          "text": "读取分片 01 的表头，只做记录。"
+        },
+        {
+          "actor_kind": "assistant_message",
+          "at": "2026-11-23T01:00:02+00:00",
+          "event_id": "evt_6073327e35a243f9bdaee6cf96c9435c",
+          "handle": "event_evt_6073327e35a243f9bdaee6cf96c9435c",
+          "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+          "text": "读取分片 02 的表头，只做记录。"
+        },
+        {
+          "actor_kind": "assistant_message",
+          "at": "2026-11-23T01:00:03+00:00",
+          "event_id": "evt_ea9a06e30d6a475b965511bffdb96117",
+          "handle": "event_evt_ea9a06e30d6a475b965511bffdb96117",
+          "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+          "text": "读取分片 03 的表头，只做记录。"
+        },
+        {
+          "actor_kind": "assistant_message",
+          "at": "2026-11-23T01:00:04+00:00",
+          "event_id": "evt_659493478e0742348122fb45f599a7a1",
+          "handle": "event_evt_659493478e0742348122fb45f599a7a1",
+          "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+          "text": "读取分片 04 的表头，只做记录。"
+        }
+      ],
+      "fallback_reason": null,
+      "observations": [],
+      "package_id": "package_dbae11124d434595842972e6bae927e4",
+      "package_state": "budget_truncated",
+      "policy_version": 3,
+      "requested_profile": "balanced",
+      "snapshot_id": "snapshot_6a12c11131b50b1ac9542295521c3b0f3cdca3c20f674f197c3a57afd4f168b8",
+      "snapshot_mode": "replace",
+      "statements": [],
+      "template_version": "literal-v1"
+    },
+    "count": {
+      "active_events": 51,
+      "e51_rank_by_time": 51
+    },
+    "expand": {
+      "count": 51
+    },
+    "input": {
+      "refs": [
+        "filler-01#/text",
+        "filler-02#/text",
+        "filler-03#/text",
+        "filler-04#/text",
+        "filler-05#/text",
+        "filler-06#/text",
+        "filler-07#/text",
+        "filler-08#/text",
+        "filler-09#/text",
+        "filler-10#/text",
+        "filler-11#/text",
+        "filler-12#/text",
+        "filler-13#/text",
+        "filler-14#/text"
+      ]
+    }
+  },
+  "F02-10": {
+    "seed": {
+      "accepted_event_count": 3
+    },
+    "input": {
+      "refs": [
+        "plan#/text",
+        "check#/checks/parse",
+        "check#/checks/write"
+      ]
+    },
+    "local": {
+      "evidence": [
+        {
+          "actor_kind": "user_message",
+          "at": "2026-11-23T01:00:01+00:00",
+          "event_id": "evt_092f5c31ccf642fd94e7d95be7b88260",
+          "handle": "event_evt_092f5c31ccf642fd94e7d95be7b88260",
+          "task_id": "task_35faa5506ceb42e7aa309c5c5aa3f588",
+          "text": "我计划重新跑写入检查。"
+        },
+        {
+          "actor_kind": "tool_result",
+          "at": "2026-11-23T01:00:02+00:00",
+          "event_id": "evt_4132c54b1cf24dcabf5f18f15af185b2",
+          "handle": "event_evt_4132c54b1cf24dcabf5f18f15af185b2",
+          "task_id": "task_35faa5506ceb42e7aa309c5c5aa3f588",
+          "text": "{\"parse\":\"passed\",\"write\":\"timeout\"}"
+        }
+      ],
+      "observations": [],
+      "package_id": "package_86b22f8d50c547f08f323177d3fcc7c6"
+    },
+    "other": {
+      "refs": [
+        "foreign#/checks/write"
+      ]
+    }
+  },
+  "F04-08": {
+    "find": {
+      "refs": []
+    },
+    "input": {
+      "model_input_evidence_refs": [
+        "palette"
+      ],
+      "verified_result_refs": []
+    }
+  },
+  "F05-07": {
+    "before": {
+      "active_rule_ids": [
+        "new"
+      ]
+    },
+    "pv": {
+      "effective": false,
+      "kind": "forget",
+      "preview_id": "27b2ec04-02d2-431d-849b-34adfaebfa6d",
+      "scope": {
+        "kind": "forget",
+        "target": {
+          "statement_id": "st_2740722cf6bb457b83b960c286c1e015"
+        }
+      }
+    },
+    "ok": {
+      "cleanup_state": "logical_effect_applied",
+      "effective": true,
+      "kind": "forget",
+      "operation_id": "op_068ad6e0a59542c98543157d784c09de",
+      "result": {
+        "change_seq": 3,
+        "revoked": true,
+        "statement_id": "st_2740722cf6bb457b83b960c286c1e015"
+      }
+    },
+    "after": {
+      "active_rule_ids": []
+    },
+    "audit": {
+      "superseded_by": "new"
+    }
+  },
+  "X01-01": {
+    "replay": {
+      "upstream": {
+        "overlap": "XSL",
+        "empty": "LM",
+        "tie": "ZA",
+        "swapped": "AZ"
+      },
+      "local": {
+        "overlap": "XSL",
+        "empty": "LM",
+        "tie": "AZ",
+        "swapped": "AZ"
+      },
+      "raw_stdout": [
+        "overlap upstream=XSL local=XSL  X=0.032522475 S=0.016393443 L=0.016129032",
+        "empty   upstream=LM local=LM  L=0.016393443 M=0.016129032",
+        "tie     upstream=ZA local=AZ  Z=0.016393443 A=0.016393443",
+        "swapped upstream=AZ local=AZ  A=0.016393443 Z=0.016393443"
+      ],
+      "overlap_score_x": "0.032522475"
+    }
+  }
+}

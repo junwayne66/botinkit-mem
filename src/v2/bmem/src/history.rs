@@ -24,7 +24,9 @@ pub fn migrate(db: &Connection) -> Result<()> {
             last_scan INTEGER,
             last_error TEXT,
             events INTEGER NOT NULL DEFAULT 0,
-            skipped_containers INTEGER NOT NULL DEFAULT 0
+            skipped_containers INTEGER NOT NULL DEFAULT 0,
+            covered_at INTEGER,
+            coverage_gaps INTEGER NOT NULL DEFAULT 0
          );
          CREATE TABLE IF NOT EXISTS history_files (
             source_id TEXT NOT NULL REFERENCES history_sources(source_id),
@@ -60,6 +62,25 @@ pub fn migrate(db: &Connection) -> Result<()> {
             FOREIGN KEY(source_id,chat_id) REFERENCES history_feishu_chats(source_id,chat_id)
          );",
     )?;
+    let has_kind: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('history_feishu_chats') WHERE name='kind')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_kind {
+        db.execute_batch("ALTER TABLE history_feishu_chats ADD COLUMN kind TEXT")?;
+    }
+    let has_coverage: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('history_sources') WHERE name='covered_at')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_coverage {
+        let tx = db.unchecked_transaction()?;
+        tx.execute_batch("ALTER TABLE history_sources ADD COLUMN covered_at INTEGER;
+                         ALTER TABLE history_sources ADD COLUMN coverage_gaps INTEGER NOT NULL DEFAULT 0;")?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -96,9 +117,9 @@ pub fn set_enabled(db: &mut Connection, source_id: &str, enabled: bool) -> Resul
     Ok(json!({"source_id":source_id,"history_enabled":enabled}))
 }
 
-pub fn describe(db: &Connection, sources: &mut Value) -> Result<()> {
+pub fn describe(db: &Connection, sources: &mut Value, recovery_until: Option<i64>) -> Result<()> {
     let mut stmt = db.prepare(
-        "SELECT enabled,last_scan,last_error,events,skipped_containers
+        "SELECT enabled,last_scan,last_error,events,skipped_containers,covered_at,coverage_gaps
          FROM history_sources WHERE source_id=?1",
     )?;
     for source in sources.as_array_mut().into_iter().flatten() {
@@ -111,6 +132,8 @@ pub fn describe(db: &Connection, sources: &mut Value) -> Result<()> {
                     "last_error":row.get::<_,Option<String>>(2)?,
                     "events":row.get::<_,i64>(3)?,
                     "skipped_containers":row.get::<_,i64>(4)?,
+                    "covered_at":row.get::<_,Option<i64>>(5)?,
+                    "coverage_gaps":row.get::<_,i64>(6)?,
                 }))
             })
             .optional()?;
@@ -119,6 +142,32 @@ pub fn describe(db: &Connection, sources: &mut Value) -> Result<()> {
             source["type"].as_str().unwrap_or_default(),
             source["account"].as_str().unwrap_or_default(),
         ));
+        if let Some(until) = recovery_until {
+            let (state, reason) = if source["capture_enabled"] != true {
+                ("needs_action", Some("capture_not_authorized"))
+            } else if history["supported"] != true || history["enabled"] != true {
+                ("needs_action", Some("history_unavailable"))
+            } else if let Some(error) = history["last_error"].as_str()
+                && history["last_scan"]
+                    .as_i64()
+                    .is_some_and(|scan| scan >= until)
+            {
+                ("needs_action", Some(error))
+            } else if history["covered_at"]
+                .as_i64()
+                .is_some_and(|covered| covered >= until)
+            {
+                if history["coverage_gaps"].as_i64().unwrap_or_default() > 0 {
+                    ("needs_action", Some("history_gap"))
+                } else {
+                    ("caught_up", None)
+                }
+            } else {
+                ("catching_up", None)
+            };
+            source["capture_recovery"] = json!({"state":state,"reason":reason,"through":until,
+                "scope":"authorized_retained_history", "scope_gaps":history["coverage_gaps"]});
+        }
         source["history"] = history;
     }
     Ok(())
@@ -131,6 +180,7 @@ fn clock() -> i64 {
 pub fn scan_next(
     database: &Mutex<Connection>,
     profile: &str,
+    recovery_until: Option<i64>,
     stop: &impl Fn() -> bool,
 ) -> Result<bool> {
     let now = clock();
@@ -139,8 +189,9 @@ pub fn scan_next(
             "SELECT s.source_id,s.kind,s.account FROM history_sources h
              JOIN ing_sources s ON h.source_id=s.source_id
              JOIN ing_grants g ON h.source_id=g.source_id AND g.purpose='capture' AND g.active=1
-             WHERE h.enabled=1 AND h.next_at<=?1 ORDER BY h.next_at,s.created_at LIMIT 1",
-            [now],
+             WHERE h.enabled=1 AND (h.next_at<=?1 OR coalesce(h.last_scan,-1)<?2)
+             ORDER BY h.next_at,s.created_at LIMIT 1",
+            params![now, recovery_until],
             |row| {
                 Ok(Source {
                     id: row.get(0)?,
@@ -161,13 +212,27 @@ pub fn scan_next(
     if stop() {
         return Ok(false);
     }
-    let (delay, error) = match result {
+    let (mut delay, error) = match result {
         Ok(Some(delay)) => (delay, None),
         Ok(None) => return Ok(false),
         Err(error) => (60, Some(error.code)),
     };
     let now = clock();
-    lock(database)?.execute(
+    let db = lock(database)?;
+    if delay == 300
+        && source.kind == "feishu"
+        && let Some(until) = recovery_until
+    {
+        let covered: Option<i64> = db.query_row(
+            "SELECT covered_at FROM history_sources WHERE source_id=?1",
+            [&source.id],
+            |row| row.get(0),
+        )?;
+        if covered.is_none_or(|covered| covered < until) {
+            delay = 1;
+        }
+    }
+    db.execute(
         "UPDATE history_sources SET next_at=?2,last_scan=?3,last_error=?4
          WHERE source_id=?1 AND enabled=1",
         params![source.id, now + delay, now, error],
@@ -185,7 +250,13 @@ fn active(db: &Transaction<'_>, source_id: &str) -> Result<bool> {
     )?)
 }
 
-fn accept(db: &Transaction<'_>, source_id: &str, events: Vec<Value>, profile: &str) -> Result<()> {
+fn accept(
+    db: &Transaction<'_>,
+    source_id: &str,
+    events: Vec<Value>,
+    profile: &str,
+    feishu_kind: Option<&str>,
+) -> Result<()> {
     if events.is_empty() {
         return Ok(());
     }
@@ -197,6 +268,9 @@ fn accept(db: &Transaction<'_>, source_id: &str, events: Vec<Value>, profile: &s
     let key = Uuid::new_v4().to_string();
     let page = json!({"source_id":source_id,"cursor":cursor,"next_cursor":key,"events":events});
     let receipt = ingestion::accept_in(db, "owner", &key, page, profile)?;
+    if let Some(kind) = feishu_kind {
+        crate::retrieval::record_feishu_kind(db, &receipt, kind)?;
+    }
     db.execute(
         "UPDATE history_sources SET events=events+?2 WHERE source_id=?1",
         params![
@@ -213,6 +287,7 @@ fn scan_files(
     profile: &str,
     stop: &impl Fn() -> bool,
 ) -> Result<Option<i64>> {
+    let started = clock();
     let state: HashMap<String, (u64, u64, bool)> = {
         let db = lock(database)?;
         let mut stmt =
@@ -230,7 +305,14 @@ fn scan_files(
         .collect::<rusqlite::Result<_>>()?
     };
     let mut pages = 0;
-    for path in history_hosts::files(&source.kind)? {
+    let mut pending = false;
+    let mut seen = std::collections::HashSet::new();
+    let mut gaps = 0;
+    let files = history_hosts::files(&source.kind)?;
+    if files.is_empty() && state.is_empty() {
+        return Err(Error::missing("没有可回读的已授权宿主历史文件"));
+    }
+    for path in files {
         if stop() {
             return Ok(None);
         }
@@ -243,6 +325,7 @@ fn scan_files(
         if !metadata.is_file() {
             continue;
         }
+        seen.insert(name.to_owned());
         let size = metadata.len();
         let (offset, cached_size, complete) = state.get(name).copied().unwrap_or_default();
         if size == cached_size && complete {
@@ -254,15 +337,25 @@ fn scan_files(
         let offset = if size < cached_size { 0 } else { offset };
         let page = match history_hosts::read_page(&source.kind, &path, offset, EVENTS_PER_PAGE) {
             Ok(page) => page,
-            Err(error) if error.status == 404 => continue,
+            Err(error) if error.status == 404 => {
+                gaps += 1;
+                continue;
+            }
             Err(error) => return Err(error),
         };
+        if stop() {
+            return Ok(None);
+        }
+        if size < cached_size {
+            gaps += 1;
+        }
+        pending |= !page.eof;
         let mut db = lock(database)?;
         let tx = db.transaction()?;
         if !active(&tx, &source.id)? {
             return Ok(None);
         }
-        accept(&tx, &source.id, page.events, profile)?;
+        accept(&tx, &source.id, page.events, profile, None)?;
         tx.execute(
             "INSERT INTO history_files VALUES(?1,?2,?3,?4,?5)
              ON CONFLICT(source_id,path) DO UPDATE SET
@@ -271,6 +364,14 @@ fn scan_files(
         )?;
         tx.commit()?;
         pages += 1;
+    }
+    if !pending && !stop() {
+        gaps += state.keys().filter(|path| !seen.contains(*path)).count();
+        lock(database)?.execute(
+            "UPDATE history_sources SET covered_at=?2,coverage_gaps=max(coverage_gaps,?3)
+             WHERE source_id=?1 AND enabled=1",
+            params![source.id, started, gaps as i64],
+        )?;
     }
     Ok(Some(if pages == 0 { 45 } else { 2 }))
 }
@@ -295,7 +396,7 @@ fn scan_feishu(
     };
     let account = history_feishu::account(&source.account, stop)?;
     if !listed {
-        let page = match account.chats(token.as_deref(), stop) {
+        let page = match account.chat_list("p2p,group", token.as_deref(), stop) {
             Err(error) if error.code == "feishu_cursor_expired" && token.is_some() => {
                 lock(database)?.execute(
                     "UPDATE history_feishu_passes SET list_token=NULL WHERE source_id=?1",
@@ -310,11 +411,16 @@ fn scan_feishu(
         if !active(&tx, &source.id)? {
             return Ok(None);
         }
-        for chat in page.ids {
+        for chat in page.chats {
+            let kind = match chat.mode.as_str() {
+                "p2p" => Some("dm"),
+                "group" | "topic" => Some("group"),
+                _ => None,
+            };
             tx.execute(
-                "INSERT INTO history_feishu_chats(source_id,chat_id,seen_at) VALUES(?1,?2,?3)
-                 ON CONFLICT(source_id,chat_id) DO UPDATE SET seen_at=excluded.seen_at",
-                params![source.id, chat, end],
+                "INSERT INTO history_feishu_chats(source_id,chat_id,seen_at,kind) VALUES(?1,?2,?3,?4)
+                 ON CONFLICT(source_id,chat_id) DO UPDATE SET seen_at=excluded.seen_at, kind=coalesce(excluded.kind,kind)",
+                params![source.id, chat.id, end, kind],
             )?;
         }
         tx.execute(
@@ -324,16 +430,16 @@ fn scan_feishu(
         tx.commit()?;
         return Ok(Some(1));
     }
-    let chat: Option<(String, i64, Option<String>)> = lock(database)?
+    let chat: Option<(String, i64, Option<String>, Option<String>)> = lock(database)?
         .query_row(
-            "SELECT chat_id,watermark,page_token FROM history_feishu_chats
+            "SELECT chat_id,watermark,page_token,kind FROM history_feishu_chats
              WHERE source_id=?1 AND watermark<?2 AND seen_at=?2 AND blocked_at<>?2
              ORDER BY page_token IS NULL,watermark DESC,chat_id LIMIT 1",
             params![source.id, end],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let Some((chat, start, token)) = chat else {
+    let Some((chat, start, token, kind)) = chat else {
         return scan_feishu_thread(database, source, profile, &account, end, stop);
     };
     let result = account.messages(&chat, (start - 60).max(0), end, token.as_deref(), stop);
@@ -344,7 +450,7 @@ fn scan_feishu(
         return Ok(None);
     }
     let (next, watermark) = if let Some(page) = page {
-        accept(&tx, &source.id, page.events, profile)?;
+        accept(&tx, &source.id, page.events, profile, kind.as_deref())?;
         for thread in page.thread_ids {
             tx.execute(
                 "INSERT OR IGNORE INTO history_feishu_threads(source_id,chat_id,thread_id)
@@ -379,21 +485,32 @@ fn scan_feishu_thread(
     end: i64,
     stop: &impl Fn() -> bool,
 ) -> Result<Option<i64>> {
-    let thread: Option<(String, i64, Option<String>)> = lock(database)?
+    let thread: Option<(String, i64, Option<String>, Option<String>)> = lock(database)?
         .query_row(
-            "SELECT t.thread_id,t.watermark,t.page_token FROM history_feishu_threads t
+            "SELECT t.thread_id,t.watermark,t.page_token,c.kind FROM history_feishu_threads t
              JOIN history_feishu_chats c ON t.source_id=c.source_id AND t.chat_id=c.chat_id
              WHERE t.source_id=?1 AND t.watermark<?2 AND c.seen_at=?2 AND t.blocked_at<>?2
              ORDER BY t.page_token IS NULL,t.watermark DESC,t.thread_id LIMIT 1",
             params![source.id, end],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let Some((thread, start, token)) = thread else {
-        lock(database)?.execute(
+    let Some((thread, start, token, kind)) = thread else {
+        let mut db = lock(database)?;
+        let tx = db.transaction()?;
+        tx.execute(
+            "UPDATE history_sources SET covered_at=?2,coverage_gaps=(
+                SELECT count(*) FROM history_feishu_chats WHERE source_id=?1 AND blocked_at=?2
+             )+(
+                SELECT count(*) FROM history_feishu_threads WHERE source_id=?1 AND blocked_at=?2
+             ) WHERE source_id=?1",
+            params![source.id, end],
+        )?;
+        tx.execute(
             "DELETE FROM history_feishu_passes WHERE source_id=?1",
             [&source.id],
         )?;
+        tx.commit()?;
         return Ok(Some(300));
     };
     let (page, skip) = feishu_page(
@@ -410,7 +527,7 @@ fn scan_feishu_thread(
         let next = page
             .next_token
             .filter(|_| page.oldest_timestamp.is_none_or(|oldest| oldest >= since));
-        accept(&tx, &source.id, page.events, profile)?;
+        accept(&tx, &source.id, page.events, profile, kind.as_deref())?;
         let watermark = if next.is_none() { end } else { start };
         (next, watermark)
     } else {

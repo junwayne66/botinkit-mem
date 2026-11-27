@@ -1,0 +1,341 @@
+[
+  {
+    "id": "F02-01",
+    "title": "真实交接 Claude Code → Codex",
+    "covers": ["real_host_handoff","claude_to_codex","final_input","independent_outcome","zero_rebrief"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Claude Code","Codex"],"sources": ["main"],"grants": {"main": ["Claude Code","Codex"]},"events": [],"tool_workspace": {"files": {"repair.py": "import json, pathlib, sys\nroot = pathlib.Path('.')\nmode = sys.argv[1]\nif mode == 'probe':\n    print(json.dumps({'checks': {'parse': 'passed', 'write': 'timeout'}}))\nelif mode == 'write':\n    with (root / 'actions.log').open('a') as f: f.write('write\\n')\n    if not (root / 'ready.flag').exists(): sys.exit(75)\n    (root / 'result.txt').write_text((root / 'rows.txt').read_text())\n    print(json.dumps({'checks': {'write': 'passed'}}))\nelse: sys.exit(2)","rows.txt": "row-17\n"},"first_command": "python3 repair.py probe","rerun_write": "python3 repair.py write","cwd": "每例独立临时目录"},"first_prompt": "我计划稍后重新跑写入。先运行 python3 repair.py probe 确认解析与写入状态，暂时不要执行写入。若需续写，本仓用 python3 repair.py write。","handoff_prompt": "继续青禾的导入排查，把上次失败的步骤做完。","direction": "claude_to_codex"},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "source","action": "在工作目录启动真实宿主并发送 fixture.first_prompt。允许 probe 工具实跑一次，由宿主采集用户计划与真实 stdout，保留调用链。禁止手造 tool_result","args": {"actor": "Claude Code","task": "T1"}},
+      {"id": "ready","action": "测试驱动确认实际 probe 回执已进入本任务，创建空 ready.flag 使下一次写入可完成","args": {"actor": "test_driver"}},
+      {"id": "resume","action": "在另一真实宿主的新会话同一工作目录绑定 T1，仅发送 fixture.handoff_prompt。按实际输入回报 loaded；宿主正常选择下一步，捕获其工具调用与最终产物","args": {"actor": "Codex","source_attempt": "@source"}},
+      {"id": "observe","action": "对 resume 的真实模型输入、服务投递、宿主调用和用户回合取证，按检查名汇总原回执的实际字段；未知与缺宿主标未观测","args": {"actor": "test_observer","resume": "@resume"}},
+      {"id": "judge","action": "与执行宿主不同的验证器读取 result.txt 与 actions.log，并用实际产物写 attempt outcome；除首条续办提示外统计用户重复提供背景的轮数","args": {"actor": "independent_verifier","attempt": "@resume"}}
+    ],
+    "checks": [
+      {"at": "observe","path": "/package_mode","op": "eq","value": "full"},
+      {"at": "observe","path": "/model_input_checks/parse","op": "eq","value": "passed"},
+      {"at": "observe","path": "/model_input_checks/write","op": "eq","value": "timeout"},
+      {"at": "judge","path": "/result_text","op": "eq","value": "row-17\n"},
+      {"at": "judge","path": "/actions","op": "eq","value": ["write"]},
+      {"at": "judge","path": "/extra_background_turns","op": "eq","value": 0},
+      {"at": "judge","path": "/outcome","op": "eq","value": "passed"}
+    ]
+  },
+  {
+    "id": "F02-02",
+    "title": "真实交接 Codex → Claude Code",
+    "covers": ["real_host_handoff","codex_to_claude","final_input","independent_outcome","zero_rebrief"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex","Claude Code"],"sources": ["main"],"grants": {"main": ["Codex","Claude Code"]},"events": [],"tool_workspace": {"files": {"repair.py": "import json, pathlib, sys\nroot = pathlib.Path('.')\nmode = sys.argv[1]\nif mode == 'probe':\n    print(json.dumps({'checks': {'parse': 'passed', 'write': 'timeout'}}))\nelif mode == 'write':\n    with (root / 'actions.log').open('a') as f: f.write('write\\n')\n    if not (root / 'ready.flag').exists(): sys.exit(75)\n    (root / 'result.txt').write_text((root / 'rows.txt').read_text())\n    print(json.dumps({'checks': {'write': 'passed'}}))\nelse: sys.exit(2)","rows.txt": "row-17\n"},"first_command": "python3 repair.py probe","rerun_write": "python3 repair.py write","cwd": "每例独立临时目录"},"first_prompt": "我计划稍后重新跑写入。先运行 python3 repair.py probe 确认解析与写入状态，暂时不要执行写入。若需续写，本仓用 python3 repair.py write。","handoff_prompt": "继续青禾的导入排查，把上次失败的步骤做完。","direction": "codex_to_claude"},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "source","action": "在工作目录启动真实宿主并发送 fixture.first_prompt。允许 probe 工具实跑一次，由宿主采集用户计划与真实 stdout，保留调用链。禁止手造 tool_result","args": {"actor": "Codex","task": "T1"}},
+      {"id": "ready","action": "测试驱动确认实际 probe 回执已进入本任务，创建空 ready.flag 使下一次写入可完成","args": {"actor": "test_driver"}},
+      {"id": "resume","action": "在另一真实宿主的新会话同一工作目录绑定 T1，仅发送 fixture.handoff_prompt。按实际输入回报 loaded；宿主正常选择下一步，捕获其工具调用与最终产物","args": {"actor": "Claude Code","source_attempt": "@source"}},
+      {"id": "observe","action": "对 resume 的真实模型输入、服务投递、宿主调用和用户回合取证，按检查名汇总原回执的实际字段；未知与缺宿主标未观测","args": {"actor": "test_observer","resume": "@resume"}},
+      {"id": "judge","action": "与执行宿主不同的验证器读取 result.txt 与 actions.log，并用实际产物写 attempt outcome；除首条续办提示外统计用户重复提供背景的轮数","args": {"actor": "independent_verifier","attempt": "@resume"}}
+    ],
+    "checks": [
+      {"at": "observe","path": "/package_mode","op": "eq","value": "full"},
+      {"at": "observe","path": "/model_input_checks/parse","op": "eq","value": "passed"},
+      {"at": "observe","path": "/model_input_checks/write","op": "eq","value": "timeout"},
+      {"at": "judge","path": "/result_text","op": "eq","value": "row-17\n"},
+      {"at": "judge","path": "/actions","op": "eq","value": ["write"]},
+      {"at": "judge","path": "/extra_background_turns","op": "eq","value": 0},
+      {"at": "judge","path": "/outcome","op": "eq","value": "passed"}
+    ]
+  },
+  {
+    "id": "F02-03",
+    "title": "同一上下文已证实保有基线后只发送变化",
+    "covers": ["retained_manifest","verified_delta","unchanged_snapshot","independent_evidence_receipt"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "plan","native_version": "1","source": "main","actor_kind": "user_message","task": "T1","at": "2026-11-23T01:00:01Z","text": "我计划重新跑写入检查。"},{"native_object": "check","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"parse": "passed","write": "timeout"}}],"later_events": [{"native_object": "retry","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:03Z","run_id": "r2","checks": {"write": "timeout_again"}}],"rules": ["全局报告用中文。"]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "first","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}},
+      {"id": "ack","action": "由可观测适配器捕获实际最终模型输入，按该输入逐条核对后对本次调用 POST loaded 回执。保留真实清单和摘要供后续 retained 参数使用；把实际片段映射为 refs","args": {"actor": "Codex","delivery": "@first"}},
+      {"id": "more","action": "以 fixture 列明来源采集 later_events；等待候选裁定及投影同步","args": {"actor": "owner","records": "fixture.later_events"}},
+      {"id": "next","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"known_snapshot_id": "@first.snapshot_id","retained_delivery_id": "@first.delivery_id","retained_manifest_digest": "@ack.actual_manifest_digest"}},
+      {"id": "merged","action": "由可观测适配器捕获实际最终模型输入，按该输入逐条核对后对本次调用 POST loaded 回执。保留真实清单和摘要供后续 retained 参数使用；把实际片段映射为 refs","args": {"actor": "Codex","delivery": "@next","retain_input_from": "@ack"}}
+    ],
+    "checks": [
+      {"at": "next","path": "/package_mode","op": "eq","value": "delta"},
+      {"at": "next","path": "/snapshot_mode","op": "eq","value": "unchanged"},
+      {"at": "next","path": "/refs","op": "contains","value": "retry#/checks/write"},
+      {"at": "next","path": "/refs","op": "excludes","value": "check#/checks/parse"},
+      {"at": "next","path": "/refs","op": "excludes","value": "check#/checks/write"},
+      {"at": "merged","path": "/refs","op": "contains","value": "check#/checks/parse"},
+      {"at": "merged","path": "/refs","op": "contains","value": "check#/checks/write"},
+      {"at": "merged","path": "/refs","op": "contains","value": "retry#/checks/write"},
+      {"at": "merged","path": "/evidence_complete","op": "eq","value": true}
+    ]
+  },
+  {
+    "id": "F02-04",
+    "title": "同一宿主另开空会话必须补回基线",
+    "covers": ["new_empty_session","history_highlight","full_baseline"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "plan","native_version": "1","source": "main","actor_kind": "user_message","task": "T1","at": "2026-11-23T01:00:01Z","text": "我计划重新跑写入检查。"},{"native_object": "check","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"parse": "passed","write": "timeout"}}],"later_events": [{"native_object": "retry","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:03Z","run_id": "r2","checks": {"write": "timeout_again"}}],"rules": ["全局报告用中文。"]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "first","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}},
+      {"id": "ack","action": "由可观测适配器捕获实际最终模型输入，按该输入逐条核对后对本次调用 POST loaded 回执。保留真实清单和摘要供后续 retained 参数使用；把实际片段映射为 refs","args": {"actor": "Codex","delivery": "@first"}},
+      {"id": "more","action": "以 fixture 列明来源采集 later_events；等待候选裁定及投影同步","args": {"actor": "owner","records": "fixture.later_events"}},
+      {"id": "new","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "blank-2","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"retained_delivery_id": "@first.delivery_id","retained_manifest_digest": "@ack.actual_manifest_digest"}},
+      {"id": "input","action": "观测最终模型输入并独立映射实际片段 refs、声明的维度和值（statement_text）与全文 text。若观察缺失，保留 unknown","args": {"actor": "Codex","delivery": "@new"}}
+    ],
+    "checks": [
+      {"at": "new","path": "/package_mode","op": "eq","value": "full"},
+      {"at": "input","path": "/refs","op": "contains","value": "check#/checks/parse"},
+      {"at": "input","path": "/refs","op": "contains","value": "check#/checks/write"},
+      {"at": "input","path": "/refs","op": "contains","value": "retry#/checks/write"},
+      {"at": "input","path": "/statement_text","op": "contains","value": "zh"}
+    ]
+  },
+  {
+    "id": "F02-05",
+    "title": "压缩重新建上下文后旧摘要不作留存凭证",
+    "covers": ["compressed_context","epoch_change","stale_retention_proof"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "check","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"parse": "passed","write": "timeout"}}],"later_events": [{"native_object": "retry","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:03Z","run_id": "r2","checks": {"write": "timeout_again"}}]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "first","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}},
+      {"id": "ack","action": "由可观测适配器捕获实际最终模型输入，按该输入逐条核对后对本次调用 POST loaded 回执。保留真实清单和摘要供后续 retained 参数使用；把实际片段映射为 refs","args": {"actor": "Codex","delivery": "@first"}},
+      {"id": "more","action": "以 fixture 列明来源采集 later_events；等待候选裁定及投影同步","args": {"actor": "owner","records": "fixture.later_events"}},
+      {"id": "compact","action": "触发宿主压缩，切换 context_epoch=2，清除原证据，仅保留任务名","args": {"actor": "Codex","session": "s1"}},
+      {"id": "next","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "2","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"retained_delivery_id": "@first.delivery_id","retained_manifest_digest": "@ack.actual_manifest_digest"}},
+      {"id": "input","action": "观测最终模型输入并独立映射实际片段 refs、声明的维度和值（statement_text）与全文 text。若观察缺失，保留 unknown","args": {"actor": "Codex","delivery": "@next"}}
+    ],
+    "checks": [
+      {"at": "next","path": "/package_mode","op": "eq","value": "full"},
+      {"at": "input","path": "/refs","op": "contains","value": "check#/checks/parse"},
+      {"at": "input","path": "/refs","op": "contains","value": "check#/checks/write"},
+      {"at": "input","path": "/refs","op": "contains","value": "retry#/checks/write"}
+    ]
+  },
+  {
+    "id": "F02-06",
+    "title": "旧宿主只出具声明 complete 回执",
+    "covers": ["legacy_revision_receipt","no_evidence_proof","full_fallback"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "check","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"parse": "passed","write": "timeout"}}],"rules": ["全局报告用中文。"],"later_events": [{"native_object": "retry","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:03Z","run_id": "r2","checks": {"write": "timeout_again"}}]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "first","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}},
+      {"id": "old","action": "模拟旧版宿主，仅对第一次实际装入的声明发 loaded，回执只有 revision_ids，不提交证据清单或摘要","args": {"actor": "Codex","delivery": "@first"}},
+      {"id": "more","action": "以 fixture 列明来源采集 later_events；等待候选裁定及投影同步","args": {"actor": "owner","records": "fixture.later_events"}},
+      {"id": "next","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"known_snapshot_id": "@first.snapshot_id","retained_delivery_id": "@first.delivery_id"}}
+    ],
+    "checks": [
+      {"at": "old","path": "/complete","op": "eq","value": true},
+      {"at": "next","path": "/package_mode","op": "eq","value": "full"},
+      {"at": "next","path": "/refs","op": "contains","value": "check#/checks/parse"},
+      {"at": "next","path": "/refs","op": "contains","value": "check#/checks/write"},
+      {"at": "next","path": "/refs","op": "contains","value": "retry#/checks/write"}
+    ]
+  },
+  {
+    "id": "F02-07",
+    "title": "宿主只装入前半份证据，必须重给整包",
+    "covers": ["partial_loading","incomplete_manifest","required_refs"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "parse","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:01Z","run_id": "r1","checks": {"parse": "passed"}},{"native_object": "write","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"write": "timeout"}}],"later_events": [{"native_object": "retry","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:03Z","run_id": "r2","checks": {"write": "timeout_again"}}]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "first","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}},
+      {"id": "ack","action": "由可观测适配器捕获实际最终模型输入，按该输入逐条核对后对本次调用 POST loaded 回执。保留真实清单和摘要供后续 retained 参数使用；把实际片段映射为 refs","args": {"actor": "Codex","delivery": "@first","host_input_transform": {"drop_native_object": "write"},"missing_reason": "host_budget"}},
+      {"id": "more","action": "以 fixture 列明来源采集 later_events；等待候选裁定及投影同步","args": {"actor": "owner","records": "fixture.later_events"}},
+      {"id": "next","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"retained_delivery_id": "@first.delivery_id","retained_manifest_digest": "@ack.actual_manifest_digest"}},
+      {"id": "input","action": "观测最终模型输入并独立映射实际片段 refs、声明的维度和值（statement_text）与全文 text。若观察缺失，保留 unknown","args": {"actor": "Codex","delivery": "@next"}}
+    ],
+    "checks": [
+      {"at": "ack","path": "/evidence_complete","op": "eq","value": false},
+      {"at": "ack","path": "/refs","op": "excludes","value": "write#/checks/write"},
+      {"at": "next","path": "/package_mode","op": "eq","value": "full"},
+      {"at": "input","path": "/refs","op": "contains","value": "parse#/checks/parse"},
+      {"at": "input","path": "/refs","op": "contains","value": "write#/checks/write"},
+      {"at": "input","path": "/refs","op": "contains","value": "retry#/checks/write"}
+    ]
+  },
+  {
+    "id": "F02-08",
+    "title": "声明与证据预算独立，预算不足时显示缺口",
+    "covers": ["budget_exhaustion","essential_gap","separate_budgets"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "plan","native_version": "1","source": "main","actor_kind": "user_message","task": "T1","at": "2026-11-23T01:00:01Z","text": "我计划重新跑写入检查。"},{"native_object": "check","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"parse": "passed","write": "timeout"}}],"rules": ["全局报告用中文。"]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "tiny","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 0}}},
+      {"id": "audit","action": "从 tiny 响应读取实际包状态和必需证据缺口，将公开状态映射为 exhausted 布尔值，同时提取已提供声明值","args": {"actor": "test_observer","delivery": "@tiny"}},
+      {"id": "ample","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s2","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}}
+    ],
+    "checks": [
+      {"at": "tiny","path": "/refs","op": "eq","value": []},
+      {"at": "audit","path": "/evidence_budget_exhausted","op": "eq","value": true},
+      {"at": "audit","path": "/statement_values","op": "contains","value": "zh"},
+      {"at": "ample","path": "/refs","op": "contains","value": "check#/checks/parse"},
+      {"at": "ample","path": "/refs","op": "contains","value": "check#/checks/write"}
+    ]
+  },
+  {
+    "id": "F02-09",
+    "title": "第 51 条工具失败越过旧版前 50 条截断",
+    "covers": ["long_task_over_50","deterministic_generator","latest_required_evidence"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "e50","native_version": "1","source": "main","actor_kind": "user_message","task": "T1","at": "2026-11-23T01:00:50Z","text": "我计划重新跑写入。"},{"native_object": "e51","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:51Z","run_id": "r1","checks": {"parse": "passed","write": "timeout"}}],"generate_before_events": {"start": 1,"stop_inclusive": 49,"native_object": "filler-{n:02d}","native_version": "1","task": "T1","source": "main","actor_kind": "assistant_message","at": "2026-11-23T01:00:00Z + n seconds","text": "读取分片 {n:02d} 的表头，只做记录。"}},
+    "steps": [
+      {"id": "expand","action": "按 generate_before_events 的闭区间和格式展开 49 个原生版本，按 at 排序再追加 fixture.events，交 seed 按此顺序提交","args": {"actor": "test_driver"}},
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "load","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 1200}}},
+      {"id": "input","action": "观测最终模型输入并独立映射实际片段 refs、声明的维度和值（statement_text）与全文 text。若观察缺失，保留 unknown","args": {"actor": "Codex","delivery": "@load"}},
+      {"id": "count","action": "从来源数据库只读统计 T1 活动事件数，核对 e51 的时间名次","args": {"actor": "test_observer"}}
+    ],
+    "checks": [
+      {"at": "count","path": "/active_events","op": "eq","value": 51},
+      {"at": "count","path": "/e51_rank_by_time","op": "eq","value": 51},
+      {"at": "input","path": "/refs","op": "contains","value": "e51#/checks/write"},
+      {"at": "input","path": "/refs","op": "contains","value": "e51#/checks/parse"}
+    ]
+  },
+  {
+    "id": "F02-10",
+    "title": "同仓另一任务的成功不能抵消本任务失败",
+    "covers": ["task_isolation","same_repository","misleading_success"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"},{"id": "T2","project": "青禾","anchor": "qinghe/export"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "plan","native_version": "1","source": "main","actor_kind": "user_message","task": "T1","at": "2026-11-23T01:00:01Z","text": "我计划重新跑写入检查。"},{"native_object": "check","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"parse": "passed","write": "timeout"}},{"native_object": "foreign","native_version": "1","source": "main","actor_kind": "tool_result","task": "T2","at": "2026-11-23T01:00:04Z","run_id": "foreign_run","checks": {"write": "passed"}}]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "local","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}},
+      {"id": "input","action": "观测最终模型输入并独立映射实际片段 refs、声明的维度和值（statement_text）与全文 text。若观察缺失，保留 unknown","args": {"actor": "Codex","delivery": "@local"}},
+      {"id": "other","action": "在独立会话为获准的 T2 装包并核对同一真实来源，映射实返 refs","args": {"actor": "Codex","task": "T2"}}
+    ],
+    "checks": [
+      {"at": "input","path": "/refs","op": "contains","value": "check#/checks/write"},
+      {"at": "input","path": "/refs","op": "excludes","value": "foreign#/checks/write"},
+      {"at": "other","path": "/refs","op": "contains","value": "foreign#/checks/write"},
+      {"at": "other","path": "/refs","op": "excludes","value": "check#/checks/write"}
+    ]
+  },
+  {
+    "id": "F02-11",
+    "title": "同名任务只能提示获准区分的候选",
+    "covers": ["ambiguous_task_name","permission_filtered_choices","no_private_metadata"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"},{"id": "T2","project": "青禾","anchor": "qinghe/import-ui"},{"id": "T3","project": "青禾","anchor": "仓外名单-密签"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [],"task_titles": {"T1": "导入排查","T2": "导入排查","T3": "导入排查"},"task_access": {"Codex": ["T1","T2"]}},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "select","action": "由宿主仅按名称查找任务，未带绑定 ID。记录实际展示给该读者的可选任务原生别名、可见文案和是否已自动投递","args": {"actor": "Codex","name": "导入排查"}},
+      {"id": "choose","action": "用户选已展示的 qinghe/import-ui 任务并由客户端显式绑定，读取服务返回的工作任务别名","args": {"actor": "Codex","choice": "qinghe/import-ui"}}
+    ],
+    "checks": [
+      {"at": "select","path": "/candidate_ids","op": "contains","value": "T1"},
+      {"at": "select","path": "/candidate_ids","op": "contains","value": "T2"},
+      {"at": "select","path": "/candidate_ids","op": "excludes","value": "T3"},
+      {"at": "select","path": "/rendered_text","op": "excludes","value": "仓外名单-密签"},
+      {"at": "select","path": "/automatic_delivery_count","op": "eq","value": 0},
+      {"at": "choose","path": "/bound_task","op": "eq","value": "T2"}
+    ]
+  },
+  {
+    "id": "F02-12",
+    "title": "只有准备执行的计划，查不到真实结果",
+    "covers": ["missing_tool_result","abstention","authorized_timeline","unknown_handoff_position"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "intent","native_version": "1","source": "main","actor_kind": "user_message","task": "T1","at": "2026-11-23T01:00:01Z","text": "我计划明天复验写入超时。"}]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "load","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}},
+      {"id": "audit","action": "读取该次接手卡和获准完整时间线，提取计划原话、结果证据引用与上次接手状态，将服务的无结果状态记 unknown","args": {"actor": "Codex","delivery": "@load"}}
+    ],
+    "checks": [
+      {"at": "load","path": "/package_mode","op": "eq","value": "full"},
+      {"at": "audit","path": "/plan_text","op": "contains","value": "计划明天复验"},
+      {"at": "audit","path": "/result_evidence_refs","op": "eq","value": []},
+      {"at": "audit","path": "/execution_result","op": "eq","value": "unknown"},
+      {"at": "audit","path": "/previous_handoff","op": "eq","value": "unknown"}
+    ]
+  },
+  {
+    "id": "F02-13",
+    "title": "撤权限后仅追加宿主拒用旧包，重开保留合法检查",
+    "covers": ["source_revocation","append_only_reset","old_handle_denied","positive_control"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main","restricted"],"grants": {"main": ["Codex"],"restricted": ["Codex"]},"events": [{"native_object": "public","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:01Z","run_id": "r1","checks": {"parse": "passed"}},{"native_object": "private","native_version": "1","source": "restricted","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"write": "讨论密签-47"}}]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "first","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"append_only": true}},
+      {"id": "ack","action": "由可观测适配器捕获实际最终模型输入，按该输入逐条核对后对本次调用 POST loaded 回执。保留真实清单和摘要供后续 retained 参数使用；把实际片段映射为 refs","args": {"actor": "Codex","delivery": "@first"}},
+      {"id": "revoke","action": "所有者预览并确认取消该宿主对 restricted 来源的 task_delivery 授权","args": {"actor": "owner","client": "Codex","source": "restricted"}},
+      {"id": "old","action": "该读者用 first 中 private 的原真实句柄再次请求展开，将状态与可序列化正文留下","args": {"actor": "Codex","handle": "@first:private"}},
+      {"id": "reuse","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"append_only": true,"retained_delivery_id": "@first.delivery_id","retained_manifest_digest": "@ack.actual_manifest_digest"}},
+      {"id": "fresh","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "clean","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"append_only": true}},
+      {"id": "input","action": "观测最终模型输入并独立映射实际片段 refs、声明的维度和值（statement_text）与全文 text。若观察缺失，保留 unknown","args": {"actor": "Codex","delivery": "@fresh"}}
+    ],
+    "checks": [
+      {"at": "ack","path": "/refs","op": "contains","value": "private#/checks/write"},
+      {"at": "old","path": "/status","op": "eq","value": 404},
+      {"at": "reuse","path": "/code","op": "eq","value": "fresh_session_required"},
+      {"at": "input","path": "/refs","op": "contains","value": "public#/checks/parse"},
+      {"at": "input","path": "/refs","op": "excludes","value": "private#/checks/write"},
+      {"at": "input","path": "/text","op": "excludes","value": "讨论密签-47"}
+    ]
+  },
+  {
+    "id": "F02-14",
+    "title": "交付回包丢失与较迟回执均不能制造装入或采用",
+    "covers": ["response_loss","idempotent_redelivery","out_of_order_receipt","no_false_use"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "check","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"parse": "passed","write": "timeout"}}],"later_events": [{"native_object": "retry","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:03Z","run_id": "r2","checks": {"write": "timeout_again"}}]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "first","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"idempotency_key": "req-1"}},
+      {"id": "drop","action": "模拟回包到宿主前丢失，保留服务投递跟踪，宿主不发任何 loaded","args": {"actor": "test_driver","delivery": "@first"}},
+      {"id": "again","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"idempotency_key": "req-1"}},
+      {"id": "same","action": "比较 first、again 的服务端 delivery_id，读取该 client 的投递及回执数量","args": {"actor": "test_observer","attempts": ["@first","@again"]}},
+      {"id": "more","action": "以 fixture 列明来源采集 later_events；等待候选裁定及投影同步","args": {"actor": "owner","records": "fixture.later_events"}},
+      {"id": "later","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}},
+      {"id": "late_ack","action": "由可观测适配器捕获实际最终模型输入，按该输入逐条核对后对本次调用 POST loaded 回执。保留真实清单和摘要供后续 retained 参数使用；把实际片段映射为 refs","args": {"actor": "Codex","delivery": "@again"}},
+      {"id": "ledger","action": "按两个真实 delivery_id 分别读所有者回执和采用账本，缺回执记 unknown","args": {"actor": "owner","older": "@again","newer": "@later"}}
+    ],
+    "checks": [
+      {"at": "same","path": "/same_delivery","op": "eq","value": true},
+      {"at": "same","path": "/delivery_count","op": "eq","value": 1},
+      {"at": "same","path": "/loaded_count","op": "eq","value": 0},
+      {"at": "later","path": "/package_mode","op": "eq","value": "full"},
+      {"at": "ledger","path": "/older/loaded","op": "eq","value": "observed"},
+      {"at": "ledger","path": "/newer/loaded","op": "eq","value": "unknown"},
+      {"at": "ledger","path": "/newer/used","op": "eq","value": "unknown"}
+    ]
+  },
+  {
+    "id": "F02-15",
+    "title": "证明的摘要或路由不匹配时不得省略必需证据",
+    "covers": ["retained_digest_mismatch","route_mismatch","no_stale_reuse"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex"],"sources": ["main"],"grants": {"main": ["Codex"]},"events": [{"native_object": "check","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"parse": "passed","write": "timeout"}}],"later_events": [{"native_object": "retry","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:03Z","run_id": "r2","checks": {"write": "timeout_again"}}]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "first","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096}}},
+      {"id": "ack","action": "由可观测适配器捕获实际最终模型输入，按该输入逐条核对后对本次调用 POST loaded 回执。保留真实清单和摘要供后续 retained 参数使用；把实际片段映射为 refs","args": {"actor": "Codex","delivery": "@first"}},
+      {"id": "more","action": "以 fixture 列明来源采集 later_events；等待候选裁定及投影同步","args": {"actor": "owner","records": "fixture.later_events"}},
+      {"id": "wrongdigest","action": "以指定宿主启动或继续绑定会话/尝试，POST /v2/context/load。将实返 evidence 和 observations 映射为 refs（原生对象#/字段），并把实返声明的维度与值序列化为 statement_text。保留原始投递 ID 和字段","args": {"actor": "Codex","task": "T1","session_id": "s1","context_epoch": "1","budget": {"statement_tokens": 4096,"evidence_tokens": 4096},"retained_delivery_id": "@first.delivery_id","retained_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"}},
+      {"id": "wrongroute","action": "通过真实已绑定 Codex 凭据调用 context/load，伪填另一宿主 route_ref，观察实际错误及返回的数据项","args": {"actor": "Codex","task": "T1","route_ref": "route-from-another-client"}},
+      {"id": "input","action": "观测最终模型输入并独立映射实际片段 refs、声明的维度和值（statement_text）与全文 text。若观察缺失，保留 unknown","args": {"actor": "Codex","delivery": "@wrongdigest"}}
+    ],
+    "checks": [
+      {"at": "wrongdigest","path": "/package_mode","op": "eq","value": "full"},
+      {"at": "input","path": "/refs","op": "contains","value": "check#/checks/write"},
+      {"at": "input","path": "/refs","op": "contains","value": "retry#/checks/write"},
+      {"at": "wrongroute","path": "/status","op": "eq","value": 403},
+      {"at": "wrongroute","path": "/evidence","op": "absent"}
+    ]
+  },
+  {
+    "id": "F02-16",
+    "title": "四类观测分别计数，未知结果保留在接手分母",
+    "covers": ["attempt_metrics","missing_receipt","unknown_outcome","usage_not_success","no_rebrief_denominator"],
+    "fixture": {"clock": "2026-11-23T01:01:00Z","projects": ["青禾"],"tasks": [{"id": "T1","project": "青禾","anchor": "qinghe/import"}],"hosts": ["Codex","lookup"],"sources": ["main"],"grants": {"main": ["Codex","lookup"]},"events": [{"native_object": "check","native_version": "1","source": "main","actor_kind": "tool_result","task": "T1","at": "2026-11-23T01:00:02Z","run_id": "r1","checks": {"parse": "passed","write": "timeout;check-token=Q7R4"}}],"metric_runs": [{"id": "A","host": "Codex","model_input": "实际装入全部","tool": "通过可观察的测试宿主，从实际装入的写入回执取 check-token，用该值执行写文件操作生成 result-A，并对该次动作及片段上报 used","user_followups": []},{"id": "B","host": "Codex","model_input": "宿主主动丢弃写入证据","tool": "仅写空文件 result-B 并读回","user_followups": ["解析已通过，请重跑写入。"]},{"id": "C","host": "lookup","model_input": "只允许服务投递，断开后无法观测","tool": null,"user_followups": []}]},
+    "steps": [
+      {"id": "seed","action": "在空实例创建 fixture.tasks/sources，绑定 hosts、任务访问、列明的来源及共享声明授权。从获准来源采集 fixture.events 并等提炼完成；按原生对象建立实发句柄/片段映射。同一宿主和会话的相同 task/epoch 复用同一 attempt；新会话另建尝试。若有 rules，以 owner 追加可分享声明并向各列明宿主授权；later_events 留待相应步骤","args": {"actor": "owner"}},
+      {"id": "run","action": "为 fixture.metric_runs 各建新尝试并实际装包，按指示注入宿主丢弃/断连。A/B 从最终输入发精确装入回执，A 对可核对的工具调用附片段引用和动作证据，B 不发 used，C 不发。记录实际追加的用户回合。","args": {"actor": "test_driver"}},
+      {"id": "verify","action": "独立身份读取 A/B 的磁盘工件，内容等于源工具回执中 check-token 的实际值判 passed，其他内容判 failed；无工件的 C 不写 outcome","args": {"actor": "independent_verifier"}},
+      {"id": "metrics","action": "从真实投递、最终输入、回执、对话日志及独立结果汇总。每题所需证据取源回执的两个检查位置；无法观测装入或结果均单列 unknown，未收到 used 回执保留未知","args": {"actor": "owner","runs": "@run"}}
+    ],
+    "checks": [
+      {"at": "metrics","path": "/provided","op": "eq","value": 3},
+      {"at": "metrics","path": "/all_required_in_final_input","op": "eq","value": {"yes": 1,"no": 1,"unknown": 1}},
+      {"at": "metrics","path": "/use_observations","op": "eq","value": {"observed": 1,"unknown": 2}},
+      {"at": "metrics","path": "/outcomes","op": "eq","value": {"passed": 1,"failed": 1,"unknown": 1}},
+      {"at": "metrics","path": "/no_rebrief_and_verified","op": "eq","value": {"numerator": 1,"denominator": 3}}
+    ]
+  }
+]

@@ -1,0 +1,2756 @@
+{
+  "binary_sha256": "d0e36329b8de767013e0dd3a58c220df67e1d634aa04d9efb6689509226f02b1",
+  "interface_probes": {
+    "history_list": {
+      "method": "GET",
+      "path": "/v2/history/jobs",
+      "status": 200,
+      "body": {
+        "jobs": []
+      }
+    },
+    "history_results": {
+      "method": "GET",
+      "path": "/v2/history/jobs/baseline-fixture/results",
+      "status": 404,
+      "body": {
+        "code": "not_available",
+        "message": "endpoint is unavailable on this release",
+        "request_id": "3828b020-4aae-4f0e-a3a4-e1680c127ff6",
+        "retryable": false
+      }
+    },
+    "hybrid": {
+      "method": "POST",
+      "path": "/v2/search",
+      "status": 422,
+      "body": {
+        "code": "invalid_input",
+        "message": "search mode must be lexical or vector",
+        "request_id": "edb71d95-ab41-4d5e-867a-e180d1951f74",
+        "retryable": false
+      }
+    },
+    "root_denial": {
+      "method": "POST",
+      "path": "/v2/operations/preview",
+      "status": 404,
+      "body": {
+        "code": "not_available",
+        "message": "governance action is unavailable",
+        "request_id": "645b1129-b74f-40b4-a392-64a6d26a8a19",
+        "retryable": false
+      }
+    },
+    "cooling": {
+      "method": "POST",
+      "path": "/v2/operations/preview",
+      "status": 404,
+      "body": {
+        "code": "not_available",
+        "message": "governance action is unavailable",
+        "request_id": "7349db46-5262-4a6f-aaac-c6fd8ca45da8",
+        "retryable": false
+      }
+    },
+    "capabilities": {
+      "method": "GET",
+      "path": "/v2/capabilities",
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "available": true,
+            "command_id": "search.query",
+            "http": {
+              "path": "/v2/search"
+            },
+            "kind": "query",
+            "stage": "P0",
+            "supported_versions": [
+              1
+            ]
+          },
+          {
+            "available": true,
+            "command_id": "evidence.expand",
+            "http": {
+              "path": "/v2/evidence/expand"
+            },
+            "kind": "query",
+            "stage": "P0",
+            "supported_versions": [
+              1
+            ]
+          },
+          {
+            "available": true,
+            "command_id": "config.patch",
+            "http": {
+              "path": "/v2/config"
+            },
+            "kind": "action",
+            "stage": "P0",
+            "supported_versions": [
+              1
+            ]
+          },
+          {
+            "available": true,
+            "command_id": "config.read",
+            "http": {
+              "path": "/v2/config"
+            },
+            "kind": "query",
+            "stage": "P0",
+            "supported_versions": [
+              1
+            ]
+          },
+          {
+            "available": true,
+            "command_id": "statement.append",
+            "http": {
+              "path": "/v2/statements"
+            },
+            "kind": "action",
+            "stage": "P0",
+            "supported_versions": [
+              1
+            ]
+          },
+          {
+            "available": true,
+            "command_id": "statement.list",
+            "http": {
+              "path": "/v2/statements"
+            },
+            "kind": "query",
+            "stage": "P0",
+            "supported_versions": [
+              1
+            ]
+          },
+          {
+            "available": true,
+            "command_id": "health.read",
+            "http": {
+              "path": "/v2/health"
+            },
+            "kind": "query",
+            "stage": "P0",
+            "supported_versions": [
+              1
+            ]
+          }
+        ],
+        "next_cursor": null
+      }
+    },
+    "tables": [
+      "authority_changes",
+      "authority_facts",
+      "authority_intents",
+      "authority_observations",
+      "authority_revisions",
+      "authority_statements",
+      "context_attempts",
+      "context_clients",
+      "context_deliveries",
+      "context_delivery_evidence",
+      "context_intents",
+      "context_outcomes",
+      "context_policy",
+      "context_receipts",
+      "context_task_access",
+      "context_tasks",
+      "dashboard_counts",
+      "data_transfers",
+      "governance_operations",
+      "governance_previews",
+      "history_feishu_chats",
+      "history_feishu_passes",
+      "history_feishu_threads",
+      "history_files",
+      "history_sources",
+      "history_task_batches",
+      "history_task_errors",
+      "history_task_items",
+      "history_task_jobs",
+      "ing_actors",
+      "ing_candidates",
+      "ing_event_versions",
+      "ing_grants",
+      "ing_ingests",
+      "ing_jobs",
+      "ing_model_routes",
+      "ing_root_revocations",
+      "ing_roots",
+      "ing_sources",
+      "ing_vector_routes",
+      "integration_feishu_accounts",
+      "integration_hosts",
+      "recall_events",
+      "recall_fts",
+      "recall_fts_config",
+      "recall_fts_content",
+      "recall_fts_data",
+      "recall_fts_docsize",
+      "recall_fts_idx",
+      "recall_grants",
+      "sqlite_sequence",
+      "vector_projection",
+      "vector_work"
+    ]
+  },
+  "replays": {
+    "F01-01": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [
+              {
+                "fact_id": "f_24576674991848028ce88ea85de9b168",
+                "key": "report.language",
+                "revision_id": "r_be0f754772d34f4c99a4e65db9859e80",
+                "status": "active",
+                "supersedes": null,
+                "value": "zh"
+              },
+              {
+                "fact_id": "f_00f0a882cfcf4935959620dc284077e5",
+                "key": "report.opening",
+                "revision_id": "r_e2bffde362ff4126806a4c83673cafe2",
+                "status": "active",
+                "supersedes": null,
+                "value": "conclusion"
+              }
+            ],
+            "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+            "status": "recorded"
+          }
+        },
+        "q": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": [
+              {
+                "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+                "fact_id": "f_24576674991848028ce88ea85de9b168",
+                "key": "report.language",
+                "known_from": "2026-11-26T17:26:44.024066000Z",
+                "revision_id": "r_be0f754772d34f4c99a4e65db9859e80",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:44.024066000Z",
+                "value": "zh"
+              },
+              {
+                "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+                "fact_id": "f_00f0a882cfcf4935959620dc284077e5",
+                "key": "report.opening",
+                "known_from": "2026-11-26T17:26:44.024066000Z",
+                "revision_id": "r_e2bffde362ff4126806a4c83673cafe2",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:44.024066000Z",
+                "value": "conclusion"
+              }
+            ]
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": [
+              {
+                "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+                "fact_id": "f_24576674991848028ce88ea85de9b168",
+                "key": "report.language",
+                "known_from": "2026-11-26T17:26:44.024066000Z",
+                "revision_id": "r_be0f754772d34f4c99a4e65db9859e80",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:44.024066000Z",
+                "value": "zh"
+              },
+              {
+                "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+                "fact_id": "f_00f0a882cfcf4935959620dc284077e5",
+                "key": "report.opening",
+                "known_from": "2026-11-26T17:26:44.024066000Z",
+                "revision_id": "r_e2bffde362ff4126806a4c83673cafe2",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:44.024066000Z",
+                "value": "conclusion"
+              }
+            ]
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [
+            {
+              "fact_id": "f_24576674991848028ce88ea85de9b168",
+              "key": "report.language",
+              "revision_id": "r_be0f754772d34f4c99a4e65db9859e80",
+              "status": "active",
+              "supersedes": null,
+              "value": "zh"
+            },
+            {
+              "fact_id": "f_00f0a882cfcf4935959620dc284077e5",
+              "key": "report.opening",
+              "revision_id": "r_e2bffde362ff4126806a4c83673cafe2",
+              "status": "active",
+              "supersedes": null,
+              "value": "conclusion"
+            }
+          ],
+          "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+          "status": "recorded"
+        },
+        "q": {
+          "dimensions": {
+            "report.language": {
+              "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+              "fact_id": "f_24576674991848028ce88ea85de9b168",
+              "key": "report.language",
+              "known_from": "2026-11-26T17:26:44.024066000Z",
+              "revision_id": "r_be0f754772d34f4c99a4e65db9859e80",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:44.024066000Z",
+              "value": "zh"
+            },
+            "report.opening": {
+              "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+              "fact_id": "f_00f0a882cfcf4935959620dc284077e5",
+              "key": "report.opening",
+              "known_from": "2026-11-26T17:26:44.024066000Z",
+              "revision_id": "r_e2bffde362ff4126806a4c83673cafe2",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:44.024066000Z",
+              "value": "conclusion"
+            }
+          }
+        },
+        "b": {
+          "dimensions": {
+            "report.language": {
+              "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+              "fact_id": "f_24576674991848028ce88ea85de9b168",
+              "key": "report.language",
+              "known_from": "2026-11-26T17:26:44.024066000Z",
+              "revision_id": "r_be0f754772d34f4c99a4e65db9859e80",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:44.024066000Z",
+              "value": "zh"
+            },
+            "report.opening": {
+              "evidence": "所有报告用中文，先写结论；以后代码示例用 Rust。",
+              "fact_id": "f_00f0a882cfcf4935959620dc284077e5",
+              "key": "report.opening",
+              "known_from": "2026-11-26T17:26:44.024066000Z",
+              "revision_id": "r_e2bffde362ff4126806a4c83673cafe2",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_4fd9fffc5f144a3f86ef16eacc9038ad",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:44.024066000Z",
+              "value": "conclusion"
+            }
+          }
+        }
+      }
+    },
+    "F01-02": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_650f17e5ddde4a56a243a86817e84e76",
+            "status": "pending"
+          }
+        },
+        "fri": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        },
+        "sat": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        },
+        "other": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_650f17e5ddde4a56a243a86817e84e76",
+          "status": "pending"
+        },
+        "fri": {
+          "dimensions": {}
+        },
+        "sat": {
+          "dimensions": {}
+        },
+        "other": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F01-03": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_b908f6ac37e24cf98e7d6132b5d95ce0",
+            "status": "pending"
+          }
+        },
+        "before_learned": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        },
+        "after_learned": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        },
+        "not_valid_yet": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_b908f6ac37e24cf98e7d6132b5d95ce0",
+          "status": "pending"
+        },
+        "before_learned": {
+          "dimensions": {}
+        },
+        "after_learned": {
+          "dimensions": {}
+        },
+        "not_valid_yet": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F01-04": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_a7eb1d3ac35a429aafb56aa04d94800d",
+            "status": "pending"
+          }
+        },
+        "once": {
+          "status": 201,
+          "body": {
+            "change_seq": 2,
+            "dimensions": [],
+            "statement_id": "st_f88b062146114e848216715e0986e2c3",
+            "status": "pending"
+          }
+        },
+        "in_task": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        },
+        "sibling": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        },
+        "closed": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        },
+        "other": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_a7eb1d3ac35a429aafb56aa04d94800d",
+          "status": "pending"
+        },
+        "once": {
+          "change_seq": 2,
+          "dimensions": [],
+          "statement_id": "st_f88b062146114e848216715e0986e2c3",
+          "status": "pending"
+        },
+        "in_task": {
+          "dimensions": {}
+        },
+        "sibling": {
+          "dimensions": {}
+        },
+        "closed": {
+          "dimensions": {}
+        },
+        "other": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F01-05": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_4d52a56b9b464fddac9fca82b446f908",
+            "status": "pending"
+          }
+        },
+        "q": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_4d52a56b9b464fddac9fca82b446f908",
+          "status": "pending"
+        },
+        "q": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F01-06": {
+      "actual": {
+        "baseline": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_037dd1d5bf114b869055de9bd1bd50c9",
+            "status": "pending"
+          }
+        },
+        "unclear": {
+          "status": 201,
+          "body": {
+            "change_seq": 2,
+            "dimensions": [],
+            "statement_id": "st_c5e896c329ba4537b9920ed01b4bf1ec",
+            "status": "pending"
+          }
+        },
+        "still_default": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        },
+        "clarified": {
+          "status": 201,
+          "body": {
+            "change_seq": 3,
+            "dimensions": [],
+            "statement_id": "st_70785712256540bcab2d0c8af4b1114b",
+            "status": "pending"
+          }
+        },
+        "resolved": {
+          "status": 200,
+          "body": {
+            "change_seq": 3,
+            "statements": []
+          }
+        },
+        "other": {
+          "status": 200,
+          "body": {
+            "change_seq": 3,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "baseline": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_037dd1d5bf114b869055de9bd1bd50c9",
+          "status": "pending"
+        },
+        "unclear": {
+          "change_seq": 2,
+          "dimensions": [],
+          "statement_id": "st_c5e896c329ba4537b9920ed01b4bf1ec",
+          "status": "pending"
+        },
+        "still_default": {
+          "dimensions": {}
+        },
+        "clarified": {
+          "change_seq": 3,
+          "dimensions": [],
+          "statement_id": "st_70785712256540bcab2d0c8af4b1114b",
+          "status": "pending"
+        },
+        "resolved": {
+          "dimensions": {}
+        },
+        "other": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F01-07": {
+      "actual": {
+        "no_zone": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_1260fa6714174296b3cbfb1ad8b7cbec",
+            "status": "pending"
+          }
+        },
+        "without": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        },
+        "with_zone": {
+          "status": 201,
+          "body": {
+            "change_seq": 2,
+            "dimensions": [],
+            "statement_id": "st_52c803cf36df42aa990bf0797bd696c3",
+            "status": "pending"
+          }
+        },
+        "correct": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        },
+        "past": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "no_zone": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_1260fa6714174296b3cbfb1ad8b7cbec",
+          "status": "pending"
+        },
+        "without": {
+          "dimensions": {}
+        },
+        "with_zone": {
+          "change_seq": 2,
+          "dimensions": [],
+          "statement_id": "st_52c803cf36df42aa990bf0797bd696c3",
+          "status": "pending"
+        },
+        "correct": {
+          "dimensions": {}
+        },
+        "past": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F01-08": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_816ea0f943fc4a08a76b3027cbbd18b3",
+            "status": "pending"
+          }
+        },
+        "before": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        },
+        "after": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_816ea0f943fc4a08a76b3027cbbd18b3",
+          "status": "pending"
+        },
+        "before": {
+          "dimensions": {}
+        },
+        "after": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F01-09": {
+      "actual": {
+        "first": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [
+              {
+                "fact_id": "f_c5e627a32cbd4d548466c8d8ed3f3ea0",
+                "key": "report.language",
+                "revision_id": "r_76b3653828f04231a6255281c8bc98cf",
+                "status": "active",
+                "supersedes": null,
+                "value": "zh"
+              }
+            ],
+            "statement_id": "st_4b1012b42550469eb1f74ae867878493",
+            "status": "recorded"
+          }
+        },
+        "current": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": [
+              {
+                "evidence": "报告用中文。以后代码示例用 Rust。",
+                "fact_id": "f_c5e627a32cbd4d548466c8d8ed3f3ea0",
+                "key": "report.language",
+                "known_from": "2026-11-26T17:26:45.219377000Z",
+                "revision_id": "r_76b3653828f04231a6255281c8bc98cf",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_4b1012b42550469eb1f74ae867878493",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:45.219377000Z",
+                "value": "zh"
+              }
+            ]
+          }
+        },
+        "after": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": [
+              {
+                "evidence": "报告用中文。以后代码示例用 Rust。",
+                "fact_id": "f_c5e627a32cbd4d548466c8d8ed3f3ea0",
+                "key": "report.language",
+                "known_from": "2026-11-26T17:26:45.219377000Z",
+                "revision_id": "r_76b3653828f04231a6255281c8bc98cf",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_4b1012b42550469eb1f74ae867878493",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:45.219377000Z",
+                "value": "zh"
+              }
+            ]
+          }
+        }
+      },
+      "normalized": {
+        "first": {
+          "change_seq": 1,
+          "dimensions": [
+            {
+              "fact_id": "f_c5e627a32cbd4d548466c8d8ed3f3ea0",
+              "key": "report.language",
+              "revision_id": "r_76b3653828f04231a6255281c8bc98cf",
+              "status": "active",
+              "supersedes": null,
+              "value": "zh"
+            }
+          ],
+          "statement_id": "st_4b1012b42550469eb1f74ae867878493",
+          "status": "recorded"
+        },
+        "current": {
+          "dimensions": {
+            "report.language": {
+              "evidence": "报告用中文。以后代码示例用 Rust。",
+              "fact_id": "f_c5e627a32cbd4d548466c8d8ed3f3ea0",
+              "key": "report.language",
+              "known_from": "2026-11-26T17:26:45.219377000Z",
+              "revision_id": "r_76b3653828f04231a6255281c8bc98cf",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_4b1012b42550469eb1f74ae867878493",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:45.219377000Z",
+              "value": "zh"
+            }
+          }
+        },
+        "after": {
+          "dimensions": {
+            "report.language": {
+              "evidence": "报告用中文。以后代码示例用 Rust。",
+              "fact_id": "f_c5e627a32cbd4d548466c8d8ed3f3ea0",
+              "key": "report.language",
+              "known_from": "2026-11-26T17:26:45.219377000Z",
+              "revision_id": "r_76b3653828f04231a6255281c8bc98cf",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_4b1012b42550469eb1f74ae867878493",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:45.219377000Z",
+              "value": "zh"
+            }
+          }
+        }
+      }
+    },
+    "F01-10": {
+      "actual": {
+        "first": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_2ef09bda64f54af0b0a9e61c885fa6d6",
+            "status": "pending"
+          }
+        },
+        "retry": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_2ef09bda64f54af0b0a9e61c885fa6d6",
+            "status": "pending"
+          }
+        },
+        "conflict": {
+          "status": 409,
+          "body": {
+            "code": "key_conflict",
+            "message": "statement key already used with different content",
+            "request_id": "0ceb743a-c7f9-4750-8b38-8683ddced2d6",
+            "retryable": false
+          }
+        },
+        "current": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "first": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_2ef09bda64f54af0b0a9e61c885fa6d6",
+          "status": "pending"
+        },
+        "retry": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_2ef09bda64f54af0b0a9e61c885fa6d6",
+          "status": "pending"
+        },
+        "conflict": {
+          "code": "key_conflict",
+          "message": "statement key already used with different content",
+          "request_id": "0ceb743a-c7f9-4750-8b38-8683ddced2d6",
+          "retryable": false
+        },
+        "current": {
+          "dimensions": {}
+        },
+        "audit": {
+          "same_statement_and_revisions": true,
+          "revision_count": 0
+        }
+      }
+    },
+    "F01-11": {
+      "actual": {
+        "global": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_0468221922e54728b63e5ecf75f03003",
+            "status": "pending"
+          }
+        },
+        "private": {
+          "status": 201,
+          "body": {
+            "change_seq": 2,
+            "dimensions": [],
+            "statement_id": "st_5ef71bb8597740ff8cbbfeb9320dc950",
+            "status": "pending"
+          }
+        },
+        "owner": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        },
+        "other": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "global": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_0468221922e54728b63e5ecf75f03003",
+          "status": "pending"
+        },
+        "private": {
+          "change_seq": 2,
+          "dimensions": [],
+          "statement_id": "st_5ef71bb8597740ff8cbbfeb9320dc950",
+          "status": "pending"
+        },
+        "owner": {
+          "dimensions": {}
+        },
+        "other": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F01-12": {
+      "actual": {
+        "old_write": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [
+              {
+                "fact_id": "f_38a95ceac28b4490926620a9b0719fa7",
+                "key": "report.language",
+                "revision_id": "r_30440727ba034c2398f9685dd06088bb",
+                "status": "active",
+                "supersedes": null,
+                "value": "zh"
+              },
+              {
+                "fact_id": "f_ef2e8050656646ec9f05b95cfb1fa3bb",
+                "key": "report.opening",
+                "revision_id": "r_03bbe7a28b374e189d548d32a9a6edac",
+                "status": "active",
+                "supersedes": null,
+                "value": "conclusion"
+              }
+            ],
+            "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+            "status": "recorded"
+          }
+        },
+        "legacy": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": [
+              {
+                "evidence": "所有报告用中文，先写结论。",
+                "fact_id": "f_38a95ceac28b4490926620a9b0719fa7",
+                "key": "report.language",
+                "known_from": "2026-11-26T17:26:45.668095000Z",
+                "revision_id": "r_30440727ba034c2398f9685dd06088bb",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:45.668095000Z",
+                "value": "zh"
+              },
+              {
+                "evidence": "所有报告用中文，先写结论。",
+                "fact_id": "f_ef2e8050656646ec9f05b95cfb1fa3bb",
+                "key": "report.opening",
+                "known_from": "2026-11-26T17:26:45.668095000Z",
+                "revision_id": "r_03bbe7a28b374e189d548d32a9a6edac",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:45.668095000Z",
+                "value": "conclusion"
+              }
+            ]
+          }
+        },
+        "new": {
+          "status": 201,
+          "body": {
+            "change_seq": 2,
+            "dimensions": [],
+            "statement_id": "st_f83454d9c0d34e528c6a059579ea598d",
+            "status": "pending"
+          }
+        },
+        "all": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": [
+              {
+                "evidence": "所有报告用中文，先写结论。",
+                "fact_id": "f_38a95ceac28b4490926620a9b0719fa7",
+                "key": "report.language",
+                "known_from": "2026-11-26T17:26:45.668095000Z",
+                "revision_id": "r_30440727ba034c2398f9685dd06088bb",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:45.668095000Z",
+                "value": "zh"
+              },
+              {
+                "evidence": "所有报告用中文，先写结论。",
+                "fact_id": "f_ef2e8050656646ec9f05b95cfb1fa3bb",
+                "key": "report.opening",
+                "known_from": "2026-11-26T17:26:45.668095000Z",
+                "revision_id": "r_03bbe7a28b374e189d548d32a9a6edac",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:45.668095000Z",
+                "value": "conclusion"
+              }
+            ]
+          }
+        }
+      },
+      "normalized": {
+        "old_write": {
+          "change_seq": 1,
+          "dimensions": [
+            {
+              "fact_id": "f_38a95ceac28b4490926620a9b0719fa7",
+              "key": "report.language",
+              "revision_id": "r_30440727ba034c2398f9685dd06088bb",
+              "status": "active",
+              "supersedes": null,
+              "value": "zh"
+            },
+            {
+              "fact_id": "f_ef2e8050656646ec9f05b95cfb1fa3bb",
+              "key": "report.opening",
+              "revision_id": "r_03bbe7a28b374e189d548d32a9a6edac",
+              "status": "active",
+              "supersedes": null,
+              "value": "conclusion"
+            }
+          ],
+          "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+          "status": "recorded"
+        },
+        "legacy": {
+          "dimensions": {
+            "report.language": {
+              "evidence": "所有报告用中文，先写结论。",
+              "fact_id": "f_38a95ceac28b4490926620a9b0719fa7",
+              "key": "report.language",
+              "known_from": "2026-11-26T17:26:45.668095000Z",
+              "revision_id": "r_30440727ba034c2398f9685dd06088bb",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:45.668095000Z",
+              "value": "zh"
+            },
+            "report.opening": {
+              "evidence": "所有报告用中文，先写结论。",
+              "fact_id": "f_ef2e8050656646ec9f05b95cfb1fa3bb",
+              "key": "report.opening",
+              "known_from": "2026-11-26T17:26:45.668095000Z",
+              "revision_id": "r_03bbe7a28b374e189d548d32a9a6edac",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:45.668095000Z",
+              "value": "conclusion"
+            }
+          }
+        },
+        "new": {
+          "change_seq": 2,
+          "dimensions": [],
+          "statement_id": "st_f83454d9c0d34e528c6a059579ea598d",
+          "status": "pending"
+        },
+        "all": {
+          "dimensions": {
+            "report.language": {
+              "evidence": "所有报告用中文，先写结论。",
+              "fact_id": "f_38a95ceac28b4490926620a9b0719fa7",
+              "key": "report.language",
+              "known_from": "2026-11-26T17:26:45.668095000Z",
+              "revision_id": "r_30440727ba034c2398f9685dd06088bb",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:45.668095000Z",
+              "value": "zh"
+            },
+            "report.opening": {
+              "evidence": "所有报告用中文，先写结论。",
+              "fact_id": "f_ef2e8050656646ec9f05b95cfb1fa3bb",
+              "key": "report.opening",
+              "known_from": "2026-11-26T17:26:45.668095000Z",
+              "revision_id": "r_03bbe7a28b374e189d548d32a9a6edac",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_80f0010307dd4113917fe93cba406be1",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:45.668095000Z",
+              "value": "conclusion"
+            }
+          }
+        }
+      }
+    },
+    "F01-13": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_8155f810b1414e3d949e5f031f425ad1",
+            "status": "pending"
+          }
+        },
+        "before": {
+          "statements": {
+            "change_seq": 1,
+            "statements": []
+          },
+          "deliveries": {
+            "deliveries": []
+          },
+          "operations": {
+            "operations": []
+          }
+        },
+        "cli": {
+          "change_seq": 1,
+          "statements": []
+        },
+        "web": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": []
+          }
+        },
+        "after": {
+          "statements": {
+            "change_seq": 1,
+            "statements": []
+          },
+          "deliveries": {
+            "deliveries": []
+          },
+          "operations": {
+            "operations": []
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_8155f810b1414e3d949e5f031f425ad1",
+          "status": "pending"
+        },
+        "before": {
+          "changes": []
+        },
+        "cli": {
+          "language": null
+        },
+        "web": {
+          "dimensions": {},
+          "language": null
+        },
+        "after": {
+          "changes": []
+        }
+      }
+    },
+    "F01-14": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_3a7e867de7e44cbf8f89ad64d0c77432",
+            "status": "pending"
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_3a7e867de7e44cbf8f89ad64d0c77432",
+          "status": "pending"
+        }
+      }
+    },
+    "F01-15": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_dd6e0669191b41cdad72e332b684ac28",
+            "status": "pending"
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [],
+          "statement_id": "st_dd6e0669191b41cdad72e332b684ac28",
+          "status": "pending"
+        }
+      }
+    },
+    "F01-16": {
+      "actual": {
+        "add": {
+          "status": 201,
+          "body": {
+            "change_seq": 1,
+            "dimensions": [
+              {
+                "fact_id": "f_abc69543975d4ef4a13186b98679b238",
+                "key": "report.language",
+                "revision_id": "r_91e8a21caacb49c29987eb99899d20c7",
+                "status": "active",
+                "supersedes": null,
+                "value": "zh"
+              }
+            ],
+            "statement_id": "st_d0c39ef941e842b5980dfffdc619c98b",
+            "status": "recorded"
+          }
+        },
+        "current": {
+          "status": 200,
+          "body": {
+            "change_seq": 1,
+            "statements": [
+              {
+                "evidence": "以后所有代码示例必须使用 Rust，同时所有代码示例必须使用 Go；所有报告用中文。",
+                "fact_id": "f_abc69543975d4ef4a13186b98679b238",
+                "key": "report.language",
+                "known_from": "2026-11-26T17:26:46.266967000Z",
+                "revision_id": "r_91e8a21caacb49c29987eb99899d20c7",
+                "scope": {
+                  "kind": "global"
+                },
+                "share": "authorized_assistants",
+                "statement_id": "st_d0c39ef941e842b5980dfffdc619c98b",
+                "status": "active",
+                "valid_from": "2026-11-26T17:26:46.266967000Z",
+                "value": "zh"
+              }
+            ]
+          }
+        }
+      },
+      "normalized": {
+        "add": {
+          "change_seq": 1,
+          "dimensions": [
+            {
+              "fact_id": "f_abc69543975d4ef4a13186b98679b238",
+              "key": "report.language",
+              "revision_id": "r_91e8a21caacb49c29987eb99899d20c7",
+              "status": "active",
+              "supersedes": null,
+              "value": "zh"
+            }
+          ],
+          "statement_id": "st_d0c39ef941e842b5980dfffdc619c98b",
+          "status": "recorded"
+        },
+        "current": {
+          "dimensions": {
+            "report.language": {
+              "evidence": "以后所有代码示例必须使用 Rust，同时所有代码示例必须使用 Go；所有报告用中文。",
+              "fact_id": "f_abc69543975d4ef4a13186b98679b238",
+              "key": "report.language",
+              "known_from": "2026-11-26T17:26:46.266967000Z",
+              "revision_id": "r_91e8a21caacb49c29987eb99899d20c7",
+              "scope": {
+                "kind": "global"
+              },
+              "share": "authorized_assistants",
+              "statement_id": "st_d0c39ef941e842b5980dfffdc619c98b",
+              "status": "active",
+              "valid_from": "2026-11-26T17:26:46.266967000Z",
+              "value": "zh"
+            }
+          }
+        }
+      }
+    },
+    "F01-17": {
+      "actual": {
+        "propose": {
+          "base": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_dbd75907233b40fb92f3a5367b8c69dd",
+            "status": "pending"
+          },
+          "local": {
+            "change_seq": 2,
+            "dimensions": [],
+            "statement_id": "st_d47a6b1cec09488682d0cac2459f1a32",
+            "status": "pending"
+          }
+        },
+        "pending": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        },
+        "clarify": {
+          "status": 201,
+          "body": {
+            "change_seq": 3,
+            "dimensions": [],
+            "statement_id": "st_e721d7b5dc484241b4591422f915ff4f",
+            "status": "pending"
+          }
+        },
+        "before": {
+          "status": 200,
+          "body": {
+            "change_seq": 3,
+            "statements": []
+          }
+        },
+        "start": {
+          "status": 200,
+          "body": {
+            "change_seq": 3,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "pending": {
+          "dimensions": {}
+        },
+        "clarify": {
+          "change_seq": 3,
+          "dimensions": [],
+          "statement_id": "st_e721d7b5dc484241b4591422f915ff4f",
+          "status": "pending"
+        },
+        "before": {
+          "dimensions": {}
+        },
+        "start": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F01-18": {
+      "actual": {
+        "propose": {
+          "base": {
+            "change_seq": 1,
+            "dimensions": [],
+            "statement_id": "st_eb0be93fe43048fbb76b6bc88b81a1f2",
+            "status": "pending"
+          },
+          "local": {
+            "change_seq": 2,
+            "dimensions": [],
+            "statement_id": "st_d323dc38b7f04f80b5d49825b496b5de",
+            "status": "pending"
+          }
+        },
+        "pending": {
+          "status": 200,
+          "body": {
+            "change_seq": 2,
+            "statements": []
+          }
+        },
+        "clarify": {
+          "status": 201,
+          "body": {
+            "change_seq": 3,
+            "dimensions": [],
+            "statement_id": "st_a267175e32024a54b02f4f6c2dda072f",
+            "status": "pending"
+          }
+        },
+        "before": {
+          "status": 200,
+          "body": {
+            "change_seq": 3,
+            "statements": []
+          }
+        },
+        "start": {
+          "status": 200,
+          "body": {
+            "change_seq": 3,
+            "statements": []
+          }
+        }
+      },
+      "normalized": {
+        "pending": {
+          "dimensions": {}
+        },
+        "clarify": {
+          "change_seq": 3,
+          "dimensions": [],
+          "statement_id": "st_a267175e32024a54b02f4f6c2dda072f",
+          "status": "pending"
+        },
+        "before": {
+          "dimensions": {}
+        },
+        "start": {
+          "dimensions": {}
+        }
+      }
+    },
+    "F02-06": {
+      "actual": {
+        "first": {
+          "delivery_id": "delivery_b147fb5e0b554824bb2d0b24aa010a11",
+          "delivery_state": "provided",
+          "effective_profile": "balanced",
+          "estimated_evidence_tokens": 302,
+          "estimated_statement_tokens": 91,
+          "evidence": [
+            {
+              "actor_kind": "tool_result",
+              "at": "2026-11-23T01:00:02+00:00",
+              "event_id": "evt_4087029e61b84061aa93eed3c06d0999",
+              "handle": "event_evt_4087029e61b84061aa93eed3c06d0999",
+              "task_id": "task_9979784c20454e6eb0e4ac29c4321f3e",
+              "text": "{\"parse\":\"passed\",\"write\":\"timeout\"}"
+            }
+          ],
+          "fallback_reason": null,
+          "observations": [],
+          "package_id": "package_29e84cc9a0cd457d9dee9368bbcb0ae4",
+          "package_state": "provided",
+          "policy_version": 3,
+          "requested_profile": "balanced",
+          "snapshot_id": "snapshot_8d10949291eb838faba0406aad147e629b578345b615f1f81537cd31f65f229b",
+          "snapshot_mode": "replace",
+          "statements": [
+            {
+              "key": "report.language",
+              "revision_id": "r_b41e91d46b1a4ef7bdd112eb74ca3758",
+              "value": "zh"
+            }
+          ],
+          "template_version": "literal-v1"
+        },
+        "old": {
+          "status": 200,
+          "body": {
+            "complete": true,
+            "delivery_id": "delivery_b147fb5e0b554824bb2d0b24aa010a11",
+            "event_id": "statement-only",
+            "evidence_ref": null,
+            "kind": "loaded",
+            "missing_reason": null,
+            "model_call_ref": "fixture-statement-call",
+            "revision_ids": [
+              "r_b41e91d46b1a4ef7bdd112eb74ca3758"
+            ]
+          }
+        },
+        "more": {
+          "actor": "owner",
+          "committed_at": "2026-11-26T17:26:46.729037+00:00",
+          "cursor": "c2",
+          "events": [
+            {
+              "disposition": "accepted",
+              "event_id": "evt_227a828ffd06457299ae01d8f20fad43",
+              "native_object": "retry",
+              "ordinal": 0
+            }
+          ],
+          "ingest_id": "ing_47887c9b8cc24db5b0e77d4b05369815",
+          "jobs_created": 1,
+          "replayed": false,
+          "source_id": "src_d6b10b844ff542a79c45f7d49f2ac18f",
+          "status": "accepted"
+        },
+        "next": {
+          "status": 200,
+          "body": {
+            "delivery_id": "delivery_a28d1cdc189f41379092aa1fccc67227",
+            "delivery_state": "provided",
+            "effective_profile": "balanced",
+            "estimated_evidence_tokens": 557,
+            "estimated_statement_tokens": 0,
+            "evidence": [
+              {
+                "actor_kind": "tool_result",
+                "at": "2026-11-23T01:00:02+00:00",
+                "event_id": "evt_4087029e61b84061aa93eed3c06d0999",
+                "handle": "event_evt_4087029e61b84061aa93eed3c06d0999",
+                "task_id": "task_9979784c20454e6eb0e4ac29c4321f3e",
+                "text": "{\"parse\":\"passed\",\"write\":\"timeout\"}"
+              },
+              {
+                "actor_kind": "tool_result",
+                "at": "2026-11-23T01:00:03+00:00",
+                "event_id": "evt_227a828ffd06457299ae01d8f20fad43",
+                "handle": "event_evt_227a828ffd06457299ae01d8f20fad43",
+                "task_id": "task_9979784c20454e6eb0e4ac29c4321f3e",
+                "text": "{\"write\":\"timeout_again\"}"
+              }
+            ],
+            "fallback_reason": null,
+            "observations": [],
+            "package_id": "package_571be21687e34e998554e383e9610bb2",
+            "package_state": "provided",
+            "policy_version": 3,
+            "requested_profile": "balanced",
+            "snapshot_id": "snapshot_8d10949291eb838faba0406aad147e629b578345b615f1f81537cd31f65f229b",
+            "snapshot_mode": "unchanged",
+            "statements": [],
+            "template_version": "literal-v1"
+          }
+        }
+      },
+      "normalized": {
+        "old": {
+          "complete": true
+        },
+        "next": {
+          "refs": [
+            "check#/checks/parse",
+            "check#/checks/write",
+            "retry#/checks/write"
+          ],
+          "snapshot_mode": "unchanged"
+        }
+      }
+    },
+    "F02-08": {
+      "actual": {
+        "tiny": {
+          "status": 200,
+          "body": {
+            "delivery_id": "delivery_a2925a9f857e4bfc97e7e07c788fd778",
+            "delivery_state": "provided",
+            "effective_profile": null,
+            "estimated_evidence_tokens": 0,
+            "estimated_statement_tokens": 91,
+            "evidence": [],
+            "fallback_reason": null,
+            "observations": [],
+            "package_id": "package_fa2ba9db4a994304a3c3bc1deeacee9f",
+            "package_state": "budget_zero",
+            "policy_version": 3,
+            "requested_profile": "balanced",
+            "snapshot_id": "snapshot_a7bd3941857aa1fc6220ba617ff5383e9f113d6c80ea16d80c3ce3330a1a6ac6",
+            "snapshot_mode": "replace",
+            "statements": [
+              {
+                "key": "report.language",
+                "revision_id": "r_6a0e9d4258434a70b75c361d13d8101f",
+                "value": "zh"
+              }
+            ],
+            "template_version": null
+          }
+        },
+        "ample": {
+          "status": 200,
+          "body": {
+            "delivery_id": "delivery_693b00c689384811b033b8ce2ba535f0",
+            "delivery_state": "provided",
+            "effective_profile": "balanced",
+            "estimated_evidence_tokens": 562,
+            "estimated_statement_tokens": 91,
+            "evidence": [
+              {
+                "actor_kind": "user_message",
+                "at": "2026-11-23T01:00:01+00:00",
+                "event_id": "evt_699d798c84f74b7a8b734aa04bf58ee1",
+                "handle": "event_evt_699d798c84f74b7a8b734aa04bf58ee1",
+                "task_id": "task_7e1206b73c9c4f819631b43e30fa2120",
+                "text": "我计划重新跑写入检查。"
+              },
+              {
+                "actor_kind": "tool_result",
+                "at": "2026-11-23T01:00:02+00:00",
+                "event_id": "evt_4f9a4c9a7fc143cebc718fc526f9395f",
+                "handle": "event_evt_4f9a4c9a7fc143cebc718fc526f9395f",
+                "task_id": "task_7e1206b73c9c4f819631b43e30fa2120",
+                "text": "{\"parse\":\"passed\",\"write\":\"timeout\"}"
+              }
+            ],
+            "fallback_reason": null,
+            "observations": [],
+            "package_id": "package_5e9604c22fe94c758a7bb9d4aa937423",
+            "package_state": "provided",
+            "policy_version": 3,
+            "requested_profile": "balanced",
+            "snapshot_id": "snapshot_a7bd3941857aa1fc6220ba617ff5383e9f113d6c80ea16d80c3ce3330a1a6ac6",
+            "snapshot_mode": "replace",
+            "statements": [
+              {
+                "key": "report.language",
+                "revision_id": "r_6a0e9d4258434a70b75c361d13d8101f",
+                "value": "zh"
+              }
+            ],
+            "template_version": "literal-v1"
+          }
+        }
+      },
+      "normalized": {
+        "seed": {
+          "accepted_event_count": 2
+        },
+        "tiny": {
+          "refs": [],
+          "delivery_id": "delivery_a2925a9f857e4bfc97e7e07c788fd778",
+          "delivery_state": "provided",
+          "effective_profile": null,
+          "estimated_evidence_tokens": 0,
+          "estimated_statement_tokens": 91,
+          "evidence": [],
+          "fallback_reason": null,
+          "observations": [],
+          "package_id": "package_fa2ba9db4a994304a3c3bc1deeacee9f",
+          "package_state": "budget_zero",
+          "policy_version": 3,
+          "requested_profile": "balanced",
+          "snapshot_id": "snapshot_a7bd3941857aa1fc6220ba617ff5383e9f113d6c80ea16d80c3ce3330a1a6ac6",
+          "snapshot_mode": "replace",
+          "statements": [
+            {
+              "key": "report.language",
+              "revision_id": "r_6a0e9d4258434a70b75c361d13d8101f",
+              "value": "zh"
+            }
+          ],
+          "template_version": null
+        },
+        "ample": {
+          "refs": [
+            "plan#/text",
+            "check#/checks/parse",
+            "check#/checks/write"
+          ],
+          "delivery_id": "delivery_693b00c689384811b033b8ce2ba535f0",
+          "delivery_state": "provided",
+          "effective_profile": "balanced",
+          "estimated_evidence_tokens": 562,
+          "estimated_statement_tokens": 91,
+          "evidence": [
+            {
+              "actor_kind": "user_message",
+              "at": "2026-11-23T01:00:01+00:00",
+              "event_id": "evt_699d798c84f74b7a8b734aa04bf58ee1",
+              "handle": "event_evt_699d798c84f74b7a8b734aa04bf58ee1",
+              "task_id": "task_7e1206b73c9c4f819631b43e30fa2120",
+              "text": "我计划重新跑写入检查。"
+            },
+            {
+              "actor_kind": "tool_result",
+              "at": "2026-11-23T01:00:02+00:00",
+              "event_id": "evt_4f9a4c9a7fc143cebc718fc526f9395f",
+              "handle": "event_evt_4f9a4c9a7fc143cebc718fc526f9395f",
+              "task_id": "task_7e1206b73c9c4f819631b43e30fa2120",
+              "text": "{\"parse\":\"passed\",\"write\":\"timeout\"}"
+            }
+          ],
+          "fallback_reason": null,
+          "observations": [],
+          "package_id": "package_5e9604c22fe94c758a7bb9d4aa937423",
+          "package_state": "provided",
+          "policy_version": 3,
+          "requested_profile": "balanced",
+          "snapshot_id": "snapshot_a7bd3941857aa1fc6220ba617ff5383e9f113d6c80ea16d80c3ce3330a1a6ac6",
+          "snapshot_mode": "replace",
+          "statements": [
+            {
+              "key": "report.language",
+              "revision_id": "r_6a0e9d4258434a70b75c361d13d8101f",
+              "value": "zh"
+            }
+          ],
+          "template_version": "literal-v1"
+        },
+        "audit": {
+          "evidence_budget_exhausted": true,
+          "statement_values": [
+            "zh"
+          ]
+        }
+      }
+    },
+    "F02-09": {
+      "actual": {
+        "load": {
+          "status": 200,
+          "body": {
+            "delivery_id": "delivery_3ec4e2d726454c5383cc5b865caf4d74",
+            "delivery_state": "provided",
+            "effective_profile": "balanced",
+            "estimated_evidence_tokens": 1132,
+            "estimated_statement_tokens": 0,
+            "evidence": [
+              {
+                "actor_kind": "assistant_message",
+                "at": "2026-11-23T01:00:01+00:00",
+                "event_id": "evt_de4f7f508a25435bb0c423d632d2f098",
+                "handle": "event_evt_de4f7f508a25435bb0c423d632d2f098",
+                "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+                "text": "读取分片 01 的表头，只做记录。"
+              },
+              {
+                "actor_kind": "assistant_message",
+                "at": "2026-11-23T01:00:02+00:00",
+                "event_id": "evt_6073327e35a243f9bdaee6cf96c9435c",
+                "handle": "event_evt_6073327e35a243f9bdaee6cf96c9435c",
+                "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+                "text": "读取分片 02 的表头，只做记录。"
+              },
+              {
+                "actor_kind": "assistant_message",
+                "at": "2026-11-23T01:00:03+00:00",
+                "event_id": "evt_ea9a06e30d6a475b965511bffdb96117",
+                "handle": "event_evt_ea9a06e30d6a475b965511bffdb96117",
+                "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+                "text": "读取分片 03 的表头，只做记录。"
+              },
+              {
+                "actor_kind": "assistant_message",
+                "at": "2026-11-23T01:00:04+00:00",
+                "event_id": "evt_659493478e0742348122fb45f599a7a1",
+                "handle": "event_evt_659493478e0742348122fb45f599a7a1",
+                "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+                "text": "读取分片 04 的表头，只做记录。"
+              }
+            ],
+            "fallback_reason": null,
+            "observations": [],
+            "package_id": "package_dbae11124d434595842972e6bae927e4",
+            "package_state": "budget_truncated",
+            "policy_version": 3,
+            "requested_profile": "balanced",
+            "snapshot_id": "snapshot_6a12c11131b50b1ac9542295521c3b0f3cdca3c20f674f197c3a57afd4f168b8",
+            "snapshot_mode": "replace",
+            "statements": [],
+            "template_version": "literal-v1"
+          }
+        },
+        "native": {
+          "input": {
+            "loopback_requests": 2,
+            "evidence_blocks": [
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:01+00:00\",\"event_id\":\"evt_560303b7c2d8441b8ba7efef4ddb34b8\",\"handle\":\"event_evt_560303b7c2d8441b8ba7efef4ddb34b8\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 01 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:02+00:00\",\"event_id\":\"evt_838a61b40ec24b27bcf5d166793d7ab4\",\"handle\":\"event_evt_838a61b40ec24b27bcf5d166793d7ab4\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 02 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:03+00:00\",\"event_id\":\"evt_0b7d50bd5e8740a0bf60792024ec2ca5\",\"handle\":\"event_evt_0b7d50bd5e8740a0bf60792024ec2ca5\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 03 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:04+00:00\",\"event_id\":\"evt_679e8cb62bb64bfdbe43d0d6a899eac9\",\"handle\":\"event_evt_679e8cb62bb64bfdbe43d0d6a899eac9\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 04 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:05+00:00\",\"event_id\":\"evt_5131d61542c0441e801c668f7ee7c7e9\",\"handle\":\"event_evt_5131d61542c0441e801c668f7ee7c7e9\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 05 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:06+00:00\",\"event_id\":\"evt_c13f1b46e6b341c486ea1165cb6500ba\",\"handle\":\"event_evt_c13f1b46e6b341c486ea1165cb6500ba\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 06 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:07+00:00\",\"event_id\":\"evt_33e08f4968c340e5a28c8fe468e055db\",\"handle\":\"event_evt_33e08f4968c340e5a28c8fe468e055db\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 07 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:08+00:00\",\"event_id\":\"evt_90fde4d076624fc187594b987b7ad842\",\"handle\":\"event_evt_90fde4d076624fc187594b987b7ad842\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 08 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:09+00:00\",\"event_id\":\"evt_fb663d7dfbd241899731fb96316ce731\",\"handle\":\"event_evt_fb663d7dfbd241899731fb96316ce731\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 09 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:10+00:00\",\"event_id\":\"evt_dafa082901d6422e84a7bf31fab059fd\",\"handle\":\"event_evt_dafa082901d6422e84a7bf31fab059fd\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 10 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:11+00:00\",\"event_id\":\"evt_66b09647a5a44f8087a1b694f9be5794\",\"handle\":\"event_evt_66b09647a5a44f8087a1b694f9be5794\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 11 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:12+00:00\",\"event_id\":\"evt_d3d22514668c4638b6925e57dd4257c0\",\"handle\":\"event_evt_d3d22514668c4638b6925e57dd4257c0\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 12 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:13+00:00\",\"event_id\":\"evt_abd6d09766054357be8e9ffed2878515\",\"handle\":\"event_evt_abd6d09766054357be8e9ffed2878515\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 13 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:14+00:00\",\"event_id\":\"evt_61260f91b0884e5eb358e1cb7a345262\",\"handle\":\"event_evt_61260f91b0884e5eb358e1cb7a345262\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 14 的表头，只做记录。\"}],\"observations\":[],\"package_id\":\"package_14744bbd484d444ca1ea2055a1082150\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:01+00:00\",\"event_id\":\"evt_560303b7c2d8441b8ba7efef4ddb34b8\",\"handle\":\"event_evt_560303b7c2d8441b8ba7efef4ddb34b8\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 01 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:02+00:00\",\"event_id\":\"evt_838a61b40ec24b27bcf5d166793d7ab4\",\"handle\":\"event_evt_838a61b40ec24b27bcf5d166793d7ab4\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 02 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:03+00:00\",\"event_id\":\"evt_0b7d50bd5e8740a0bf60792024ec2ca5\",\"handle\":\"event_evt_0b7d50bd5e8740a0bf60792024ec2ca5\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 03 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:04+00:00\",\"event_id\":\"evt_679e8cb62bb64bfdbe43d0d6a899eac9\",\"handle\":\"event_evt_679e8cb62bb64bfdbe43d0d6a899eac9\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 04 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:05+00:00\",\"event_id\":\"evt_5131d61542c0441e801c668f7ee7c7e9\",\"handle\":\"event_evt_5131d61542c0441e801c668f7ee7c7e9\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 05 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:06+00:00\",\"event_id\":\"evt_c13f1b46e6b341c486ea1165cb6500ba\",\"handle\":\"event_evt_c13f1b46e6b341c486ea1165cb6500ba\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 06 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:07+00:00\",\"event_id\":\"evt_33e08f4968c340e5a28c8fe468e055db\",\"handle\":\"event_evt_33e08f4968c340e5a28c8fe468e055db\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 07 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:08+00:00\",\"event_id\":\"evt_90fde4d076624fc187594b987b7ad842\",\"handle\":\"event_evt_90fde4d076624fc187594b987b7ad842\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 08 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:09+00:00\",\"event_id\":\"evt_fb663d7dfbd241899731fb96316ce731\",\"handle\":\"event_evt_fb663d7dfbd241899731fb96316ce731\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 09 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:10+00:00\",\"event_id\":\"evt_dafa082901d6422e84a7bf31fab059fd\",\"handle\":\"event_evt_dafa082901d6422e84a7bf31fab059fd\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 10 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:11+00:00\",\"event_id\":\"evt_66b09647a5a44f8087a1b694f9be5794\",\"handle\":\"event_evt_66b09647a5a44f8087a1b694f9be5794\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 11 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:12+00:00\",\"event_id\":\"evt_d3d22514668c4638b6925e57dd4257c0\",\"handle\":\"event_evt_d3d22514668c4638b6925e57dd4257c0\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 12 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:13+00:00\",\"event_id\":\"evt_abd6d09766054357be8e9ffed2878515\",\"handle\":\"event_evt_abd6d09766054357be8e9ffed2878515\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 13 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:14+00:00\",\"event_id\":\"evt_61260f91b0884e5eb358e1cb7a345262\",\"handle\":\"event_evt_61260f91b0884e5eb358e1cb7a345262\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 14 的表头，只做记录。\"}],\"observations\":[],\"package_id\":\"package_f1cec4dee80249c49390829a2e627d31\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:01+00:00\",\"event_id\":\"evt_560303b7c2d8441b8ba7efef4ddb34b8\",\"handle\":\"event_evt_560303b7c2d8441b8ba7efef4ddb34b8\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 01 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:02+00:00\",\"event_id\":\"evt_838a61b40ec24b27bcf5d166793d7ab4\",\"handle\":\"event_evt_838a61b40ec24b27bcf5d166793d7ab4\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 02 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:03+00:00\",\"event_id\":\"evt_0b7d50bd5e8740a0bf60792024ec2ca5\",\"handle\":\"event_evt_0b7d50bd5e8740a0bf60792024ec2ca5\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 03 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:04+00:00\",\"event_id\":\"evt_679e8cb62bb64bfdbe43d0d6a899eac9\",\"handle\":\"event_evt_679e8cb62bb64bfdbe43d0d6a899eac9\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 04 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:05+00:00\",\"event_id\":\"evt_5131d61542c0441e801c668f7ee7c7e9\",\"handle\":\"event_evt_5131d61542c0441e801c668f7ee7c7e9\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 05 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:06+00:00\",\"event_id\":\"evt_c13f1b46e6b341c486ea1165cb6500ba\",\"handle\":\"event_evt_c13f1b46e6b341c486ea1165cb6500ba\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 06 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:07+00:00\",\"event_id\":\"evt_33e08f4968c340e5a28c8fe468e055db\",\"handle\":\"event_evt_33e08f4968c340e5a28c8fe468e055db\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 07 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:08+00:00\",\"event_id\":\"evt_90fde4d076624fc187594b987b7ad842\",\"handle\":\"event_evt_90fde4d076624fc187594b987b7ad842\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 08 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:09+00:00\",\"event_id\":\"evt_fb663d7dfbd241899731fb96316ce731\",\"handle\":\"event_evt_fb663d7dfbd241899731fb96316ce731\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 09 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:10+00:00\",\"event_id\":\"evt_dafa082901d6422e84a7bf31fab059fd\",\"handle\":\"event_evt_dafa082901d6422e84a7bf31fab059fd\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 10 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:11+00:00\",\"event_id\":\"evt_66b09647a5a44f8087a1b694f9be5794\",\"handle\":\"event_evt_66b09647a5a44f8087a1b694f9be5794\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 11 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:12+00:00\",\"event_id\":\"evt_d3d22514668c4638b6925e57dd4257c0\",\"handle\":\"event_evt_d3d22514668c4638b6925e57dd4257c0\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 12 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:13+00:00\",\"event_id\":\"evt_abd6d09766054357be8e9ffed2878515\",\"handle\":\"event_evt_abd6d09766054357be8e9ffed2878515\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 13 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:14+00:00\",\"event_id\":\"evt_61260f91b0884e5eb358e1cb7a345262\",\"handle\":\"event_evt_61260f91b0884e5eb358e1cb7a345262\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 14 的表头，只做记录。\"}],\"observations\":[],\"package_id\":\"package_14744bbd484d444ca1ea2055a1082150\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:01+00:00\",\"event_id\":\"evt_560303b7c2d8441b8ba7efef4ddb34b8\",\"handle\":\"event_evt_560303b7c2d8441b8ba7efef4ddb34b8\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 01 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:02+00:00\",\"event_id\":\"evt_838a61b40ec24b27bcf5d166793d7ab4\",\"handle\":\"event_evt_838a61b40ec24b27bcf5d166793d7ab4\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 02 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:03+00:00\",\"event_id\":\"evt_0b7d50bd5e8740a0bf60792024ec2ca5\",\"handle\":\"event_evt_0b7d50bd5e8740a0bf60792024ec2ca5\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 03 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:04+00:00\",\"event_id\":\"evt_679e8cb62bb64bfdbe43d0d6a899eac9\",\"handle\":\"event_evt_679e8cb62bb64bfdbe43d0d6a899eac9\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 04 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:05+00:00\",\"event_id\":\"evt_5131d61542c0441e801c668f7ee7c7e9\",\"handle\":\"event_evt_5131d61542c0441e801c668f7ee7c7e9\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 05 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:06+00:00\",\"event_id\":\"evt_c13f1b46e6b341c486ea1165cb6500ba\",\"handle\":\"event_evt_c13f1b46e6b341c486ea1165cb6500ba\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 06 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:07+00:00\",\"event_id\":\"evt_33e08f4968c340e5a28c8fe468e055db\",\"handle\":\"event_evt_33e08f4968c340e5a28c8fe468e055db\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 07 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:08+00:00\",\"event_id\":\"evt_90fde4d076624fc187594b987b7ad842\",\"handle\":\"event_evt_90fde4d076624fc187594b987b7ad842\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 08 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:09+00:00\",\"event_id\":\"evt_fb663d7dfbd241899731fb96316ce731\",\"handle\":\"event_evt_fb663d7dfbd241899731fb96316ce731\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 09 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:10+00:00\",\"event_id\":\"evt_dafa082901d6422e84a7bf31fab059fd\",\"handle\":\"event_evt_dafa082901d6422e84a7bf31fab059fd\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 10 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:11+00:00\",\"event_id\":\"evt_66b09647a5a44f8087a1b694f9be5794\",\"handle\":\"event_evt_66b09647a5a44f8087a1b694f9be5794\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 11 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:12+00:00\",\"event_id\":\"evt_d3d22514668c4638b6925e57dd4257c0\",\"handle\":\"event_evt_d3d22514668c4638b6925e57dd4257c0\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 12 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:13+00:00\",\"event_id\":\"evt_abd6d09766054357be8e9ffed2878515\",\"handle\":\"event_evt_abd6d09766054357be8e9ffed2878515\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 13 的表头，只做记录。\"},{\"actor_kind\":\"assistant_message\",\"at\":\"2026-11-23T01:00:14+00:00\",\"event_id\":\"evt_61260f91b0884e5eb358e1cb7a345262\",\"handle\":\"event_evt_61260f91b0884e5eb358e1cb7a345262\",\"task_id\":\"task_e43ba484c16a4f99b935690efdaf3737\",\"text\":\"读取分片 14 的表头，只做记录。\"}],\"observations\":[],\"package_id\":\"package_f1cec4dee80249c49390829a2e627d31\"}"
+            ]
+          }
+        }
+      },
+      "normalized": {
+        "seed": {
+          "accepted_event_count": 51
+        },
+        "load": {
+          "refs": [
+            "filler-01#/text",
+            "filler-02#/text",
+            "filler-03#/text",
+            "filler-04#/text"
+          ],
+          "delivery_id": "delivery_3ec4e2d726454c5383cc5b865caf4d74",
+          "delivery_state": "provided",
+          "effective_profile": "balanced",
+          "estimated_evidence_tokens": 1132,
+          "estimated_statement_tokens": 0,
+          "evidence": [
+            {
+              "actor_kind": "assistant_message",
+              "at": "2026-11-23T01:00:01+00:00",
+              "event_id": "evt_de4f7f508a25435bb0c423d632d2f098",
+              "handle": "event_evt_de4f7f508a25435bb0c423d632d2f098",
+              "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+              "text": "读取分片 01 的表头，只做记录。"
+            },
+            {
+              "actor_kind": "assistant_message",
+              "at": "2026-11-23T01:00:02+00:00",
+              "event_id": "evt_6073327e35a243f9bdaee6cf96c9435c",
+              "handle": "event_evt_6073327e35a243f9bdaee6cf96c9435c",
+              "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+              "text": "读取分片 02 的表头，只做记录。"
+            },
+            {
+              "actor_kind": "assistant_message",
+              "at": "2026-11-23T01:00:03+00:00",
+              "event_id": "evt_ea9a06e30d6a475b965511bffdb96117",
+              "handle": "event_evt_ea9a06e30d6a475b965511bffdb96117",
+              "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+              "text": "读取分片 03 的表头，只做记录。"
+            },
+            {
+              "actor_kind": "assistant_message",
+              "at": "2026-11-23T01:00:04+00:00",
+              "event_id": "evt_659493478e0742348122fb45f599a7a1",
+              "handle": "event_evt_659493478e0742348122fb45f599a7a1",
+              "task_id": "task_f566bb956a7a44c6b44a51ab8cbe8df6",
+              "text": "读取分片 04 的表头，只做记录。"
+            }
+          ],
+          "fallback_reason": null,
+          "observations": [],
+          "package_id": "package_dbae11124d434595842972e6bae927e4",
+          "package_state": "budget_truncated",
+          "policy_version": 3,
+          "requested_profile": "balanced",
+          "snapshot_id": "snapshot_6a12c11131b50b1ac9542295521c3b0f3cdca3c20f674f197c3a57afd4f168b8",
+          "snapshot_mode": "replace",
+          "statements": [],
+          "template_version": "literal-v1"
+        },
+        "count": {
+          "active_events": 51,
+          "e51_rank_by_time": 51
+        },
+        "expand": {
+          "count": 51
+        },
+        "input": {
+          "refs": [
+            "filler-01#/text",
+            "filler-02#/text",
+            "filler-03#/text",
+            "filler-04#/text",
+            "filler-05#/text",
+            "filler-06#/text",
+            "filler-07#/text",
+            "filler-08#/text",
+            "filler-09#/text",
+            "filler-10#/text",
+            "filler-11#/text",
+            "filler-12#/text",
+            "filler-13#/text",
+            "filler-14#/text"
+          ]
+        }
+      }
+    },
+    "F02-10": {
+      "actual": {
+        "native": {
+          "input": {
+            "loopback_requests": 2,
+            "evidence_blocks": [
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"user_message\",\"at\":\"2026-11-23T01:00:01+00:00\",\"event_id\":\"evt_092f5c31ccf642fd94e7d95be7b88260\",\"handle\":\"event_evt_092f5c31ccf642fd94e7d95be7b88260\",\"task_id\":\"task_35faa5506ceb42e7aa309c5c5aa3f588\",\"text\":\"我计划重新跑写入检查。\"},{\"actor_kind\":\"tool_result\",\"at\":\"2026-11-23T01:00:02+00:00\",\"event_id\":\"evt_4132c54b1cf24dcabf5f18f15af185b2\",\"handle\":\"event_evt_4132c54b1cf24dcabf5f18f15af185b2\",\"task_id\":\"task_35faa5506ceb42e7aa309c5c5aa3f588\",\"text\":\"{\\\"parse\\\":\\\"passed\\\",\\\"write\\\":\\\"timeout\\\"}\"}],\"observations\":[],\"package_id\":\"package_86b22f8d50c547f08f323177d3fcc7c6\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"user_message\",\"at\":\"2026-11-23T01:00:01+00:00\",\"event_id\":\"evt_092f5c31ccf642fd94e7d95be7b88260\",\"handle\":\"event_evt_092f5c31ccf642fd94e7d95be7b88260\",\"task_id\":\"task_35faa5506ceb42e7aa309c5c5aa3f588\",\"text\":\"我计划重新跑写入检查。\"},{\"actor_kind\":\"tool_result\",\"at\":\"2026-11-23T01:00:02+00:00\",\"event_id\":\"evt_4132c54b1cf24dcabf5f18f15af185b2\",\"handle\":\"event_evt_4132c54b1cf24dcabf5f18f15af185b2\",\"task_id\":\"task_35faa5506ceb42e7aa309c5c5aa3f588\",\"text\":\"{\\\"parse\\\":\\\"passed\\\",\\\"write\\\":\\\"timeout\\\"}\"}],\"observations\":[],\"package_id\":\"package_bef47266e681443e94167986f5d809f1\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"user_message\",\"at\":\"2026-11-23T01:00:01+00:00\",\"event_id\":\"evt_092f5c31ccf642fd94e7d95be7b88260\",\"handle\":\"event_evt_092f5c31ccf642fd94e7d95be7b88260\",\"task_id\":\"task_35faa5506ceb42e7aa309c5c5aa3f588\",\"text\":\"我计划重新跑写入检查。\"},{\"actor_kind\":\"tool_result\",\"at\":\"2026-11-23T01:00:02+00:00\",\"event_id\":\"evt_4132c54b1cf24dcabf5f18f15af185b2\",\"handle\":\"event_evt_4132c54b1cf24dcabf5f18f15af185b2\",\"task_id\":\"task_35faa5506ceb42e7aa309c5c5aa3f588\",\"text\":\"{\\\"parse\\\":\\\"passed\\\",\\\"write\\\":\\\"timeout\\\"}\"}],\"observations\":[],\"package_id\":\"package_86b22f8d50c547f08f323177d3fcc7c6\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"user_message\",\"at\":\"2026-11-23T01:00:01+00:00\",\"event_id\":\"evt_092f5c31ccf642fd94e7d95be7b88260\",\"handle\":\"event_evt_092f5c31ccf642fd94e7d95be7b88260\",\"task_id\":\"task_35faa5506ceb42e7aa309c5c5aa3f588\",\"text\":\"我计划重新跑写入检查。\"},{\"actor_kind\":\"tool_result\",\"at\":\"2026-11-23T01:00:02+00:00\",\"event_id\":\"evt_4132c54b1cf24dcabf5f18f15af185b2\",\"handle\":\"event_evt_4132c54b1cf24dcabf5f18f15af185b2\",\"task_id\":\"task_35faa5506ceb42e7aa309c5c5aa3f588\",\"text\":\"{\\\"parse\\\":\\\"passed\\\",\\\"write\\\":\\\"timeout\\\"}\"}],\"observations\":[],\"package_id\":\"package_bef47266e681443e94167986f5d809f1\"}"
+            ]
+          },
+          "other": {
+            "loopback_requests": 2,
+            "evidence_blocks": [
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"tool_result\",\"at\":\"2026-11-23T01:00:04+00:00\",\"event_id\":\"evt_7fc8b2dcdce8441eb8abbecba57f3be4\",\"handle\":\"event_evt_7fc8b2dcdce8441eb8abbecba57f3be4\",\"task_id\":\"task_62da080c293749c0b60c2de7ea1007f6\",\"text\":\"{\\\"write\\\":\\\"passed\\\"}\"}],\"observations\":[],\"package_id\":\"package_bffaa4e94ece4abbaeff16c35efab9ba\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"tool_result\",\"at\":\"2026-11-23T01:00:04+00:00\",\"event_id\":\"evt_7fc8b2dcdce8441eb8abbecba57f3be4\",\"handle\":\"event_evt_7fc8b2dcdce8441eb8abbecba57f3be4\",\"task_id\":\"task_62da080c293749c0b60c2de7ea1007f6\",\"text\":\"{\\\"write\\\":\\\"passed\\\"}\"}],\"observations\":[],\"package_id\":\"package_f9455ebfe18041f4aa60e0933ebc8c06\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"tool_result\",\"at\":\"2026-11-23T01:00:04+00:00\",\"event_id\":\"evt_7fc8b2dcdce8441eb8abbecba57f3be4\",\"handle\":\"event_evt_7fc8b2dcdce8441eb8abbecba57f3be4\",\"task_id\":\"task_62da080c293749c0b60c2de7ea1007f6\",\"text\":\"{\\\"write\\\":\\\"passed\\\"}\"}],\"observations\":[],\"package_id\":\"package_bffaa4e94ece4abbaeff16c35efab9ba\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"tool_result\",\"at\":\"2026-11-23T01:00:04+00:00\",\"event_id\":\"evt_7fc8b2dcdce8441eb8abbecba57f3be4\",\"handle\":\"event_evt_7fc8b2dcdce8441eb8abbecba57f3be4\",\"task_id\":\"task_62da080c293749c0b60c2de7ea1007f6\",\"text\":\"{\\\"write\\\":\\\"passed\\\"}\"}],\"observations\":[],\"package_id\":\"package_f9455ebfe18041f4aa60e0933ebc8c06\"}"
+            ]
+          }
+        }
+      },
+      "normalized": {
+        "seed": {
+          "accepted_event_count": 3
+        },
+        "input": {
+          "refs": [
+            "plan#/text",
+            "check#/checks/parse",
+            "check#/checks/write"
+          ]
+        },
+        "local": {
+          "evidence": [
+            {
+              "actor_kind": "user_message",
+              "at": "2026-11-23T01:00:01+00:00",
+              "event_id": "evt_092f5c31ccf642fd94e7d95be7b88260",
+              "handle": "event_evt_092f5c31ccf642fd94e7d95be7b88260",
+              "task_id": "task_35faa5506ceb42e7aa309c5c5aa3f588",
+              "text": "我计划重新跑写入检查。"
+            },
+            {
+              "actor_kind": "tool_result",
+              "at": "2026-11-23T01:00:02+00:00",
+              "event_id": "evt_4132c54b1cf24dcabf5f18f15af185b2",
+              "handle": "event_evt_4132c54b1cf24dcabf5f18f15af185b2",
+              "task_id": "task_35faa5506ceb42e7aa309c5c5aa3f588",
+              "text": "{\"parse\":\"passed\",\"write\":\"timeout\"}"
+            }
+          ],
+          "observations": [],
+          "package_id": "package_86b22f8d50c547f08f323177d3fcc7c6"
+        },
+        "other": {
+          "refs": [
+            "foreign#/checks/write"
+          ]
+        }
+      }
+    },
+    "F02-12": {
+      "actual": {
+        "load": {
+          "status": 200,
+          "body": {
+            "delivery_id": "delivery_f86e28b1911f47e48d40bc8e8fe40870",
+            "delivery_state": "provided",
+            "effective_profile": "balanced",
+            "estimated_evidence_tokens": 295,
+            "estimated_statement_tokens": 0,
+            "evidence": [
+              {
+                "actor_kind": "user_message",
+                "at": "2026-11-23T01:00:01+00:00",
+                "event_id": "evt_6c8e52738e41489890f028e008f43a16",
+                "handle": "event_evt_6c8e52738e41489890f028e008f43a16",
+                "task_id": "task_cc36521a7c394d83ba15ab3414b9237a",
+                "text": "我计划明天复验写入超时。"
+              }
+            ],
+            "fallback_reason": null,
+            "observations": [],
+            "package_id": "package_efae288c07ef4215a3bb70068f10de79",
+            "package_state": "provided",
+            "policy_version": 3,
+            "requested_profile": "balanced",
+            "snapshot_id": "snapshot_11a511a323069e47491f5f780eaef68150a3936abb82388eeee6ec3442903c8b",
+            "snapshot_mode": "replace",
+            "statements": [],
+            "template_version": "literal-v1"
+          }
+        }
+      },
+      "normalized": {
+        "seed": {
+          "accepted_event_count": 1
+        },
+        "load": {
+          "refs": [
+            "intent#/text"
+          ],
+          "delivery_id": "delivery_f86e28b1911f47e48d40bc8e8fe40870",
+          "delivery_state": "provided",
+          "effective_profile": "balanced",
+          "estimated_evidence_tokens": 295,
+          "estimated_statement_tokens": 0,
+          "evidence": [
+            {
+              "actor_kind": "user_message",
+              "at": "2026-11-23T01:00:01+00:00",
+              "event_id": "evt_6c8e52738e41489890f028e008f43a16",
+              "handle": "event_evt_6c8e52738e41489890f028e008f43a16",
+              "task_id": "task_cc36521a7c394d83ba15ab3414b9237a",
+              "text": "我计划明天复验写入超时。"
+            }
+          ],
+          "fallback_reason": null,
+          "observations": [],
+          "package_id": "package_efae288c07ef4215a3bb70068f10de79",
+          "package_state": "provided",
+          "policy_version": 3,
+          "requested_profile": "balanced",
+          "snapshot_id": "snapshot_11a511a323069e47491f5f780eaef68150a3936abb82388eeee6ec3442903c8b",
+          "snapshot_mode": "replace",
+          "statements": [],
+          "template_version": "literal-v1"
+        }
+      }
+    },
+    "F03-03": {
+      "actual": {
+        "accepted_page": {
+          "actor": "owner",
+          "committed_at": "2026-11-26T17:27:45.628405+00:00",
+          "cursor": "c1",
+          "events": [
+            {
+              "disposition": "accepted",
+              "event_id": "evt_bf704ffa685344f0b137c7c9fa011a92",
+              "native_object": "msg",
+              "ordinal": 0
+            }
+          ],
+          "ingest_id": "ing_f14e32f68d70440892a70a24f72f501d",
+          "jobs_created": 1,
+          "replayed": false,
+          "source_id": "src_22bc503a8dd9454e810dd2de5274d0c5",
+          "status": "accepted"
+        },
+        "replay": {
+          "actor": "owner",
+          "committed_at": "2026-11-26T17:27:45.628405+00:00",
+          "cursor": "c1",
+          "events": [
+            {
+              "disposition": "accepted",
+              "event_id": "evt_bf704ffa685344f0b137c7c9fa011a92",
+              "native_object": "msg",
+              "ordinal": 0
+            }
+          ],
+          "ingest_id": "ing_f14e32f68d70440892a70a24f72f501d",
+          "jobs_created": 1,
+          "replayed": false,
+          "source_id": "src_22bc503a8dd9454e810dd2de5274d0c5",
+          "status": "accepted"
+        },
+        "jobs": {
+          "jobs": [
+            {
+              "actor_kind": "user_message",
+              "attempts": 0,
+              "available_at": "2026-11-26T17:27:45.628405+00:00",
+              "candidates_recorded": 0,
+              "event_id": "evt_bf704ffa685344f0b137c7c9fa011a92",
+              "fail_reason": null,
+              "id": "job_522937044ece4180ba38ca1eac660501",
+              "job_id": "job_522937044ece4180ba38ca1eac660501",
+              "source_id": "src_22bc503a8dd9454e810dd2de5274d0c5",
+              "source_label": "fixture · sandbox-journal",
+              "status": "pending",
+              "updated_at": "2026-11-26T17:27:45.628405+00:00"
+            }
+          ],
+          "next_cursor": null
+        },
+        "source_records": {
+          "sources": [
+            {
+              "account": "sandbox-journal",
+              "capture_enabled": true,
+              "categories": [
+                "user_message",
+                "assistant_message",
+                "tool_result"
+              ],
+              "created_at": "2026-11-26T17:27:45.627169+00:00",
+              "cursor": "c1",
+              "embed_enabled": false,
+              "extract_enabled": false,
+              "extract_reauthorization_required": false,
+              "history": {
+                "enabled": false,
+                "events": 0,
+                "supported": false
+              },
+              "namespace": "fixture:sandbox-journal",
+              "source_id": "src_22bc503a8dd9454e810dd2de5274d0c5",
+              "type": "fixture",
+              "updated_at": "2026-11-26T17:27:45.628405+00:00"
+            }
+          ]
+        }
+      },
+      "normalized": {}
+    },
+    "F03-04": {
+      "actual": {
+        "accepted_page": {
+          "actor": "owner",
+          "committed_at": "2026-11-26T17:27:45.779965+00:00",
+          "cursor": "c1",
+          "events": [
+            {
+              "disposition": "accepted",
+              "event_id": "evt_d0771a0377974063983cde2f34ff65b1",
+              "native_object": "msg",
+              "ordinal": 0
+            }
+          ],
+          "ingest_id": "ing_ab53fb2ec9b94588972b0b3a20d230c6",
+          "jobs_created": 1,
+          "replayed": false,
+          "source_id": "src_41af700657b348b4b609649ed0511b73",
+          "status": "accepted"
+        },
+        "replay": {
+          "actor": "owner",
+          "committed_at": "2026-11-26T17:27:45.780744+00:00",
+          "cursor": "next",
+          "events": [
+            {
+              "disposition": "duplicate",
+              "event_id": "evt_d0771a0377974063983cde2f34ff65b1",
+              "native_object": "msg",
+              "ordinal": 0
+            }
+          ],
+          "ingest_id": "ing_f61bd61871c64f61bb4c57682c83c252",
+          "jobs_created": 0,
+          "replayed": false,
+          "source_id": "src_41af700657b348b4b609649ed0511b73",
+          "status": "accepted"
+        },
+        "jobs": {
+          "jobs": [
+            {
+              "actor_kind": "user_message",
+              "attempts": 0,
+              "available_at": "2026-11-26T17:27:45.779965+00:00",
+              "candidates_recorded": 0,
+              "event_id": "evt_d0771a0377974063983cde2f34ff65b1",
+              "fail_reason": null,
+              "id": "job_240106df50374bc2852ef93f93a4d675",
+              "job_id": "job_240106df50374bc2852ef93f93a4d675",
+              "source_id": "src_41af700657b348b4b609649ed0511b73",
+              "source_label": "fixture · sandbox-journal",
+              "status": "pending",
+              "updated_at": "2026-11-26T17:27:45.779965+00:00"
+            }
+          ],
+          "next_cursor": null
+        },
+        "source_records": {
+          "sources": [
+            {
+              "account": "sandbox-journal",
+              "capture_enabled": true,
+              "categories": [
+                "user_message",
+                "assistant_message",
+                "tool_result"
+              ],
+              "created_at": "2026-11-26T17:27:45.778621+00:00",
+              "cursor": "next",
+              "embed_enabled": false,
+              "extract_enabled": false,
+              "extract_reauthorization_required": false,
+              "history": {
+                "enabled": false,
+                "events": 0,
+                "supported": false
+              },
+              "namespace": "fixture:sandbox-journal",
+              "source_id": "src_41af700657b348b4b609649ed0511b73",
+              "type": "fixture",
+              "updated_at": "2026-11-26T17:27:45.780744+00:00"
+            }
+          ]
+        }
+      },
+      "normalized": {}
+    },
+    "F04-01": {
+      "actual": {
+        "find": {
+          "status": 422,
+          "body": {
+            "code": "invalid_input",
+            "message": "search mode must be lexical or vector",
+            "request_id": "e31ba77c-1fcf-413f-948a-39b31732f618",
+            "retryable": false
+          }
+        }
+      },
+      "normalized": {}
+    },
+    "F04-02": {
+      "actual": {
+        "lex": {
+          "status": 200,
+          "body": {
+            "results": [],
+            "retrieval": "lexical"
+          }
+        },
+        "mix": {
+          "status": 422,
+          "body": {
+            "code": "invalid_input",
+            "message": "search mode must be lexical or vector",
+            "request_id": "d843823c-bfab-4e92-99f5-64e995fac4c5",
+            "retryable": false
+          }
+        }
+      },
+      "normalized": {
+        "lex": {
+          "refs": []
+        }
+      }
+    },
+    "F04-08": {
+      "actual": {
+        "find": {
+          "status": 200,
+          "body": {
+            "results": [],
+            "retrieval": "lexical"
+          }
+        },
+        "native": {
+          "find": {
+            "status": 200,
+            "body": {
+              "results": [],
+              "retrieval": "lexical"
+            }
+          },
+          "input": {
+            "loopback_requests": 2,
+            "evidence_blocks": [
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"user_message\",\"at\":\"2026-11-23T01:00:00+00:00\",\"event_id\":\"evt_8ec6aff9c56e4d9583435a326ba5f053\",\"handle\":\"event_evt_8ec6aff9c56e4d9583435a326ba5f053\",\"task_id\":\"task_9ec0fe020b0e40c6af970b36f3a3da7e\",\"text\":\"界面颜色改为蓝色。\"}],\"observations\":[],\"package_id\":\"package_ff3788f1e7f547608eeed0b65b218d3a\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"user_message\",\"at\":\"2026-11-23T01:00:00+00:00\",\"event_id\":\"evt_8ec6aff9c56e4d9583435a326ba5f053\",\"handle\":\"event_evt_8ec6aff9c56e4d9583435a326ba5f053\",\"task_id\":\"task_9ec0fe020b0e40c6af970b36f3a3da7e\",\"text\":\"界面颜色改为蓝色。\"}],\"observations\":[],\"package_id\":\"package_7bd4bbde0ffd4225ad80f76fedd302c2\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"user_message\",\"at\":\"2026-11-23T01:00:00+00:00\",\"event_id\":\"evt_8ec6aff9c56e4d9583435a326ba5f053\",\"handle\":\"event_evt_8ec6aff9c56e4d9583435a326ba5f053\",\"task_id\":\"task_9ec0fe020b0e40c6af970b36f3a3da7e\",\"text\":\"界面颜色改为蓝色。\"}],\"observations\":[],\"package_id\":\"package_ff3788f1e7f547608eeed0b65b218d3a\"}",
+              "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n[]\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n{\"evidence\":[{\"actor_kind\":\"user_message\",\"at\":\"2026-11-23T01:00:00+00:00\",\"event_id\":\"evt_8ec6aff9c56e4d9583435a326ba5f053\",\"handle\":\"event_evt_8ec6aff9c56e4d9583435a326ba5f053\",\"task_id\":\"task_9ec0fe020b0e40c6af970b36f3a3da7e\",\"text\":\"界面颜色改为蓝色。\"}],\"observations\":[],\"package_id\":\"package_7bd4bbde0ffd4225ad80f76fedd302c2\"}"
+            ]
+          }
+        }
+      },
+      "normalized": {
+        "find": {
+          "refs": []
+        },
+        "input": {
+          "model_input_evidence_refs": [
+            "palette"
+          ],
+          "verified_result_refs": []
+        }
+      }
+    },
+    "F04-09": {
+      "actual": {
+        "off": {
+          "status": 422,
+          "body": {
+            "code": "invalid_input",
+            "message": "search mode must be lexical or vector",
+            "request_id": "a30076de-a972-4c03-8f95-31aee1c07919",
+            "retryable": false
+          }
+        },
+        "late": {
+          "status": 422,
+          "body": {
+            "code": "invalid_input",
+            "message": "search mode must be lexical or vector",
+            "request_id": "37b38fc2-ba0d-4527-9d38-14bca8074a8e",
+            "retryable": false
+          }
+        }
+      },
+      "normalized": {}
+    },
+    "F04-10": {
+      "actual": {
+        "owner": {
+          "status": 422,
+          "body": {
+            "code": "invalid_input",
+            "message": "search mode must be lexical or vector",
+            "request_id": "1949f086-a567-42a8-9eac-f949b997977f",
+            "retryable": false
+          }
+        }
+      },
+      "normalized": {}
+    },
+    "F04-16": {
+      "actual": {
+        "new": {
+          "status": 422,
+          "body": {
+            "code": "invalid_input",
+            "message": "search mode must be lexical or vector",
+            "request_id": "f8a2b944-3dc3-4826-9d39-27efd57b654d",
+            "retryable": false
+          }
+        }
+      },
+      "normalized": {}
+    },
+    "F05-07": {
+      "actual": {
+        "seed": {
+          "old": {
+            "change_seq": 1,
+            "dimensions": [
+              {
+                "fact_id": "f_57df4aed6a8a463db22a62fdb4ad0473",
+                "key": "report.language",
+                "revision_id": "r_3947e2e5cfe5450f9bb1afa82cd6e293",
+                "status": "active",
+                "supersedes": null,
+                "value": "en"
+              }
+            ],
+            "statement_id": "st_502c1673b87645dab5344615c673377e",
+            "status": "recorded"
+          },
+          "new": {
+            "change_seq": 2,
+            "dimensions": [
+              {
+                "fact_id": "f_57df4aed6a8a463db22a62fdb4ad0473",
+                "key": "report.language",
+                "revision_id": "r_542c511c5d4e457c8789dbb3cf759b4e",
+                "status": "active",
+                "supersedes": "r_3947e2e5cfe5450f9bb1afa82cd6e293",
+                "value": "zh"
+              }
+            ],
+            "statement_id": "st_2740722cf6bb457b83b960c286c1e015",
+            "status": "recorded"
+          }
+        },
+        "before": {
+          "delivery_id": "delivery_cba23ea6f4db4421a9c59c7941c6deb4",
+          "delivery_state": "provided",
+          "effective_profile": "balanced",
+          "estimated_evidence_tokens": 582,
+          "estimated_statement_tokens": 91,
+          "evidence": [
+            {
+              "actor_kind": "user_message",
+              "at": "2026-11-23T01:00:00+00:00",
+              "event_id": "evt_7e4f1d8a5de64a688dbf90536c2024ba",
+              "handle": "event_evt_7e4f1d8a5de64a688dbf90536c2024ba",
+              "task_id": "task_bd08e5ff1ef143c99e3924de79263df1",
+              "text": "青禾主线代号蓝鹭，写入耗时九秒。"
+            },
+            {
+              "actor_kind": "user_message",
+              "at": "2026-11-23T01:00:00+00:00",
+              "event_id": "evt_baa6dc1ff3064d2d94a50efd3e75a923",
+              "handle": "event_evt_baa6dc1ff3064d2d94a50efd3e75a923",
+              "task_id": "task_bd08e5ff1ef143c99e3924de79263df1",
+              "text": "青禾支线代号灰雀，写入耗时七秒。"
+            }
+          ],
+          "fallback_reason": null,
+          "observations": [],
+          "package_id": "package_480045e28c334d8da4798916a16a0b75",
+          "package_state": "provided",
+          "policy_version": 3,
+          "requested_profile": "balanced",
+          "snapshot_id": "snapshot_ac87868e96e571359df681c2534b4a6f0ae10d177fca68c66c9eca181da554a0",
+          "snapshot_mode": "replace",
+          "statements": [
+            {
+              "key": "report.language",
+              "revision_id": "r_542c511c5d4e457c8789dbb3cf759b4e",
+              "value": "zh"
+            }
+          ],
+          "template_version": "literal-v1"
+        },
+        "pv": {
+          "effective": false,
+          "kind": "forget",
+          "preview_id": "27b2ec04-02d2-431d-849b-34adfaebfa6d",
+          "scope": {
+            "kind": "forget",
+            "target": {
+              "statement_id": "st_2740722cf6bb457b83b960c286c1e015"
+            }
+          }
+        },
+        "ok": {
+          "cleanup_state": "logical_effect_applied",
+          "effective": true,
+          "kind": "forget",
+          "operation_id": "op_068ad6e0a59542c98543157d784c09de",
+          "result": {
+            "change_seq": 3,
+            "revoked": true,
+            "statement_id": "st_2740722cf6bb457b83b960c286c1e015"
+          }
+        },
+        "after": {
+          "delivery_id": "delivery_1c275c0d697b4a68a79731f55327d43c",
+          "delivery_state": "provided",
+          "effective_profile": "balanced",
+          "estimated_evidence_tokens": 582,
+          "estimated_statement_tokens": 0,
+          "evidence": [
+            {
+              "actor_kind": "user_message",
+              "at": "2026-11-23T01:00:00+00:00",
+              "event_id": "evt_7e4f1d8a5de64a688dbf90536c2024ba",
+              "handle": "event_evt_7e4f1d8a5de64a688dbf90536c2024ba",
+              "task_id": "task_bd08e5ff1ef143c99e3924de79263df1",
+              "text": "青禾主线代号蓝鹭，写入耗时九秒。"
+            },
+            {
+              "actor_kind": "user_message",
+              "at": "2026-11-23T01:00:00+00:00",
+              "event_id": "evt_baa6dc1ff3064d2d94a50efd3e75a923",
+              "handle": "event_evt_baa6dc1ff3064d2d94a50efd3e75a923",
+              "task_id": "task_bd08e5ff1ef143c99e3924de79263df1",
+              "text": "青禾支线代号灰雀，写入耗时七秒。"
+            }
+          ],
+          "fallback_reason": null,
+          "observations": [],
+          "package_id": "package_b6150e907012475b82cc516cd1b13e98",
+          "package_state": "provided",
+          "policy_version": 3,
+          "requested_profile": "balanced",
+          "snapshot_id": "snapshot_a2d8cf36c8f50ec5c5f353127429ab44aa3bfe91b9e0408e699323284213adf7",
+          "snapshot_mode": "replace",
+          "statements": [],
+          "template_version": "literal-v1"
+        },
+        "lineage_rows": [
+          [
+            "r_3947e2e5cfe5450f9bb1afa82cd6e293",
+            null,
+            "active"
+          ],
+          [
+            "r_542c511c5d4e457c8789dbb3cf759b4e",
+            "r_3947e2e5cfe5450f9bb1afa82cd6e293",
+            "revoked"
+          ]
+        ]
+      },
+      "normalized": {
+        "before": {
+          "active_rule_ids": [
+            "new"
+          ]
+        },
+        "pv": {
+          "effective": false,
+          "kind": "forget",
+          "preview_id": "27b2ec04-02d2-431d-849b-34adfaebfa6d",
+          "scope": {
+            "kind": "forget",
+            "target": {
+              "statement_id": "st_2740722cf6bb457b83b960c286c1e015"
+            }
+          }
+        },
+        "ok": {
+          "cleanup_state": "logical_effect_applied",
+          "effective": true,
+          "kind": "forget",
+          "operation_id": "op_068ad6e0a59542c98543157d784c09de",
+          "result": {
+            "change_seq": 3,
+            "revoked": true,
+            "statement_id": "st_2740722cf6bb457b83b960c286c1e015"
+          }
+        },
+        "after": {
+          "active_rule_ids": []
+        },
+        "audit": {
+          "superseded_by": "new"
+        }
+      }
+    },
+    "F05-13": {
+      "actual": {
+        "backup": {
+          "backup_id": "backup_856cf6d3aae7412e9fe30384533a4653",
+          "change_seq": 0,
+          "complete": true,
+          "created_at": "2026-11-26T17:28:13.662243+00:00",
+          "database_bytes": 581632,
+          "objects": 0,
+          "rebind_clients": [],
+          "revocation_cut": "85311e11c79a9f3cb32397efddc938e1452f3419ab666d08d7403c12efba775a",
+          "revocation_cut_kind": "logical_state_fingerprint",
+          "sha256": "ab8687bc5f7b4879613f89e577672462ae3a5fb5b34ed98c42a31309f2c19036",
+          "state": "complete"
+        },
+        "root_forget": {
+          "status": 202,
+          "body": {
+            "effective": false,
+            "kind": "forget",
+            "preview_id": "e4ce4715-f447-4ea9-b3de-36915788546f",
+            "scope": {
+              "kind": "forget",
+              "target": {
+                "root_id": "root_2237f9b27eb24777bc9f26d97a14c33d"
+              }
+            }
+          }
+        }
+      },
+      "normalized": {}
+    },
+    "F05-14": {
+      "actual": {
+        "backup": {
+          "backup_id": "backup_b9731624fa4f4fb8aa7ef4a6bf2d6137",
+          "change_seq": 0,
+          "complete": true,
+          "created_at": "2026-11-26T17:28:13.854237+00:00",
+          "database_bytes": 581632,
+          "objects": 0,
+          "rebind_clients": [],
+          "revocation_cut": "cbd516ddec66e5a6f35df76cc46a4eb2cdd8607423f80f6bfc7a005867bc6116",
+          "revocation_cut_kind": "logical_state_fingerprint",
+          "sha256": "6290a7b57d8503a293e5d3af056b22952600b35bb7a8f712db30da5f07687efc",
+          "state": "complete"
+        },
+        "restore": {
+          "active_change_seq": 0,
+          "active_revocation_cut": "c32f6f9559d596fee44b213b788c0ef5968dac58aa5a665af74c61da1aba62d6",
+          "backup_id": "backup_b9731624fa4f4fb8aa7ef4a6bf2d6137",
+          "can_apply": false,
+          "change_seq": 0,
+          "integrity": "verified",
+          "objects": 0,
+          "provable_until": "2026-11-26T17:28:13.854237+00:00",
+          "reason": "independent_revocation_watermark_required",
+          "rebind_clients": [],
+          "restore_mode": "preview_only",
+          "revocation_cut": "cbd516ddec66e5a6f35df76cc46a4eb2cdd8607423f80f6bfc7a005867bc6116",
+          "sha256": "6290a7b57d8503a293e5d3af056b22952600b35bb7a8f712db30da5f07687efc",
+          "state": "blocked"
+        },
+        "lookup": [
+          200,
+          {
+            "results": [],
+            "retrieval": "lexical"
+          }
+        ]
+      },
+      "normalized": {}
+    },
+    "X01-01": {
+      "actual": {
+        "replay": {
+          "upstream": {
+            "overlap": "XSL",
+            "empty": "LM",
+            "tie": "ZA",
+            "swapped": "AZ"
+          },
+          "local": {
+            "overlap": "XSL",
+            "empty": "LM",
+            "tie": "AZ",
+            "swapped": "AZ"
+          },
+          "raw_stdout": [
+            "overlap upstream=XSL local=XSL  X=0.032522475 S=0.016393443 L=0.016129032",
+            "empty   upstream=LM local=LM  L=0.016393443 M=0.016129032",
+            "tie     upstream=ZA local=AZ  Z=0.016393443 A=0.016393443",
+            "swapped upstream=AZ local=AZ  A=0.016393443 Z=0.016393443"
+          ],
+          "overlap_score_x": "0.032522475"
+        }
+      },
+      "normalized": {
+        "replay": {
+          "upstream": {
+            "overlap": "XSL",
+            "empty": "LM",
+            "tie": "ZA",
+            "swapped": "AZ"
+          },
+          "local": {
+            "overlap": "XSL",
+            "empty": "LM",
+            "tie": "AZ",
+            "swapped": "AZ"
+          },
+          "raw_stdout": [
+            "overlap upstream=XSL local=XSL  X=0.032522475 S=0.016393443 L=0.016129032",
+            "empty   upstream=LM local=LM  L=0.016393443 M=0.016129032",
+            "tie     upstream=ZA local=AZ  Z=0.016393443 A=0.016393443",
+            "swapped upstream=AZ local=AZ  A=0.016393443 Z=0.016393443"
+          ],
+          "overlap_score_x": "0.032522475"
+        }
+      }
+    }
+  }
+}

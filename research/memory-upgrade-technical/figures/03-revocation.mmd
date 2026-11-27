@@ -1,0 +1,65 @@
+---
+config:
+  theme: base
+  htmlLabels: false
+  fontFamily: '"PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif'
+  themeVariables:
+    fontFamily: '"PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif'
+    fontSize: 18px
+    primaryColor: '#e6f4f1'
+    primaryTextColor: '#163942'
+    primaryBorderColor: '#377774'
+    lineColor: '#45616a'
+    secondaryColor: '#f4f8fa'
+    tertiaryColor: '#f6f9f9'
+    clusterBkg: '#f5f9f9'
+    clusterBorder: '#a3b8b8'
+    edgeLabelBackground: '#ffffff'
+    actorBkg: '#e3f3ef'
+    actorBorder: '#4b7774'
+    actorTextColor: '#15363d'
+    actorLineColor: '#799397'
+    signalColor: '#3c5864'
+    signalTextColor: '#173842'
+    loopTextColor: '#254955'
+    labelBoxBkgColor: '#edf5f5'
+    labelBoxBorderColor: '#739295'
+    labelTextColor: '#254955'
+    noteBkgColor: '#ffffff'
+    noteBorderColor: '#adbdc3'
+    noteTextColor: '#254955'
+  flowchart:
+    htmlLabels: false
+    curve: linear
+    nodeSpacing: 28
+    rankSpacing: 42
+    padding: 10
+    diagramPadding: 14
+    useMaxWidth: true
+  sequence:
+    showSequenceNumbers: false
+    mirrorActors: false
+    actorMargin: 64
+    width: 145
+    height: 50
+    messageMargin: 30
+    boxMargin: 12
+    diagramMarginX: 30
+    diagramMarginY: 15
+---
+flowchart TB
+  accTitle: 撤权与撤回分支流程
+  accDescr: 撤读取权仅禁该接收者且立即生效，撤根资料阻断暴露并凭剩余授权证据重建，异步清理不解除禁读
+  A["收窄某位助手的读取权"] -->|确认后立即生效| A1["该助手无法再读取此资料<br/>覆盖旧句柄、待交付包"]
+  A -->|原有授权仍有效| A2["其他获准读者仍可访问"]
+  B["撤回某份根资料"] -->|立即| B1["阻断旧根及依赖它的结论"]
+  B1 -->|查剩余依据| D{"剩余获准依据<br/>独立且充分？"}
+  D -->|有| D1["仅用剩余依据重建结论"]
+  D -->|无充分依据| D2["旧结论继续不可读"]
+  A1 -.->|异步触发| C["异步清理相关索引和缓存<br/>清理失败时禁读仍生效"]
+  B1 -.->|异步触发| C
+  %% 外发副本收回能力须由外部接收端单独证实。
+  classDef act fill:#e9eff7,stroke:#456988,color:#183e56
+  classDef proc fill:#e3f2ef,stroke:#337568,color:#17423f
+  class A,B,D act
+  class A1,A2,B1,D1,D2,C proc

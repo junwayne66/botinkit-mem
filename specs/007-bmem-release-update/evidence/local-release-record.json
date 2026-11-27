@@ -1,0 +1,28 @@
+{
+  "descriptor": {
+    "version": "0.3.0",
+    "build_id": "b5709134431841f07326132082d9b52b7dd83767e91658886b02846f58ba5bed",
+    "commit": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+    "target": "aarch64-apple-darwin",
+    "authority_epoch": 2,
+    "settings_epoch": 0,
+    "sha256": "f2a926b6618829b02e4e6b7a20b299430808e234c8782fd3b0d958694c09359a",
+    "len": 18394720,
+    "url": "https://github.com/junwayne66/botinkit-mem/releases/download/v0.3.0/bmem-0.3.0-aarch64-apple-darwin",
+    "min_os": "15.0",
+    "min_updater": 1,
+    "from_versions": [
+      "0.0.0",
+      "0.2.0"
+    ],
+    "from_authority_epochs": [
+      0,
+      1
+    ]
+  },
+  "asset": "bmem-0.3.0-aarch64-apple-darwin",
+  "web_build_id": "7534383d01626838642c26e27aa2638997813c39eb7295d272ea9c019f96d4b7",
+  "native_signature": "pending",
+  "test_build": false,
+  "official_update_root_sha256": null
+}

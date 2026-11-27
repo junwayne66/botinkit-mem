@@ -195,9 +195,9 @@
           <div class="dash-grid">
             <section class="panel graph-panel">
               <header class="panel-head">
-                <h3>
+                <h2>
                   <svg class="ico" aria-hidden="true"><use href="#i-graph" /></svg>记忆星图
-                </h3>
+                </h2>
                 <a class="panel-link" href="#/graph"
                   >探索星图 <svg class="ico" aria-hidden="true"><use href="#i-open" /></svg
                 ></a>
@@ -207,9 +207,9 @@
             <div class="chart-stack">
               <section class="panel trend-panel">
                 <header class="panel-head">
-                  <h3>
+                  <h2>
                     <svg class="ico" aria-hidden="true"><use href="#i-trend" /></svg>写入活动
-                  </h3>
+                  </h2>
                   <div class="period" role="group" aria-label="活动时间范围">
                     <button type="button" data-days="7" aria-pressed="true">7 天</button
                     ><button type="button" data-days="30" aria-pressed="false">30 天</button>
@@ -219,9 +219,9 @@
               </section>
               <section class="panel mix-panel">
                 <header class="panel-head">
-                  <h3>
+                  <h2>
                     <svg class="ico" aria-hidden="true"><use href="#i-pie" /></svg>记忆构成
-                  </h3>
+                  </h2>
                 </header>
                 <div id="distribution-chart" class="chart-box"></div>
               </section>
@@ -230,17 +230,17 @@
           <div class="lower-grid">
             <section class="panel feed-panel">
               <header class="panel-head">
-                <h3>
+                <h2>
                   <svg class="ico" aria-hidden="true"><use href="#i-clock" /></svg>最近活动
-                </h3>
+                </h2>
               </header>
               <div id="recent-feed"></div>
             </section>
             <section class="panel queue-panel">
               <header class="panel-head">
-                <h3>
+                <h2>
                   <svg class="ico" aria-hidden="true"><use href="#i-jobs" /></svg>后台作业
-                </h3>
+                </h2>
                 <a class="panel-link" href="#/jobs"
                   >查看作业 <svg class="ico" aria-hidden="true"><use href="#i-open" /></svg
                 ></a>
@@ -284,7 +284,7 @@
           <div class="view__head">
             <div>
               <h1 id="h-statements">记忆库</h1>
-              <p class="view-desc">按适用范围查看当前事实，核对原话和修订历史。</p>
+              <p class="view-desc">查看本人声明，以及从会话和工具回执中提炼的候选记忆。</p>
             </div>
             <div class="head-actions">
               <button class="btn" type="button" data-action="reload-statements">
@@ -298,9 +298,9 @@
           <div class="library-grid">
             <section class="panel library-column" aria-labelledby="library-current">
               <div class="panel-head">
-                <h3 id="library-current">
-                  <svg class="ico" aria-hidden="true"><use href="#i-memory" /></svg>当前事实
-                </h3>
+                <h2 id="library-current">
+                  <svg class="ico" aria-hidden="true"><use href="#i-memory" /></svg>本人声明中的当前事实
+                </h2>
                 <span id="stmt-seq" class="seq"></span>
               </div>
               <form id="library-filter" class="library-filter">
@@ -321,16 +321,20 @@
                     placeholder="输入项目标识"
                   />
                 </div>
-                <button id="library-apply" type="submit" class="btn" hidden>查看</button>
+                <div class="field">
+                  <label for="library-valid-at">指定生效时间（本机时区，可选）</label>
+                  <input id="library-valid-at" type="datetime-local" step="1" />
+                </div>
+                <button id="library-apply" type="submit" class="btn">查看</button>
               </form>
               <div id="stmt-result" class="library-result" role="status"></div>
               <div id="stmt-list" class="library-facts"></div>
             </section>
             <section class="panel library-column" aria-labelledby="library-compose">
               <div class="panel-head">
-                <h3 id="library-compose">
+                <h2 id="library-compose">
                   <svg class="ico" aria-hidden="true"><use href="#i-plus" /></svg>追加声明
-                </h3>
+                </h2>
               </div>
               <form id="append-form" class="form">
                 <div class="field">
@@ -375,6 +379,13 @@
               </form>
             </section>
           </div>
+          <section class="panel library-column" aria-labelledby="library-extracted">
+            <div class="panel-head">
+              <h2 id="library-extracted">自动提炼候选</h2>
+              <button class="btn btn--sm" type="button" data-action="show-candidates">查看全部提炼结果</button>
+            </div>
+            <div id="library-proposals" class="library-jobs"></div>
+          </section>
         </section>
 
         <!-- 历史 -->
@@ -430,7 +441,7 @@
                 <span class="settings-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24"><path d="m3 8 9-5 9 5-9 5-9-5Zm0 5 9 5 9-5M3 18l9 5 9-5" /></svg>
                 </span>
-                <h3>存储与压缩</h3>
+                <h2>存储与压缩</h2>
               </div>
               <form id="profile-form" class="settings-form">
                 <div class="field">
@@ -442,7 +453,7 @@
                   </select>
                   <p class="settings-note" id="cfg-profile-note"></p>
                 </div>
-                <button class="btn btn--primary" type="submit">保存档位</button>
+                <button class="btn" type="submit">保存档位</button>
                 <div id="profile-result" class="resultline" role="status"></div>
               </form>
             </section>
@@ -457,7 +468,7 @@
                     <path d="m8.5 7.5 7-2M8 10l5 6m2.7-.5 1.8-8" />
                   </svg>
                 </span>
-                <h3>语义检索</h3>
+                <h2>语义检索</h2>
               </div>
               <form id="vector-form" class="settings-form">
                 <label class="settings-toggle" for="cfg-vector"
@@ -467,7 +478,7 @@
                 <p class="settings-note" id="cfg-vector-note">
                   开启后可测试并绑定嵌入模型。关闭后保留绑定，仍可使用关键词检索。
                 </p>
-                <button class="btn btn--primary" type="submit">保存检索设置</button>
+                <button class="btn" type="submit">保存检索设置</button>
                 <div id="vector-result" class="resultline" role="status"></div>
               </form>
             </section>
@@ -482,7 +493,7 @@
                   <path d="M9 3v3m6-3v3m-6 12v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3" />
                 </svg>
               </span>
-              <h3>模型服务</h3>
+              <h2>模型服务</h2>
             </div>
             <p class="settings-note">添加模型后可测试连接和模型响应。</p>
             <div id="models-list" class="list"></div>
@@ -548,7 +559,7 @@
                   <input id="md-clear-key" type="checkbox" /> 清除已配置的 API_KEY 或凭据引用
                 </label>
                 <div class="row-actions">
-                  <button class="btn btn--primary" id="model-submit" type="submit">添加模型</button>
+                  <button class="btn" id="model-submit" type="submit">添加模型</button>
                   <button class="btn" id="model-cancel" type="button" hidden>取消编辑</button>
                 </div>
                 <div id="model-result" class="resultline" role="status"></div>
@@ -566,7 +577,7 @@
                   <circle cx="18" cy="19" r="2" />
                 </svg>
               </span>
-              <h3>用途绑定</h3>
+              <h2>用途绑定</h2>
             </div>
             <div id="cfg-activity" class="settings-readiness" hidden></div>
             <p class="settings-note">自动提炼可使用服务器 API 或本地 Ollama。更换模型接收端后，请重新确认来源授权。向量嵌入使用本机模型。</p>
@@ -581,7 +592,7 @@
                   ><select id="bind-embed" name="embed"></select>
                 </div>
               </div>
-              <button class="btn btn--primary" type="submit">保存绑定</button>
+              <button class="btn" type="submit">保存绑定</button>
               <div id="bindings-result" class="resultline" role="status"></div>
             </form>
           </section>
@@ -614,17 +625,19 @@
           </div>
           <section class="panel library-column" aria-labelledby="jobs-heading">
             <div class="panel-head">
-              <h3 id="jobs-heading">
+              <h2 id="jobs-heading">
                 <svg class="ico" aria-hidden="true"><use href="#i-jobs" /></svg>提炼队列
-              </h3>
+              </h2>
               <label class="jobs-filter"
                 >状态
                 <select id="jobs-filter">
                   <option value="">全部状态</option>
                   <option value="pending">等待中</option>
+                  <option value="retrying">等待重试</option>
                   <option value="running">运行中</option>
-                  <option value="failed">失败</option>
+                  <option value="failed">失败队列</option>
                   <option value="done">已完成</option>
+                  <option value="candidates">有提炼候选</option>
                   <option value="cancelled">已取消</option>
                 </select></label
               >

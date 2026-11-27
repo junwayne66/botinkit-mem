@@ -1,0 +1,18 @@
+{
+  "scope": "isolated-test-signing",
+  "commit": "e6034563c8a4869ad79930383c619a440207367b",
+  "initial_sha256": "1a261398cd2a13165804864a0488fa4110f1d5a4e5b2bb1fc5b54e5f4b46fb5a",
+  "log_sha256": "44bf15719ea0692e537e0d2f48a6ab08908799fa99cdf2e529c6dc9613c1ded7",
+  "updated_sha256": "ef89c4599c6b692f5e6e4d0a940a5ee9587ef3df6a2a024df702bcbf332970a6",
+  "target": "aarch64-pc-windows-msvc",
+  "scenario": "Scheduler",
+  "status": "PASS",
+  "legacy_web_tree": "6c999f2ae44e99307706ee5cec1ee59d3a931b47",
+  "reviewed_legacy_commit": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+  "tests": 1,
+  "legacy_commit": "bbd7a39ef393717f597d5fcccc467f6bffbf0d41",
+  "windows_version": "10.0.26200.0",
+  "legacy_sha256": "50400c8b2b684131c59c41a302fcb05dbf60154d71db06ebdbda9ef009d8b6f5",
+  "legacy_rust_tree": "aa4b9e2a60e6225121afb0221ecf7a50a1fc9487",
+  "architecture": "Arm64"
+}

@@ -622,13 +622,21 @@ fn deduplication_counts_real_duplicates() -> Result<()> {
         "to": "2026-01-02T00:00:00Z"
     });
 
+    // An earlier import knew the source and message ID, but not the conversation kind.
+    let legacy = ingestion::accept(
+        &mut db,
+        "owner",
+        "legacy",
+        json!({"source_id": src_feishu, "next_cursor":"before-import",
+            "events":[{"native_object":"obj1","native_version":"1","actor_kind":"user_message","text":"event1"}]}),
+        "test",
+    )?;
     let created = create(&mut db, &body, "key")?;
     let task_id = created["id"].as_str().unwrap().to_string();
 
     let database = Mutex::new(db);
     let stop = || false;
 
-    // First read: all accepted
     let read1 = |_: &str,
                  _: &str,
                  _: &str,
@@ -650,8 +658,19 @@ fn deduplication_counts_real_duplicates() -> Result<()> {
 
     let db = lock(&database)?;
     let job = job_view(&db, &task_id)?;
-    assert_eq!(job["accepted"], 2);
-    assert_eq!(job["duplicates"], 0);
+    assert_eq!(job["accepted"], 1);
+    assert_eq!(job["duplicates"], 1);
+    let exclusions =
+        crate::retrieval::SearchExclusions::parse(Some(&json!(["feishu_unclassified"])))?;
+    let found = crate::retrieval::search_owner(&db, "event1", None, &exclusions)?;
+    assert_eq!(found["results"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        found["results"][0]["event_id"],
+        legacy["events"][0]["event_id"]
+    );
+    let exclusions = crate::retrieval::SearchExclusions::parse(Some(&json!(["dm"])))?;
+    let found = crate::retrieval::search_owner(&db, "event1", None, &exclusions)?;
+    assert_eq!(found["results"], json!([]));
 
     Ok(())
 }

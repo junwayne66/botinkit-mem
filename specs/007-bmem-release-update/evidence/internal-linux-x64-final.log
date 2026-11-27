@@ -1,0 +1,12 @@
+Linux WSL x86_64 glibc 2.35 with isolated netns
+testing uid=65534
+test_u01_bootstrap (__main__.InternalReleaseAcceptance) ... ok
+test_u02_adopt_0_2_0 (__main__.InternalReleaseAcceptance) ... ok
+test_u03_update_and_repeat (__main__.InternalReleaseAcceptance) ... ok
+test_u04_u06_reject_tampering_and_restore_after_failed_probe (__main__.InternalReleaseAcceptance) ... ok
+test_u07_compatible_program_rollback_keeps_new_writes (__main__.InternalReleaseAcceptance) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 14.712s
+
+OK

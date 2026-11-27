@@ -349,6 +349,7 @@ pub fn job_page(
     limit: &str,
     before: Option<&str>,
     status: Option<&str>,
+    has_candidates: Option<&str>,
 ) -> Result<Value> {
     let limit = limit
         .parse::<usize>()
@@ -367,16 +368,33 @@ pub fn job_page(
         .unwrap_or(i64::MAX);
     let extra = match status {
         None => "",
-        Some("pending" | "running" | "done" | "failed" | "cancelled") => " AND j.status=?3",
+        Some("pending" | "retrying" | "running" | "done" | "failed" | "cancelled") => {
+            " AND j.status=?3"
+        }
         Some(_) => return Err(Error::invalid("unknown job status")),
+    };
+    let candidates = match has_candidates {
+        None | Some("false") => "",
+        Some("true") => {
+            " AND j.status='done' AND e.active=1 AND EXISTS
+            (SELECT 1 FROM ing_candidates c WHERE c.job_id=j.job_id)"
+        }
+        Some(_) => return Err(Error::invalid("has_candidates must be true or false")),
     };
     let mut query = db.prepare_cached(&format!(
         "SELECT j.rowid,j.job_id,j.source_id,substr(s.kind,1,40)||' · '||substr(s.account,1,80),
-                j.event_id,e.actor_kind,j.status,j.attempts,j.available_at,j.updated_at,substr(j.fail_reason,1,512),
-                (SELECT count(*) FROM ing_candidates c WHERE c.job_id=j.job_id)
+                j.event_id,e.actor_kind,j.status,j.attempts,j.available_at,j.updated_at,
+                CASE WHEN j.status<>'done' THEN substr(j.fail_reason,1,512) END,
+                (SELECT count(*) FROM ing_candidates c WHERE c.job_id=j.job_id), j.retry_failures,
+                EXISTS(SELECT 1 FROM ing_model_routes m JOIN ing_extract_health h ON h.route=m.fingerprint
+                       WHERE m.source_id=j.source_id AND h.state='waiting_model')
+                    AND j.status IN ('pending','retrying','running')
+                    AND EXISTS(SELECT 1 FROM ing_grants g WHERE g.source_id=j.source_id AND g.purpose='extract' AND g.active=1)
+                    AND NOT EXISTS(SELECT 1 FROM ing_extract_pauses p WHERE p.source_id=j.source_id)
+                    AND NOT EXISTS(SELECT 1 FROM ing_extract_denials d WHERE d.root_id=e.root_id) AND e.active=1
          FROM ing_jobs j JOIN ing_sources s ON s.source_id=j.source_id
          JOIN ing_event_versions e ON e.event_id=j.event_id
-         WHERE j.rowid<?1{extra} ORDER BY j.rowid DESC LIMIT ?2"
+         WHERE j.rowid<?1{extra}{candidates} ORDER BY j.rowid DESC LIMIT ?2"
     ))?;
     let mut rows = if let Some(status) = status {
         query.query(params![before, limit as i64 + 1, status])?
@@ -395,7 +413,9 @@ pub fn job_page(
             "job_id":id, "id":id, "source_id":r.get::<_,String>(2)?, "source_label":r.get::<_,String>(3)?,
             "event_id":r.get::<_,String>(4)?, "actor_kind":r.get::<_,String>(5)?, "status":r.get::<_,String>(6)?,
             "attempts":r.get::<_,i64>(7)?, "available_at":r.get::<_,String>(8)?, "updated_at":r.get::<_,String>(9)?,
-            "fail_reason":r.get::<_,Option<String>>(10)?, "candidates_recorded":r.get::<_,i64>(11)?
+            "fail_reason":r.get::<_,Option<String>>(10)?, "candidates_recorded":r.get::<_,i64>(11)?,
+            "retry_count":(r.get::<_,i64>(12)?-1).clamp(0,crate::ingestion::MAX_RETRIES),
+            "waiting_model":r.get::<_,bool>(13)?
         }));
     }
     Ok(json!({"jobs":jobs, "next_cursor":null}))

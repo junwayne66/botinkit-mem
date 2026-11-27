@@ -2,7 +2,7 @@ use crate::error::{Error, Result};
 use crate::{authority, context, ingestion};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 pub fn migrate(db: &mut Connection) -> Result<()> {
@@ -20,12 +20,49 @@ pub fn migrate(db: &mut Connection) -> Result<()> {
             client_id TEXT NOT NULL REFERENCES context_clients(id),
             PRIMARY KEY(source_id,client_id)
         );
+        CREATE TABLE IF NOT EXISTS recall_root_denials(
+            client_id TEXT NOT NULL REFERENCES context_clients(id),
+            root_id TEXT NOT NULL REFERENCES ing_roots(root_id),
+            PRIMARY KEY(client_id,root_id)
+        );
+        CREATE TABLE IF NOT EXISTS recall_cooled_roots (root_id TEXT PRIMARY KEY REFERENCES ing_roots(root_id));
+        CREATE TABLE IF NOT EXISTS governance_owner_read_denials (
+            root_id TEXT PRIMARY KEY REFERENCES ing_roots(root_id)
+        );
+        CREATE TABLE IF NOT EXISTS recall_tool_links (handle TEXT PRIMARY KEY REFERENCES recall_events(handle) ON DELETE CASCADE,
+            run TEXT NOT NULL,call TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('call','result','plan')));
+        CREATE INDEX IF NOT EXISTS recall_tool_links_run ON recall_tool_links(run,call,role);
+        CREATE TABLE IF NOT EXISTS governance_discussion_roots (discussion_id TEXT NOT NULL,
+            root_id TEXT NOT NULL REFERENCES ing_roots(root_id), PRIMARY KEY(discussion_id,root_id));
         CREATE TABLE IF NOT EXISTS governance_previews (
             id TEXT PRIMARY KEY, request TEXT NOT NULL, footprint TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS governance_comparison_snapshots (
+            preview_id TEXT PRIMARY KEY REFERENCES governance_previews(id) ON DELETE CASCADE,
+            snapshot_digest TEXT NOT NULL,
+            model_calls INTEGER NOT NULL DEFAULT 0 CHECK(model_calls = 0)
         );
         CREATE TABLE IF NOT EXISTS governance_operations (
             id TEXT PRIMARY KEY, request_key TEXT UNIQUE NOT NULL, request TEXT NOT NULL, response TEXT NOT NULL
         );")?;
+    let has_kind: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('recall_events') WHERE name='feishu_kind')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_kind {
+        db.execute_batch("ALTER TABLE recall_events ADD COLUMN feishu_kind TEXT")?;
+    }
+    Ok(())
+}
+
+pub fn record_feishu_kind(db: &Connection, receipt: &Value, kind: &str) -> Result<()> {
+    // Re-observed duplicates acquire provenance without changing their event identity or index.
+    db.execute(
+        "UPDATE recall_events SET feishu_kind=?1 WHERE feishu_kind IS NULL AND event_id IN
+         (SELECT json_extract(value,'$.event_id') FROM json_each(?2))",
+        params![kind, receipt["events"].to_string()],
+    )?;
     Ok(())
 }
 
@@ -60,6 +97,32 @@ fn words(text: &str) -> BTreeSet<String> {
 
 fn terms(text: &str) -> String {
     words(text).into_iter().collect::<Vec<_>>().join(" ")
+}
+
+pub(crate) fn fts_expression(query: &str) -> String {
+    words(query)
+        .iter()
+        .take(24)
+        .map(|token| format!("\"{token}\""))
+        .collect::<Vec<_>>()
+        .join(" AND ")
+}
+
+// In an unsegmented CJK query, adjacent characters can belong to separate
+// search terms. Require their presence without requiring that artificial pair.
+fn task_fts_expression(query: &str) -> String {
+    let words = words(query);
+    words
+        .iter()
+        .filter(|word| {
+            let mut chars = word.chars();
+            let first = chars.next().unwrap_or_default();
+            !('\u{3400}'..='\u{9fff}').contains(&first) || chars.next().is_none()
+        })
+        .take(24)
+        .map(|token| format!("\"{token}\""))
+        .collect::<Vec<_>>()
+        .join(" AND ")
 }
 
 fn index_event(db: &Connection, profile: &str, event: &Value) -> Result<()> {
@@ -117,6 +180,28 @@ pub fn drop_event(db: &Connection, event_id: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn rebuild_lexical(db: &mut Connection) -> Result<Value> {
+    let tx = db.transaction()?;
+    tx.execute("DELETE FROM recall_fts", [])?;
+    let count = {
+        let mut reading = tx.prepare(
+            "SELECT r.handle,r.body,r.encoding FROM recall_events r
+            JOIN ing_event_versions e ON e.event_id=r.event_id AND e.active=1 ORDER BY r.handle",
+        )?;
+        let mut writing = tx.prepare("INSERT INTO recall_fts(handle,terms) VALUES(?1,?2)")?;
+        let mut rows = reading.query([])?;
+        let mut count = 0;
+        while let Some(row) = rows.next()? {
+            let original = event_body(row.get(1)?, row.get(2)?)?;
+            writing.execute(params![row.get::<_, String>(0)?, terms(&original)])?;
+            count += 1;
+        }
+        count
+    };
+    tx.commit()?;
+    Ok(json!({"rebuilt":count}))
+}
+
 pub fn refresh(db: &Connection, profile: &str, receipt: &Value) -> Result<()> {
     let event_ids = receipt["events"]
         .as_array()
@@ -167,8 +252,58 @@ fn event_body(data: Vec<u8>, encoding: i64) -> Result<String> {
     String::from_utf8(raw).map_err(|_| Error::internal("stored evidence is not UTF-8"))
 }
 
-pub fn search_shared(db: &Connection, query: &str) -> Result<Value> {
-    Ok(json!({"results":match_statements(db,query,true)?,"retrieval":"lexical"}))
+#[derive(Default)]
+pub struct SearchExclusions {
+    omit_statements: bool,
+    pub evidence: Option<String>,
+}
+
+impl SearchExclusions {
+    pub fn parse(value: Option<&Value>) -> Result<Self> {
+        let Some(value) = value else {
+            return Ok(Self::default());
+        };
+        let items = value
+            .as_array()
+            .ok_or_else(|| Error::invalid("exclude must be a list of search categories"))?;
+        let (mut sources, mut actors, mut kinds) = (Vec::new(), Vec::new(), Vec::new());
+        let mut omit_statements = false;
+        for item in items {
+            match item.as_str() {
+                Some(key @ ("feishu" | "codex" | "claude-code" | "dsh")) => sources.push(key),
+                Some(key @ ("user_message" | "assistant_message" | "tool_result")) => {
+                    actors.push(key)
+                }
+                Some(key @ ("group" | "dm" | "docs" | "feishu_unclassified")) => kinds.push(key),
+                Some("statement") => omit_statements = true,
+                _ => return Err(Error::invalid("unknown search exclusion")),
+            }
+        }
+        let evidence = (!sources.is_empty() || !actors.is_empty() || !kinds.is_empty())
+            .then(|| json!({"sources": sources, "actors": actors, "kinds": kinds}).to_string());
+        Ok(Self {
+            omit_statements,
+            evidence,
+        })
+    }
+}
+
+// Both retrieval modes apply this predicate before ranking or limiting evidence.
+pub const INCLUDED_EVIDENCE: &str = "(?3 IS NULL OR (
+    s.kind NOT IN (SELECT value FROM json_each(?3,'$.sources')) AND
+    r.actor_kind NOT IN (SELECT value FROM json_each(?3,'$.actors')) AND
+    (s.kind <> 'feishu' OR coalesce(r.feishu_kind, CASE
+        WHEN e.native_object GLOB 'doc:*' OR e.native_object GLOB 'docx:*' THEN 'docs'
+        ELSE 'feishu_unclassified' END) NOT IN (SELECT value FROM json_each(?3,'$.kinds')))
+))";
+
+pub fn search_shared(db: &Connection, query: &str, exclude: &SearchExclusions) -> Result<Value> {
+    let results = if exclude.omit_statements {
+        Vec::new()
+    } else {
+        match_statements(db, query, true)?
+    };
+    Ok(json!({"results":results,"retrieval":"lexical"}))
 }
 
 fn match_statements(db: &Connection, query: &str, shared: bool) -> Result<Vec<Value>> {
@@ -181,9 +316,15 @@ fn match_statements(db: &Connection, query: &str, shared: bool) -> Result<Vec<Va
         .filter(|v| {
             // The owner projection includes the original wording. Shared projections
             // omit it, so it cannot contribute matches across the sharing boundary.
+            let key = v["key"].as_str().unwrap_or("");
+            let label = match key {
+                "report.language" => "报告语言",
+                "report.opening" => "报告开头",
+                "code_example.language" => "代码示例语言",
+                _ => "",
+            };
             let candidates = words(&format!(
-                "{} {} {}",
-                v["key"].as_str().unwrap_or(""),
+                "{key} {label} {} {}",
                 v["value"],
                 v["evidence"].as_str().unwrap_or("")
             ));
@@ -194,35 +335,207 @@ fn match_statements(db: &Connection, query: &str, shared: bool) -> Result<Vec<Va
         .collect())
 }
 
-pub fn search_owner(db: &Connection, query: &str, task: Option<&str>) -> Result<Value> {
-    let mut results = if task.is_none() {
+pub fn search_owner(
+    db: &Connection,
+    query: &str,
+    task: Option<&str>,
+    exclude: &SearchExclusions,
+) -> Result<Value> {
+    let mut results = if task.is_none() && !exclude.omit_statements {
         match_statements(db, query, false)?
     } else {
         Vec::new()
     };
-    let tokens = words(query);
-    if tokens.is_empty() {
+    let expr = fts_expression(query);
+    if expr.is_empty() {
         return Ok(json!({"results":results,"retrieval":"lexical"}));
     }
-    let expr = tokens
-        .iter()
-        .take(24)
-        .map(|s| format!("\"{s}\""))
-        .collect::<Vec<_>>()
-        .join(" AND ");
-    let mut statement = db.prepare(
-        "SELECT r.handle,r.event_id,r.task_id,r.actor_kind,r.occurred_at FROM recall_fts JOIN recall_events r ON r.handle=recall_fts.handle
-         WHERE recall_fts MATCH ?1 AND (?2 IS NULL OR r.task_id=?2) ORDER BY rank, r.event_id LIMIT 30")?;
-    let hits = statement.query_map(params![expr, task], |r| Ok(json!({
+    let mut statement = db.prepare(&format!(
+        "SELECT r.handle,r.event_id,r.task_id,r.actor_kind,r.occurred_at
+         FROM recall_fts JOIN recall_events r ON r.handle=recall_fts.handle
+         JOIN ing_event_versions e ON e.event_id=r.event_id JOIN ing_sources s ON s.source_id=r.source_id
+         WHERE recall_fts MATCH ?1 AND (?2 IS NULL OR r.task_id=?2) AND e.active=1 AND {INCLUDED_EVIDENCE}
+           AND NOT EXISTS(SELECT 1 FROM governance_owner_read_denials d WHERE d.root_id=e.root_id)
+         ORDER BY rank, r.event_id LIMIT 30"))?;
+    let hits = statement.query_map(params![expr, task, exclude.evidence], |r| Ok(json!({
         "handle":r.get::<_,String>(0)?,"event_id":r.get::<_,String>(1)?,"task_id":r.get::<_,Option<String>>(2)?,
         "actor_kind":r.get::<_,String>(3)?,"at":r.get::<_,Option<String>>(4)?
     })))?.collect::<rusqlite::Result<Vec<Value>>>()?;
-    for hit in hits {
-        if visible(db, field(&hit, "event_id")?)? {
-            results.push(hit);
+    results.extend(hits);
+    Ok(json!({"results":results,"retrieval":"lexical"}))
+}
+
+pub fn hybrid_owner(
+    db: &Connection,
+    query: &str,
+    task: Option<&str>,
+    exclude: &SearchExclusions,
+    semantic: &[Value],
+    limit: usize,
+) -> Result<Value> {
+    let lexical = search_owner(db, query, task, exclude)?;
+    let lexical = lexical["results"].as_array().map_or(&[][..], Vec::as_slice);
+    fuse_evidence(db, query, lexical, semantic, limit)
+}
+
+pub fn fuse_evidence(
+    db: &Connection,
+    query: &str,
+    lexical: &[Value],
+    semantic: &[Value],
+    limit: usize,
+) -> Result<Value> {
+    let mut candidates = BTreeMap::<(&str, &str), (Value, usize, usize)>::new();
+    for (rank, row) in lexical.iter().enumerate() {
+        if let Some(handle) = row["handle"].as_str() {
+            candidates
+                .entry(("event", handle))
+                .or_insert_with(|| (row.clone(), rank + 1, 0));
+        } else if let Some(revision) = row["revision_id"].as_str() {
+            candidates
+                .entry(("statement", revision))
+                .or_insert_with(|| (row.clone(), rank + 1, 0));
         }
     }
-    Ok(json!({"results":results,"retrieval":"lexical"}))
+    for (rank, row) in semantic.iter().enumerate() {
+        if let Some(handle) = row["handle"].as_str() {
+            let item = candidates
+                .entry(("event", handle))
+                .or_insert_with(|| (row.clone(), 0, 0));
+            if item.2 == 0 {
+                item.2 = rank + 1;
+            }
+        }
+    }
+    let identifiers = query
+        .split(|c| !identifier_char(c))
+        .filter(|token| {
+            token.chars().any(|c| c.is_ascii_digit())
+                && token.chars().any(|c| c.is_ascii_alphabetic())
+        })
+        .map(str::to_ascii_lowercase)
+        .collect::<BTreeSet<_>>();
+    let mut fused = Vec::new();
+    for ((kind, key), (mut row, lexical, semantic)) in candidates {
+        let mut exact = false;
+        if kind == "event" {
+            let evidence = match expand(db, key) {
+                Ok(item) => item,
+                Err(error) if error.status == 404 => continue,
+                Err(error) => return Err(error),
+            };
+            let quote = evidence["text"].as_str().unwrap_or_default();
+            exact = quote
+                .split(|c| !identifier_char(c))
+                .any(|piece| identifiers.contains(&piece.to_ascii_lowercase()));
+            row["quote"] = evidence["text"].clone();
+            row["version"] = db
+                .query_row(
+                    "SELECT native_version FROM ing_event_versions WHERE event_id=?1",
+                    [field(&evidence, "event_id")?],
+                    |r| r.get::<_, Option<String>>(0),
+                )?
+                .into();
+        }
+        let mut channels = Vec::new();
+        let mut ranks = serde_json::Map::new();
+        if exact {
+            channels.push("exact");
+        }
+        for (name, rank) in [("lexical", lexical), ("semantic", semantic)] {
+            if rank > 0 {
+                channels.push(name);
+                ranks.insert(name.into(), rank.into());
+            }
+        }
+        row["channels"] = json!(channels);
+        row["ranks"] = json!(ranks);
+        fused.push((exact, fused_score(60, lexical, semantic), key, row));
+    }
+    Ok(json!({"results":ranked_rows(fused,limit),"retrieval":"hybrid"}))
+}
+
+fn fused_score(k: usize, lexical: usize, semantic: usize) -> f64 {
+    [lexical, semantic]
+        .into_iter()
+        .filter(|rank| *rank != 0)
+        .map(|rank| 1.0 / (k + rank) as f64)
+        .sum()
+}
+
+fn ranked_rows(mut fused: Vec<(bool, f64, &str, Value)>, limit: usize) -> Vec<Value> {
+    fused.sort_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then_with(|| b.1.total_cmp(&a.1))
+            .then_with(|| a.2.cmp(b.2))
+    });
+    fused
+        .into_iter()
+        .take(limit)
+        .map(|(_, _, _, row)| row)
+        .collect()
+}
+
+pub fn replay_ranked_channels(body: &Value) -> Result<Value> {
+    let limit = body["candidate_limit"]
+        .as_u64()
+        .filter(|limit| (1..=250).contains(limit))
+        .ok_or_else(|| Error::invalid("candidate_limit must be 1..250"))? as usize;
+    let k = body["k"].as_u64().unwrap_or(60).clamp(1, 10000) as usize;
+    let mut candidates = BTreeMap::<&str, [usize; 3]>::new();
+    for (channel, index) in [("exact", 0), ("lexical", 1), ("semantic", 2)] {
+        if let Some(rows) = body["channels"][channel].as_array() {
+            if rows.len() > 250 {
+                return Err(Error::invalid("channel has too many candidates"));
+            }
+            for (rank, key) in rows.iter().enumerate() {
+                let key = key
+                    .as_str()
+                    .filter(|key| !key.is_empty())
+                    .ok_or_else(|| Error::invalid("invalid candidate key"))?;
+                let ranks = candidates.entry(key).or_default();
+                if ranks[index] == 0 {
+                    ranks[index] = rank + 1;
+                }
+            }
+        }
+    }
+    Ok(
+        json!({"results":ranked_rows(candidates.into_iter().map(|(key,[exact,lexical,semantic])|
+        (exact!=0,fused_score(k,lexical,semantic),key,json!({"handle":key,"ranks":{"lexical":lexical,"semantic":semantic}})))
+        .collect(),limit)}),
+    )
+}
+
+fn identifier_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '-' || c == '_'
+}
+
+pub fn lexical_for_client(
+    db: &Connection,
+    task: &str,
+    client: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<Value>> {
+    let expression = task_fts_expression(query);
+    if expression.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut prepared = db.prepare(
+        "SELECT r.handle,r.event_id FROM recall_fts JOIN recall_events r ON r.handle=recall_fts.handle
+         JOIN ing_event_versions e ON e.event_id=r.event_id AND e.active=1
+         JOIN recall_grants a ON a.source_id=r.source_id AND a.client_id=?2
+         JOIN context_task_access t ON t.task_id=r.task_id AND t.client_id=a.client_id
+         WHERE recall_fts MATCH ?1 AND r.task_id=?3
+           AND NOT EXISTS(SELECT 1 FROM recall_root_denials d WHERE d.client_id=?2 AND d.root_id=e.root_id)
+         ORDER BY rank,r.handle LIMIT ?4",
+    )?;
+    Ok(prepared
+        .query_map(params![expression, client, task, limit as i64], |r| {
+            Ok(json!({"handle":r.get::<_,String>(0)?,"event_id":r.get::<_,String>(1)?}))
+        })?
+        .collect::<rusqlite::Result<_>>()?)
 }
 
 pub fn expand(db: &Connection, handle: &str) -> Result<Value> {
@@ -237,26 +550,264 @@ pub fn expand(db: &Connection, handle: &str) -> Result<Value> {
     )
 }
 
-pub fn handoff(db: &Connection, task_id: &str) -> Result<Value> {
-    task_package(db, task_id, None)
-}
-
-pub fn for_client(db: &Connection, task_id: &str, client_id: &str) -> Result<Value> {
-    task_package(db, task_id, Some(client_id))
-}
-
-pub fn expand_for_client(db: &Connection, handle: &str, client_id: &str) -> Result<Value> {
-    let admitted = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM recall_events r JOIN recall_grants g ON r.source_id=g.source_id
-           JOIN context_task_access t ON r.task_id=t.task_id AND t.client_id=g.client_id
-           WHERE r.handle=?1 AND g.client_id=?2)",[handle,client_id],|r|r.get::<_,bool>(0))?;
-    if !admitted {
+pub fn expand_for_owner(db: &Connection, handle: &str) -> Result<Value> {
+    let root = db
+        .query_row(
+            "SELECT e.root_id FROM recall_events r
+        JOIN ing_event_versions e ON e.event_id=r.event_id WHERE r.handle=?1 AND e.active=1",
+            [handle],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .ok_or_else(|| Error::missing("evidence is unavailable"))?;
+    if !owner_can_read_root(db, &root)? {
         return Err(Error::missing("evidence is unavailable"));
     }
     expand(db, handle)
 }
 
-fn task_package(db: &Connection, task_id: &str, client: Option<&str>) -> Result<Value> {
+pub fn handoff(db: &Connection, task_id: &str) -> Result<Value> {
+    task_package(db, task_id, None, TaskEvidenceFilters::default())
+}
+
+pub fn for_client(db: &Connection, task_id: &str, client_id: &str) -> Result<Value> {
+    task_package(db, task_id, Some(client_id), TaskEvidenceFilters::default())
+}
+
+pub fn historical_handoff(
+    db: &Connection,
+    task_id: &str,
+    client: Option<&str>,
+    as_of: &str,
+) -> Result<Value> {
+    let date = chrono::DateTime::parse_from_rfc3339(as_of)
+        .map_err(|_| Error::invalid("as_of must be an RFC3339 timestamp"))?
+        .to_rfc3339();
+    task_package(
+        db,
+        task_id,
+        client,
+        TaskEvidenceFilters {
+            as_of: Some(&date),
+            ..Default::default()
+        },
+    )
+}
+
+pub fn matching_for_client(
+    db: &Connection,
+    task_id: &str,
+    client_id: &str,
+    query: &str,
+    skip_event: Option<&str>,
+) -> Result<Value> {
+    let expression = task_fts_expression(query);
+    task_package(
+        db,
+        task_id,
+        Some(client_id),
+        TaskEvidenceFilters {
+            expression: Some(&expression),
+            skip_event,
+            ..Default::default()
+        },
+    )
+}
+
+pub fn record_tool_link(db: &Connection, body: &Value) -> Result<Value> {
+    let handle = field(body, "handle")?;
+    let item = expand(db, handle)?;
+    if item["task_id"].is_null() {
+        return Err(Error::invalid("tool link requires task evidence"));
+    }
+    let run = field(body, "run_id")?;
+    let role = field(body, "role")?;
+    let call = body["tool_call_id"].as_str().unwrap_or_default();
+    if run.len() > 200
+        || call.len() > 200
+        || !matches!(role, "call" | "result" | "plan")
+        || (role == "result") != (item["actor_kind"] == "tool_result")
+    {
+        return Err(Error::invalid("tool link does not match the evidence role"));
+    }
+    let inserted = db.execute(
+        "INSERT OR IGNORE INTO recall_tool_links VALUES (?1,?2,?3,?4)",
+        params![handle, run, call, role],
+    )?;
+    if inserted==0 && !db.query_row("SELECT EXISTS(SELECT 1 FROM recall_tool_links WHERE handle=?1 AND run=?2 AND call=?3 AND role=?4)",
+        params![handle,run,call,role],|row|row.get::<_,bool>(0))? {
+        return Err(Error::conflict("tool link already bound to a different run"));
+    }
+    Ok(json!({"handle":handle,"run_id":run,"tool_call_id":call,"role":role}))
+}
+
+pub fn evidence_window(
+    db: &Connection,
+    task: &str,
+    client: Option<&str>,
+    query: &str,
+    skip_event: Option<&str>,
+    seed_limit: usize,
+    slots: usize,
+) -> Result<Value> {
+    let exact_query = query
+        .split(|c| !identifier_char(c))
+        .find(|word| {
+            word.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+                && word.chars().any(|c| c.is_ascii_digit())
+                && word.chars().any(|c| c.is_ascii_alphabetic())
+        })
+        .unwrap_or(query);
+    let expression = task_fts_expression(exact_query);
+    let initial = task_package(
+        db,
+        task,
+        client,
+        TaskEvidenceFilters {
+            expression: Some(&expression),
+            skip_event,
+            ..Default::default()
+        },
+    )?;
+    let mut evidence = Vec::new();
+    let mut seeds = Vec::new();
+    let mut counts = 0;
+    for row in initial["evidence"].as_array().into_iter().flatten() {
+        if exact_query != query
+            && !row["text"]
+                .as_str()
+                .unwrap_or_default()
+                .split(|c| !identifier_char(c))
+                .any(|word| word.eq_ignore_ascii_case(exact_query))
+        {
+            continue;
+        }
+        counts += 1;
+        if evidence.len() < seed_limit.min(slots) {
+            seeds.push(field(row, "handle")?.to_owned());
+            evidence.push(row.clone());
+        }
+    }
+    let additions = same_run_neighbors(db, task, client, &seeds)?;
+    let evidence_gap = evidence.len() + additions.len() > slots;
+    let expanded = additions
+        .into_iter()
+        .take(slots.saturating_sub(evidence.len()))
+        .collect::<Vec<_>>();
+    let expanded_handles: Vec<_> = expanded
+        .iter()
+        .filter_map(|row| row["handle"].as_str().map(str::to_owned))
+        .collect();
+    evidence.extend(expanded);
+    let observations = initial["observations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|row| seeds.iter().any(|handle| row["handle"] == handle.as_str()))
+        .collect::<Vec<_>>();
+    Ok(
+        json!({"evidence":evidence,"observations":observations,"window":{
+            "ranked_seed_refs":seeds,"expanded_refs":expanded_handles,"evidence_gap":evidence_gap,
+            "recipient_visible_count":counts,"seed_reasons":vec!["directed_match"; seeds.len()],
+            "result_status":"unknown",
+        }}),
+    )
+}
+
+pub fn same_run_neighbors(
+    db: &Connection,
+    task: &str,
+    client: Option<&str>,
+    seeds: &[String],
+) -> Result<Vec<Value>> {
+    let mut additions = BTreeMap::<String, Value>::new();
+    for seed in seeds {
+        let mut linked = db.prepare("SELECT target.handle FROM recall_tool_links start
+            JOIN recall_events s ON s.handle=start.handle
+            JOIN recall_tool_links target ON target.run=start.run
+              AND ((target.role='result' AND start.call!='' AND target.call=start.call) OR (target.role='plan' AND start.call=''))
+            JOIN recall_events r ON r.handle=target.handle AND r.task_id=?1 AND r.source_id=s.source_id
+            JOIN ing_event_versions e ON e.event_id=r.event_id AND e.active=1
+            WHERE start.handle=?2 AND target.handle<>start.handle ORDER BY r.occurred_at DESC,target.handle")?;
+        for row in linked.query_map(params![task, seed], |row| row.get::<_, String>(0))? {
+            let handle = row?;
+            if seeds.contains(&handle) || additions.contains_key(&handle) {
+                continue;
+            }
+            if let Some(client) = client
+                && !client_can_expand(db, &handle, client, Some(task))?
+            {
+                continue;
+            }
+            let item = if client.is_some() {
+                expand(db, &handle)?
+            } else {
+                match expand_for_owner(db, &handle) {
+                    Ok(item) => item,
+                    Err(error) if error.status == 404 => continue,
+                    Err(error) => return Err(error),
+                }
+            };
+            additions.insert(handle, item);
+        }
+    }
+    Ok(additions.into_values().collect())
+}
+
+pub fn client_can_expand(
+    db: &Connection,
+    handle: &str,
+    client_id: &str,
+    task_id: Option<&str>,
+) -> Result<bool> {
+    Ok(db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM recall_events r JOIN recall_grants g ON r.source_id=g.source_id
+           JOIN context_task_access t ON r.task_id=t.task_id AND t.client_id=g.client_id
+           JOIN ing_event_versions e ON r.event_id=e.event_id
+           WHERE r.handle=?1 AND g.client_id=?2 AND e.active=1 AND (?3 IS NULL OR r.task_id=?3)
+           AND NOT EXISTS(SELECT 1 FROM recall_root_denials d
+             WHERE d.client_id=?2 AND d.root_id=e.root_id))",
+        params![handle, client_id, task_id],
+        |r| r.get(0),
+    )?)
+}
+
+pub fn expand_for_client(db: &Connection, handle: &str, client_id: &str) -> Result<Value> {
+    if !client_can_expand(db, handle, client_id, None)? {
+        return Err(Error::missing("evidence is unavailable"));
+    }
+    expand(db, handle)
+}
+
+#[derive(Default)]
+struct TaskEvidenceFilters<'a> {
+    expression: Option<&'a str>,
+    skip_event: Option<&'a str>,
+    excluded_root: Option<&'a str>,
+    as_of: Option<&'a str>,
+}
+
+fn task_package(
+    db: &Connection,
+    task_id: &str,
+    client: Option<&str>,
+    filters: TaskEvidenceFilters<'_>,
+) -> Result<Value> {
+    task_package_with_view(db, task_id, client, filters, client.is_none())
+}
+
+fn task_package_with_view(
+    db: &Connection,
+    task_id: &str,
+    client: Option<&str>,
+    TaskEvidenceFilters {
+        expression,
+        skip_event,
+        excluded_root,
+        as_of,
+    }: TaskEvidenceFilters<'_>,
+    owner_view: bool,
+) -> Result<Value> {
     let task = context::tasks(db)?["tasks"]
         .as_array()
         .into_iter()
@@ -264,11 +815,51 @@ fn task_package(db: &Connection, task_id: &str, client: Option<&str>) -> Result<
         .find(|row| row["task_id"] == task_id)
         .cloned()
         .ok_or_else(|| Error::missing("task is unavailable"))?;
-    let mut cursor = db.prepare("SELECT r.handle FROM recall_events r WHERE r.task_id=?1 AND (?2 IS NULL OR EXISTS(
-      SELECT 1 FROM recall_grants g JOIN context_task_access t ON t.client_id=g.client_id AND t.task_id=r.task_id
-      WHERE g.source_id=r.source_id AND g.client_id=?2)) ORDER BY r.occurred_at,r.event_id LIMIT 50")?;
+    if expression == Some("") {
+        return Ok(
+            json!({"task":task,"evidence":[],"observations":[],"verification":"per_source_observation"}),
+        );
+    }
+    let mut cursor = db.prepare(
+        "WITH admitted AS (
+           SELECT r.handle,r.event_id,r.occurred_at,r.actor_kind
+           FROM recall_events r JOIN ing_event_versions e ON e.event_id=r.event_id
+           WHERE r.task_id=?1 AND e.active=1 AND (?4 IS NULL OR r.event_id<>?4)
+             AND (?5 IS NULL OR e.root_id<>?5)
+             AND (?6 IS NULL OR julianday(e.occurred_at)<=julianday(?6))
+             AND (NOT ?7 OR NOT EXISTS(SELECT 1 FROM governance_owner_read_denials d WHERE d.root_id=e.root_id))
+             AND (?3 IS NOT NULL OR ?6 IS NOT NULL OR NOT EXISTS(
+               SELECT 1 FROM recall_cooled_roots c WHERE c.root_id=e.root_id))
+             AND (?2 IS NULL OR EXISTS(
+               SELECT 1 FROM recall_grants g JOIN context_task_access t
+                 ON t.client_id=g.client_id AND t.task_id=r.task_id
+               WHERE g.source_id=r.source_id AND g.client_id=?2
+               AND NOT EXISTS(SELECT 1 FROM recall_root_denials d
+                 WHERE d.client_id=?2 AND d.root_id=e.root_id)))
+             AND (?3 IS NULL OR r.handle IN (
+               SELECT handle FROM recall_fts WHERE recall_fts MATCH ?3))
+         ), latest_check AS (
+           SELECT handle FROM admitted WHERE actor_kind='tool_result'
+           ORDER BY occurred_at DESC,event_id DESC LIMIT 1
+         ), selected AS (
+           SELECT * FROM admitted ORDER BY handle IN (SELECT handle FROM latest_check) DESC,
+             occurred_at DESC,event_id DESC LIMIT 50
+         )
+         SELECT handle FROM selected ORDER BY occurred_at,event_id",
+    )?;
     let handles = cursor
-        .query_map(params![task_id, client], |r| r.get::<_, String>(0))?
+        .query_map(
+            params![
+                task_id,
+                client,
+                expression,
+                skip_event,
+                excluded_root,
+                as_of,
+                owner_view
+            ],
+            |r| r.get::<_, String>(0),
+        )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut evidence = Vec::new();
     let mut observations = Vec::new();
@@ -324,11 +915,54 @@ fn preview_footprint(
 ) -> Result<Value> {
     match kind {
         "change_grant" => grant_footprint(db, command, model_route),
+        "deny_discussion" => {
+            let reader = field(command, "client_id")?;
+            let name = field(command, "discussion_id")?;
+            if command["purpose"] != "task_delivery" || !client_exists(db, reader)? {
+                return Err(Error::invalid(
+                    "discussion restriction requires a registered reader and task_delivery",
+                ));
+            }
+            let mut query = db.prepare("SELECT root_id FROM governance_discussion_roots WHERE discussion_id=?1 ORDER BY root_id")?;
+            let selected = query
+                .query_map([name], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            if selected.is_empty() {
+                return Err(Error::missing("discussion has no registered roots"));
+            }
+            let rows = selected
+                .iter()
+                .map(|root| {
+                    grant_footprint(
+                        db,
+                        &json!({"root_id":root,"client_id":reader,"purpose":"task_delivery"}),
+                        None,
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(json!({"selected_roots":selected,"root_states":rows}))
+        }
+        "cool_episode" | "restore_default_handoff" => {
+            let root = field(command, "root_id")?;
+            let mut target = root_footprint(db, root)?;
+            if target["withdrawn"] == true {
+                return Err(Error::missing("source root is unavailable"));
+            }
+            let cooled: bool = db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM recall_cooled_roots WHERE root_id=?1)",
+                [root],
+                |row| row.get(0),
+            )?;
+            target["cooled"] = json!(cooled);
+            Ok(target)
+        }
         "forget" => {
             if let Some(statement) = command["target"]["statement_id"].as_str() {
                 statement_footprint(db, statement)
             } else if let Some(source_id) = command["target"]["source_id"].as_str() {
                 source_footprint(db, source_id)
+            } else if let Some(root) = command["target"]["root_id"].as_str() {
+                root_footprint(db, root)
             } else {
                 Ok(json!({}))
             }
@@ -343,7 +977,144 @@ fn preview_footprint(
     }
 }
 
+pub fn attach_discussion_root(db: &Connection, body: &Value) -> Result<Value> {
+    let discussion = field(body, "discussion_id")?;
+    let root = field(body, "root_id")?;
+    if discussion.len() > 200 || root_footprint(db, root)?["withdrawn"] == true {
+        return Err(Error::invalid(
+            "discussion identifier is too long or root has been withdrawn",
+        ));
+    }
+    let added = db.execute(
+        "INSERT OR IGNORE INTO governance_discussion_roots VALUES (?1,?2)",
+        params![discussion, root],
+    )?;
+    Ok(json!({"discussion_id":discussion,"root_id":root,"added":added != 0}))
+}
+
+fn root_footprint(db: &Connection, root: &str) -> Result<Value> {
+    let source: String = db
+        .query_row(
+            "SELECT source_id FROM ing_roots WHERE root_id=?1",
+            [root],
+            |r| r.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| Error::missing("source root is unavailable"))?;
+    let mut query = db.prepare(
+        "SELECT event_id FROM ing_event_versions WHERE root_id=?1 AND active=1 ORDER BY event_id",
+    )?;
+    let versions = query
+        .query_map([root], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let withdrawn: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM ing_root_revocations WHERE root_id=?1)",
+        [root],
+        |r| r.get(0),
+    )?;
+    Ok(json!({"source_id":source,"versions":versions,"withdrawn":withdrawn}))
+}
+
+fn compare_root_change(db: &Connection, command: &Value, comparison: &Value) -> Result<Value> {
+    let root = command["root_id"]
+        .as_str()
+        .or_else(|| command["target"]["root_id"].as_str())
+        .ok_or_else(|| Error::invalid("comparison requires one source root"))?;
+    let change = match command["kind"].as_str() {
+        Some("forget") => None,
+        Some("change_grant")
+            if command["purpose"] == "task_delivery" && command["allow"] == false =>
+        {
+            Some(field(command, "client_id")?)
+        }
+        _ => {
+            return Err(Error::invalid(
+                "comparison supports root forget and restriction",
+            ));
+        }
+    };
+    let task = field(comparison, "task_id")?;
+    let expression = task_fts_expression(field(comparison, "query")?);
+    let readers = comparison["reader_ids"]
+        .as_array()
+        .filter(|list| list.len() == 2)
+        .ok_or_else(|| Error::invalid("comparison requires two reader_ids"))?;
+    let budget = match comparison.get("budget") {
+        Some(value) => value
+            .as_u64()
+            .filter(|n| (1..=262_144).contains(n))
+            .ok_or_else(|| {
+                Error::invalid("comparison evidence budget must be between 1 and 262144")
+            })? as usize,
+        None => 4096,
+    };
+    let mut results = serde_json::Map::new();
+    for reader in readers {
+        let reader = reader
+            .as_str()
+            .ok_or_else(|| Error::invalid("invalid comparison reader"))?;
+        if results.contains_key(reader) || !client_exists(db, reader)? {
+            return Err(Error::invalid(
+                "comparison requires two distinct registered readers",
+            ));
+        }
+        let select = |excluded| -> Result<Vec<Value>> {
+            let package = task_package_with_view(
+                db,
+                task,
+                Some(reader),
+                TaskEvidenceFilters {
+                    expression: Some(&expression),
+                    excluded_root: excluded,
+                    ..Default::default()
+                },
+                true,
+            )?;
+            Ok(context::fit_evidence(
+                &package,
+                task,
+                "data",
+                context::EvidenceBudget::ExcerptTokens(budget),
+            )?
+            .evidence)
+        };
+        let before = select(None)?;
+        let after = if change.is_none_or(|target| target == reader) {
+            select(Some(root))?
+        } else {
+            before.clone()
+        };
+        results.insert(reader.into(), json!({"before":before,"after":after}));
+    }
+    Ok(Value::Object(results))
+}
+
 fn grant_footprint(db: &Connection, command: &Value, model_route: Option<&str>) -> Result<Value> {
+    if let Some(root) = command["root_id"].as_str() {
+        if command["purpose"] == "owner_read" && command.get("client_id").is_none() {
+            let mut footprint = root_footprint(db, root)?;
+            footprint["owner_read_denied"] = json!(!owner_can_read_root(db, root)?);
+            return Ok(footprint);
+        }
+        let client = field(command, "client_id")?;
+        if command["purpose"] != "task_delivery" || !client_exists(db, client)? {
+            return Err(Error::invalid(
+                "root grants require a registered client and task_delivery",
+            ));
+        }
+        let mut footprint = root_footprint(db, root)?;
+        footprint["root_denied"] = json!(db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM recall_root_denials WHERE client_id=?1 AND root_id=?2)",
+            params![client, root],
+            |row| row.get::<_, bool>(0),
+        )?);
+        footprint["source_granted"] = json!(db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM recall_grants WHERE client_id=?1 AND source_id=?2)",
+            params![client, footprint["source_id"].as_str()],
+            |row| row.get::<_, bool>(0),
+        )?);
+        return Ok(footprint);
+    }
     if let Some(source_id) = command["source_id"].as_str() {
         let mut snapshot = json!({ "source_exists": source_exists(db, source_id)? });
         match command["purpose"].as_str() {
@@ -393,6 +1164,14 @@ fn grant_footprint(db: &Connection, command: &Value, model_route: Option<&str>) 
         )?);
     }
     Ok(snapshot)
+}
+
+fn owner_can_read_root(db: &Connection, root: &str) -> Result<bool> {
+    Ok(db.query_row(
+        "SELECT NOT EXISTS(SELECT 1 FROM governance_owner_read_denials WHERE root_id=?1)",
+        [root],
+        |r| r.get(0),
+    )?)
 }
 
 /// Statement identity plus its own revisions and the current head revision
@@ -547,9 +1326,18 @@ pub fn operate(
     request: Value,
     model_route: Option<&str>,
 ) -> Result<Value> {
+    let forgotten_root = (!preview
+        && request["kind"].as_str() == Some("forget")
+        && request["target"]["statement_id"].as_str().is_none())
+    .then(|| request["target"]["root_id"].as_str().map(str::to_owned))
+    .flatten();
     let tx = db.transaction()?;
     let result = operate_committed(&tx, preview, key, request, model_route)?;
     tx.commit()?;
+    if let Some(root) = forgotten_root {
+        // A physical cleanup failure must never roll back the read cutoff.
+        crate::governance::start_vector_cleanup(db, &root);
+    }
     Ok(result)
 }
 
@@ -566,6 +1354,9 @@ fn operate_committed(
         .as_object_mut()
         .ok_or_else(|| Error::invalid("operation request must be an object"))?
         .remove("preview_id");
+    let comparison = command
+        .as_object_mut()
+        .and_then(|object| object.remove("comparison"));
     let encoded = serde_json::to_string(&command)?;
     if !preview {
         let replay = db
@@ -587,16 +1378,49 @@ fn operate_committed(
             };
         }
     }
-    let footprint = preview_footprint(db, kind, &command, model_route)?.to_string();
+    let state = preview_footprint(db, kind, &command, model_route)?;
+    let footprint = state.to_string();
     if preview {
+        let comparison = comparison
+            .map(|params| compare_root_change(db, &command, &params))
+            .transpose()?;
         let id = Uuid::new_v4().to_string();
         db.execute(
             "INSERT INTO governance_previews(id,request,footprint) VALUES(?1,?2,?3)",
             params![id, encoded, footprint],
         )?;
-        return Ok(json!({"preview_id":id,"kind":kind,"scope":command,"effective":false}));
+        let mut output = json!({"preview_id":id,"kind":kind,"scope":command,"effective":false});
+        if kind == "deny_discussion" {
+            output["selected_roots"] = state["selected_roots"].clone();
+        }
+        if let Some(comparison) = comparison {
+            use sha2::{Digest, Sha256};
+            let snapshot = format!(
+                "sha256:{:x}",
+                Sha256::digest(serde_json::to_vec(&comparison)?)
+            );
+            db.execute(
+                "INSERT INTO governance_comparison_snapshots(preview_id,snapshot_digest) VALUES(?1,?2)",
+                params![id, snapshot],
+            )?;
+            output["comparison_snapshot"] = json!(snapshot);
+            output["owner_visible_before_ids"] = json!(
+                comparison
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|(_, result)| result["before"].as_array().into_iter().flatten())
+                    .filter_map(|row| row["event_id"].as_str())
+                    .collect::<BTreeSet<_>>()
+            );
+            output["comparison"] = comparison;
+        }
+        return Ok(output);
     }
-    if matches!(kind, "change_grant" | "forget") {
+    if matches!(
+        kind,
+        "change_grant" | "forget" | "cool_episode" | "restore_default_handoff" | "deny_discussion"
+    ) {
         let preview_id = id
             .as_ref()
             .and_then(Value::as_str)
@@ -615,8 +1439,61 @@ fn operate_committed(
         }
     }
     let result = match kind {
+        "deny_discussion" => {
+            db.execute(
+                "INSERT OR IGNORE INTO recall_root_denials(client_id,root_id)
+                SELECT ?1,value FROM json_each(?2)",
+                params![
+                    field(&request, "client_id")?,
+                    state["selected_roots"].to_string()
+                ],
+            )?;
+            json!({"selected_roots":state["selected_roots"],"root_denied":true})
+        }
+        "cool_episode" | "restore_default_handoff" => {
+            let root = field(&request, "root_id")?;
+            let cooled = kind == "cool_episode";
+            if cooled {
+                db.execute(
+                    "INSERT OR IGNORE INTO recall_cooled_roots VALUES (?1)",
+                    [root],
+                )?;
+            } else {
+                db.execute("DELETE FROM recall_cooled_roots WHERE root_id=?1", [root])?;
+            }
+            json!({"root_id":root,"cooled":cooled,"effect":"default_handoff"})
+        }
         "change_grant" => {
-            if let Some(source_id) = request["source_id"].as_str() {
+            if let Some(root) = request["root_id"].as_str() {
+                let allow = request["allow"]
+                    .as_bool()
+                    .ok_or_else(|| Error::invalid("allow must be boolean"))?;
+                if request["purpose"] == "owner_read" {
+                    if allow {
+                        db.execute(
+                            "DELETE FROM governance_owner_read_denials WHERE root_id=?1",
+                            [root],
+                        )?;
+                    } else {
+                        db.execute(
+                            "INSERT OR IGNORE INTO governance_owner_read_denials VALUES(?1)",
+                            [root],
+                        )?;
+                    }
+                    json!({"root_id":root,"owner_read":allow})
+                } else {
+                    let client = field(&request, "client_id")?;
+                    if allow {
+                        db.execute(
+                            "DELETE FROM recall_root_denials WHERE client_id=?1 AND root_id=?2",
+                            params![client, root],
+                        )?;
+                    } else {
+                        db.execute("INSERT OR IGNORE INTO recall_root_denials(client_id,root_id) VALUES(?1,?2)", params![client, root])?;
+                    }
+                    json!({"root_id":root,"client_id":client,"root_denied":!allow})
+                }
+            } else if let Some(source_id) = request["source_id"].as_str() {
                 let allow = request["allow"]
                     .as_bool()
                     .ok_or_else(|| Error::invalid("allow must be boolean"))?;
@@ -680,6 +1557,8 @@ fn operate_committed(
         "forget" => {
             if let Some(id) = request["target"]["statement_id"].as_str() {
                 authority::revoke_statement(db, id)?
+            } else if let Some(root) = request["target"]["root_id"].as_str() {
+                ingestion::forget_root(db, root)?
             } else {
                 let source = field(&request["target"], "source_id")?;
                 let result = ingestion::forget(db, source)?;

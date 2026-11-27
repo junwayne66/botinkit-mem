@@ -1,0 +1,11 @@
+test_initial_declarations_load_current_revisions (test_native_hosts.NativeHosts) ... ok
+test_corrected_declaration_supersedes_obsolete (test_native_hosts.NativeHosts) ... ok
+test_mcp_bound_client_search_and_denied_expand (test_native_hosts.NativeHosts) ... ok
+test_hook_replay_dedup_and_binding (test_native_hosts.NativeHosts) ... ok
+test_native_redaction_scrubs_nested_credentials (test_native_hosts.NativeHosts) ... ok
+test_cross_host_task_package_grants (test_native_hosts.NativeHosts) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 37.318s
+
+OK

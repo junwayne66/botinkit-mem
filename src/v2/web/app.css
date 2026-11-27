@@ -7,6 +7,8 @@
   --surface-2: #172230;
   --border: #273342;
   --divider: #202b39;
+  --field-border: #5a6e88;
+  --field-placeholder: #8b9db1;
   --text: #ecf1f6;
   --muted: #9aaabc;
   --accent: #61e2c1;
@@ -20,6 +22,7 @@
   --info: #92bffc;
   --info-bg: #1d304b;
   --radius: 12px;
+  --control-radius: 8px;
   --shadow: none;
   --focus: 0 0 0 3px #56d9b87d;
   --gap: 18px;
@@ -393,10 +396,10 @@ kbd {
 }
 .metric {
   position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
+  flex-wrap: wrap;
   column-gap: 8px;
-  align-items: end;
+  align-items: baseline;
   align-content: center;
   min-height: 104px;
   padding: 14px 18px 15px;
@@ -410,20 +413,23 @@ kbd {
   border-color: var(--tint);
 }
 .metric-name {
+  flex-basis: 100%;
+  padding-inline-end: 30px;
   font-size: 13px;
-  grid-column: 1/-1;
   color: #b9c7d6;
   font-weight: 530;
 }
 .metric strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font: 550 clamp(26px, 2.4vw, 37px)/1.1 var(--mono);
   letter-spacing: -0.065em;
   margin-top: 12px;
 }
 .metric-unit {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
-  padding-bottom: 3px;
+  white-space: nowrap;
 }
 .metric-icon {
   position: absolute;
@@ -485,7 +491,7 @@ kbd {
   padding: 15px 18px 13px;
   min-height: 53px;
 }
-.panel-head h3 {
+.panel-head h2 {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -493,12 +499,12 @@ kbd {
   font-weight: 620;
   letter-spacing: 0.005em;
 }
-.panel-head h3 .ico {
+.panel-head h2 .ico {
   color: #9bb2c3;
   width: 16px;
   height: 16px;
 }
-.graph-panel .panel-head h3 .ico {
+.graph-panel .panel-head h2 .ico {
   color: var(--accent);
 }
 .panel-link {
@@ -514,26 +520,47 @@ kbd {
   width: 13px;
   height: 13px;
 }
-.period {
-  display: flex;
+.period,
+.ms-modes {
+  display: inline-flex;
   gap: 2px;
   padding: 2px;
-  background: #0c121c;
+  background: var(--bg);
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
 }
-.period button {
-  border: 0;
-  padding: 3px 7px;
-  min-height: 24px;
+:is(.period, .ms-modes) button {
+  border: 1px solid transparent;
+  padding: 3px 10px;
+  min-width: 44px;
+  min-height: 32px;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
-  border-radius: 4px;
+  font-size: 12px;
+  border-radius: calc(var(--control-radius) - 2px);
+  white-space: nowrap;
 }
-.period button[aria-pressed='true'] {
-  background: #283746;
-  color: #e0eaf2;
+.ms-modes button {
+  min-height: 40px;
+}
+:is(.period, .ms-modes) button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+:is(.period, .ms-modes) button[aria-pressed='true'] {
+  background: var(--ok-bg);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--ok-bg));
+  color: var(--accent);
+}
+@media (forced-colors: active) {
+  :is(.period, .ms-modes) button[aria-pressed='true'] {
+    border-color: Highlight;
+  }
+}
+@media (max-width: 720px), (pointer: coarse) {
+  :is(.period, .ms-modes) button {
+    min-height: 44px;
+  }
 }
 .chart-box {
   padding: 0 18px 15px;
@@ -807,19 +834,24 @@ fieldset.field legend {
 }
 input[type='text'],
 input[type='url'],
+input[type='datetime-local'],
 select,
 textarea {
   width: 100%;
   font: inherit;
   color: var(--text);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--control-radius);
   padding: 9px 11px;
 }
 textarea {
   resize: vertical;
   min-height: 64px;
+}
+::placeholder {
+  color: var(--field-placeholder);
+  opacity: 1;
 }
 input:focus-visible,
 select:focus-visible,
@@ -863,7 +895,7 @@ summary:focus-visible {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  border-radius: 7px;
+  border-radius: var(--control-radius);
   min-height: 37px;
   padding: 8px 13px;
 }
@@ -881,6 +913,7 @@ summary:focus-visible {
   box-shadow: 0 2px 9px #43ddb116;
 }
 .btn--primary:hover {
+  background: var(--accent);
   filter: brightness(1.05);
 }
 .btn--danger {
@@ -1344,9 +1377,6 @@ summary:focus-visible {
   .metric-name {
     font-size: 12px;
   }
-  .metric-unit {
-    font-size: 10px;
-  }
   .metric-icon {
     width: 25px;
     height: 25px;
@@ -1673,6 +1703,10 @@ summary:focus-visible {
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 4px;
+}
+.dialog:has([aria-busy='true']) .dialog-cancel {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* 会话 / 连接一次性横幅 */

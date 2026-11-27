@@ -58,7 +58,7 @@ window.MemoryIntake = (() => {
   function activityChart(sourceActivity) {
     const items = (Array.isArray(sourceActivity) ? sourceActivity : []).filter(item => item.event_count > 0);
     const chart = el('section', {class:'intake-activity-chart', 'aria-label':'最近 7 天入库事件'}, [
-      el('h4', {text:'最近 7 天入库事件'}),
+      el('h3', {text:'最近 7 天入库事件'}),
     ]);
     const max = Math.max(...items.map(item => item.event_count), 1);
     if (!items.length) chart.append(el('p', {class:'hint-sm',text:'暂无入库事件'}));
@@ -93,7 +93,7 @@ window.MemoryIntake = (() => {
 
   function integrations(onChange, signal, onActivity) {
     const region = el('section',{class:'intake-panel intake-integrations'},[
-      el('h3',{text:'添加集成'}),
+      el('h2',{text:'添加集成'}),
     ]);
     const catalog = el('div',{class:'intake-integration-grid'});
     const general = statusLine();
@@ -112,35 +112,39 @@ window.MemoryIntake = (() => {
       },onChange));
       importHistory.hidden = true;
       let installing = false;
-      let dirty = false;
-      capture.onchange = share.onchange = () => { dirty = true; };
+      let saved = {capture:false,share_statements:false};
+      function syncOptions(state) {
+        if (capture.checked !== saved.capture || share.checked !== saved.share_statements) return;
+        saved = {capture:!!state.capture_enabled,share_statements:!!state.shared_statements};
+        capture.checked = saved.capture;
+        share.checked = saved.share_statements;
+      }
       const install = button('添加集成', async () => {
         if (installing) return;
         installing = true;
         busy(install,true,'正在写入配置…');
         output.textContent = '正在写入本机接入配置…';
-        const res = await api('POST','/v2/integrations/'+id+'/install',{
-          body:{capture:capture.checked,share_statements:share.checked},
-        });
+        const body = {capture:capture.checked,share_statements:share.checked};
+        const res = await api('POST','/v2/integrations/'+id+'/install',{body});
         busy(install,false);
         installing = false;
         renderResult(output,res);
         if (res.ok) {
-          dirty = false;
+          saved = body;
           output.textContent = '已配置。'+details.usage;
           await refresh();
           await onChange();
         }
-      },true);
+      });
       add.append(
         el('div',{class:'intake-connect-options'},[
           el('label',{},[capture,' 开启新会话采集']),
           el('label',{},[share,' 允许助手读取已授权声明']),
         ]),install,output
       );
-      cards[id] = {availability,add,install,capture,share,captureStatus,importHistory,isInstalling:() => installing,isDirty:() => dirty};
+      cards[id] = {availability,add,install,captureStatus,importHistory,isInstalling:() => installing,syncOptions};
       catalog.append(el('article',{class:'intake-source',id:'integration-'+id},[
-        el('header',{class:'intake-header'},[el('h4',{text:details.name}),availability]),
+        el('header',{class:'intake-header'},[el('h3',{text:details.name}),availability]),
         captureStatus,el('p',{class:'hint-sm',text:details.usage}),add,
         el('div',{class:'intake-actions'},[importHistory]),
       ]));
@@ -162,9 +166,9 @@ window.MemoryIntake = (() => {
       starting = false;
       if (res.ok) updateFeishu(res.data);
       else {renderResult(feishuStatus,res);start.disabled = false;}
-    },true);
+    });
     catalog.prepend(el('article',{class:'intake-source',id:'integration-feishu'},[
-      el('header',{class:'intake-header'},[el('h4',{text:'飞书'})]),
+      el('header',{class:'intake-header'},[el('h3',{text:'飞书'})]),
       el('p',{class:'hint-sm',text:'通过飞书官方页面授权。授权后可选择导入该账号的历史数据。'}),
       feishuStatus,accountsList,start,authControls
     ]));
@@ -193,6 +197,7 @@ window.MemoryIntake = (() => {
         start.disabled = state.busy || !state.available;
         start.textContent = state.busy ? '授权进行中' : connected ? '重新授权' : '发起授权';
       }
+      start.classList.toggle('btn--primary', !state.url && !start.disabled && !connected);
       const base = state.busy ? feishuStages[state.stage] || '正在读取授权状态…'
         : connected ? feishuStages.connected
         : state.authorization === 'reauthorization_required' ? '飞书登录凭据已失效，请重新授权。'
@@ -262,10 +267,7 @@ window.MemoryIntake = (() => {
         if (!card.isInstalling()) {
           card.install.disabled = !state.available;
           card.install.textContent = state.configured ? '更新集成' : '添加集成';
-          if (!card.isDirty()) {
-            card.capture.checked = !!state.capture_enabled;
-            card.share.checked = !!state.shared_statements;
-          }
+          card.syncOptions(state);
         }
         card.add.hidden = !state.available;
       }
@@ -307,7 +309,7 @@ window.MemoryIntake = (() => {
   }
 
   function openSources(root, signal) {
-    const summary = el('strong',{text:'正在读取来源…'});
+    const summary = el('h2',{text:'正在读取来源…'});
     const list = el('div',{class:'intake-list'});
     const result = statusLine();
     const refreshButton = button('刷新来源',() => void refreshAfterWrite());
@@ -324,7 +326,7 @@ window.MemoryIntake = (() => {
     client.add(new Option('仅本机所有者',''));
     const clientError = statusLine();
     const registerStatus = statusLine();
-    const save = el('button',{class:'btn btn--primary',type:'submit',text:'登记来源'});
+    const save = el('button',{class:'btn',type:'submit',text:'登记来源'});
     const form = el('form',{class:'intake-form'},[
       field('source-type','来源类型',type), types, field('source-account','来源账号',account),
       field('source-client','提交客户端',client), clientError,
@@ -382,7 +384,7 @@ window.MemoryIntake = (() => {
       button('添加连接器',() => {
         directory.hidden = !directory.hidden;
         if (!directory.hidden) directory.scrollIntoView({block:'nearest'});
-      },true),
+      }),
     ]);
     root.append(tools,integrationRegion,panel,registration,directory);
 
@@ -564,6 +566,18 @@ window.MemoryIntake = (() => {
         if (h.last_scan) rows.push(kv('上次扫描',relativeTime(h.last_scan * 1000)));
         if (h.last_error) rows.push(kv('上次同步错误',historyErrorText(h.last_error)));
         if (h.skipped_containers) rows.push(kv('暂无法读取的会话或话题次数',String(h.skipped_containers)));
+      }
+      const recovery = next.capture_recovery;
+      if (recovery) {
+        const reason = {
+          capture_not_authorized: '当前没有采集授权',
+          history_unavailable: '请启用获准的历史同步，或从发送端按原标识重投',
+          history_gap: '存在无法回读的历史记录',
+        };
+        const state = recovery.state === 'caught_up' ? '已追平可回读的授权历史'
+          : recovery.state === 'catching_up' ? '正在补录'
+          : '需处理 · ' + (reason[recovery.reason] || historyErrorText(recovery.reason));
+        rows.push(kv('升级后补录',state));
       }
       return rows.filter(Boolean);
     }
@@ -888,7 +902,7 @@ window.MemoryIntake = (() => {
     const refreshButton = button('刷新来源',() => void readSources());
     const manage = button('管理来源',() => navigate('sources'));
     const panel = el('section',{class:'intake-panel'},[
-      el('header',{class:'intake-header'},[el('h3',{text:'选择批次'}),el('div',{class:'intake-actions'},[refreshButton,manage])]),
+      el('header',{class:'intake-header'},[el('h2',{text:'选择批次'}),el('div',{class:'intake-actions'},[refreshButton,manage])]),
       el('div',{class:'intake-pickers'},[
         field('intake-target','目标来源',select),
         field('intake-file','JSON 批次文件',input),
@@ -959,7 +973,7 @@ window.MemoryIntake = (() => {
       const locked = Boolean(draft.intent) || draft.sending;
       select.disabled = locked;
       input.disabled = locked;
-      preview.replaceChildren(el('h3',{text: draft.receipt ? '导入回执' : '批次预览'}));
+      preview.replaceChildren(el('h2',{text: draft.receipt ? '导入回执' : '批次预览'}));
       if (draft.receipt) {
         const r = draft.receipt;
         preview.append(el('p',{class:'intake-success',text:'批次已受理'}),
@@ -1046,13 +1060,17 @@ window.MemoryIntake = (() => {
 
   function scopedDialog(title, body, actions) {
     const id = 'intake-dialog-' + newKey();
-    const close = () => dialog.close();
+    // 动作提交中（按钮 aria-busy）不允许取消：请求已发出，关掉对话框会让结果无处回报。
+    const pending = () => !!dialog.querySelector('[aria-busy="true"]');
+    const cancel = button('取消',() => { if (!pending()) dialog.close(); });
+    cancel.classList.add('dialog-cancel');
     const dialog = el('dialog', {class:'dialog', 'aria-labelledby':id}, [
       el('div', {class:'dialog-card'}, [
         el('h2',{id,class:'dialog-title',text:title}), body,
-        el('div',{class:'dialog-actions'},[button('取消',close),...actions]),
+        el('div',{class:'dialog-actions'},[cancel,...actions]),
       ]),
     ]);
+    dialog.addEventListener('cancel',event => { if (pending()) event.preventDefault(); });
     dialog.addEventListener('close',() => dialog.remove(),{once:true});
     document.body.append(dialog);
     dialog.showModal();
@@ -1112,9 +1130,9 @@ window.MemoryIntake = (() => {
       });
       for (const {input} of checks) input.disabled = false;
       busy(confirm,false);
-      if (!dialog.open) return;
       if (!res.ok) {
-        renderResult(result,res);
+        if (dialog.open) renderResult(result,res);
+        else toast(errorHeadline(res),'err');
         return;
       }
       dialog.close();
@@ -1134,7 +1152,7 @@ window.MemoryIntake = (() => {
 
   // 历史作业管理视图
   async function openHistoryJobs(root, signal) {
-    const summary = el('strong', {text: '历史导入任务'});
+    const summary = el('h2', {text: '历史导入任务'});
     const refreshBtn = button('刷新作业', () => void refresh());
     const panel = el('section', {class: 'intake-panel'}, [
       el('header', {class: 'intake-header'}, [summary, refreshBtn]),
@@ -1178,17 +1196,23 @@ window.MemoryIntake = (() => {
       );
       const actions = el('div', {class: 'intake-actions'});
       if (job.state === 'running' || job.state === 'queued') {
-        actions.append(button('取消', async () => {
+        const cancel = button('取消', async () => {
+          busy(cancel, true, '正在取消…');
           const res = await api('POST', '/v2/history/jobs/' + encodeURIComponent(job.id) + '/cancel');
+          busy(cancel, false);
           renderResult(result, res);
           if (res.ok) await refresh();
-        }));
+        });
+        actions.append(cancel);
       } else if (['failed','partial','cancelled'].includes(job.state)) {
-        actions.append(button('重试', async () => {
+        const retry = button('重试', async () => {
+          busy(retry, true, '正在重试…');
           const res = await api('POST', '/v2/history/jobs/' + encodeURIComponent(job.id) + '/retry');
+          busy(retry, false);
           renderResult(result, res);
           if (res.ok) await refresh();
-        }));
+        });
+        actions.append(retry);
       }
       const stateText = {
         queued: '待执行',
@@ -1300,12 +1324,12 @@ window.MemoryIntake = (() => {
       exportStatus,
     ]);
     const exportTile = el('article',{class:'intake-source intake-transfer-tile'},[
-      el('h3',{text:'导出数据'}),
+      el('h2',{text:'导出数据'}),
       el('p',{class:'hint-sm',text:'按来源和日期下载已入库事件。'}),
       button('导出数据',() => scopedDialog('导出数据',exportBody,[exportButton])),
     ]);
     const importTile = el('article',{class:'intake-source intake-transfer-tile'},[
-      el('h3',{text:'导入数据'}),
+      el('h2',{text:'导入数据'}),
       el('p',{class:'hint-sm',text:'从已连接来源导入历史，或预览本机 JSON 批次。'}),
       el('div',{class:'intake-actions'},[
         button('从来源导入历史',() => chooseHistorySource(() => refreshHistoryJobs?.()),true),
@@ -1314,7 +1338,7 @@ window.MemoryIntake = (() => {
     ]);
     const refreshButton = button('刷新记录',() => void refresh());
     const panel = el('section',{class:'intake-panel'},[
-      el('header',{class:'intake-header'},[el('h3',{text:'导入导出记录'}),refreshButton]),
+      el('header',{class:'intake-header'},[el('h2',{text:'导入导出记录'}),refreshButton]),
       result,records,
     ]);
     root.prepend(el('section',{class:'intake-transfer-grid'},[importTile,exportTile]));
@@ -1357,7 +1381,7 @@ window.MemoryIntake = (() => {
   // 连接器目录：显示 Hermes/OpenClaw/MCP 候选
   function connectorDirectory() {
     const panel = el('section', {class: 'intake-panel'}, [
-      el('h3', {text: '连接器目录'}),
+      el('h2', {text: '连接器目录'}),
       el('p', {class: 'view-desc', text: '当前支持飞书、Codex、Claude Code 和 DeepSeek Harness。'}),
       el('div', {class: 'intake-connector-catalog'},
         Object.entries(connectorCatalog).map(([id, info]) =>

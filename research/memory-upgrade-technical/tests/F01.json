@@ -1,0 +1,345 @@
+[
+  {
+    "id": "F01-01",
+    "title": "新维度与已有报告维度同时生效",
+    "covers": ["explicit_third_dimension","legacy_report_dimensions","global_scope"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "所有报告用中文，先写结论；以后代码示例用 Rust。","scope": {"kind": "global"},"share": "authorized_assistants"}]},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "q","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}},
+      {"id": "b","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "白桦"}}
+    ],
+    "checks": [
+      {"at": "q","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "q","path": "/dimensions/report.language/value","op": "eq","value": "zh"},
+      {"at": "q","path": "/dimensions/report.opening/value","op": "eq","value": "conclusion"},
+      {"at": "b","path": "/dimensions/code_example.language/scope/kind","op": "eq","value": "global"}
+    ]
+  },
+  {
+    "id": "F01-02",
+    "title": "一句原话中项目例外按当地周五结束",
+    "covers": ["compound_statement","project_exception","exclusive_deadline","provenance"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后代码示例用 Rust，项目青禾这周五结束前用 Python。","scope": {"kind": "global"},"share": "authorized_assistants","timezone": "Asia/Shanghai"}]},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "fri","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-27T15:59:59Z"}},
+      {"id": "sat","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-27T16:00:00Z"}},
+      {"id": "other","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "白桦","valid_at": "2026-11-27T15:59:59Z"}},
+      {"id": "proof","action": "从 fri 选中 revision 的所有者详情取分句原文、窗、时区并核对有非空修订 ID","args": {"actor": "owner","selected": "@fri"}}
+    ],
+    "checks": [
+      {"at": "fri","path": "/dimensions/code_example.language/value","op": "eq","value": "python"},
+      {"at": "sat","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "other","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "proof","path": "/timezone","op": "eq","value": "Asia/Shanghai"},
+      {"at": "proof","path": "/valid_until_utc","op": "eq","value": "2026-11-27T16:00:00Z"},
+      {"at": "proof","path": "/clause","op": "contains","value": "青禾这周五结束前用 Python"},
+      {"at": "proof","path": "/has_revision_id","op": "eq","value": true}
+    ]
+  },
+  {
+    "id": "F01-03",
+    "title": "追溯后来才收到的过去生效声明",
+    "covers": ["bitemporal_lookup","server_known_time","retroactive_entry"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-24T01:00:00Z","original": "以后所有代码示例使用 Rust。","scope": {"kind": "global"},"share": "authorized_assistants","valid_from": "2026-11-20T00:00:00Z"}]},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "before_learned","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-23T01:00:00Z","known_at": "2026-11-24T00:59:59Z"}},
+      {"id": "after_learned","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-23T01:00:00Z","known_at": "2026-11-24T01:00:01Z"}},
+      {"id": "not_valid_yet","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-19T23:59:59Z","known_at": "2026-11-25T00:00:00Z"}}
+    ],
+    "checks": [
+      {"at": "before_learned","path": "/dimensions/code_example.language","op": "absent"},
+      {"at": "after_learned","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "not_valid_yet","path": "/dimensions/code_example.language","op": "absent"}
+    ]
+  },
+  {
+    "id": "F01-04",
+    "title": "单次要求限定任务，任务结束即退出",
+    "covers": ["task_override","task_closure","no_cross_task_promotion"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后代码示例用 Rust，项目青禾这周五结束前用 Python。","scope": {"kind": "global"},"share": "authorized_assistants","timezone": "Asia/Shanghai"},{"id": "S2","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "这次任务的代码示例用 Go。","scope": {"kind": "global"},"share": "authorized_assistants","task_id": "T1"}],"tasks": [{"id": "T1","project": "青禾","anchor": "导入"},{"id": "T2","project": "青禾","anchor": "导出"}]},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "once","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S2","idempotency_key": "S2"}},
+      {"id": "in_task","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","task_id": "T1"}},
+      {"id": "sibling","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","task_id": "T2"}},
+      {"id": "close","action": "由任务管理者通过任务关闭用例结束工作任务","args": {"actor": "owner","task_id": "T1"}},
+      {"id": "closed","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","task_id": "T1"}},
+      {"id": "other","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "白桦"}}
+    ],
+    "checks": [
+      {"at": "in_task","path": "/dimensions/code_example.language/value","op": "eq","value": "go"},
+      {"at": "sibling","path": "/dimensions/code_example.language/value","op": "eq","value": "python"},
+      {"at": "closed","path": "/dimensions/code_example.language/value","op": "eq","value": "python"},
+      {"at": "other","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"}
+    ]
+  },
+  {
+    "id": "F01-05",
+    "title": "已支持分句继续生效，陌生维度保留原文",
+    "covers": ["unsupported_dimension","partial_acceptance","pending_reason"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后代码示例用 Rust；以后所有流程图都用靛蓝色。","scope": {"kind": "global"},"share": "authorized_assistants"}]},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "q","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}},
+      {"id": "detail","action": "根据 add 的 statement_id 读取所有者分句处理详情，连接未生效分句原文为 pending_text 并列出实际原因分类","args": {"actor": "owner","statement": "@add"}}
+    ],
+    "checks": [
+      {"at": "q","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "detail","path": "/pending_text","op": "contains","value": "以后所有流程图都用靛蓝色"},
+      {"at": "detail","path": "/pending_reasons","op": "contains","value": "unsupported_dimension"},
+      {"at": "q","path": "/dimensions/diagram.color","op": "absent"}
+    ]
+  },
+  {
+    "id": "F01-06",
+    "title": "任务指代不明时保留候选，明确条件后可重申",
+    "covers": ["missing_target_scope","conditional_clause","correction"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后所有代码示例使用 Rust。","scope": {"kind": "global"},"share": "authorized_assistants"},{"id": "S2","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "那个项目的代码示例用 Python。","scope": {"kind": "global"},"share": "authorized_assistants"},{"id": "S3","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "青禾项目的代码示例使用 Python。","scope": {"kind": "project","project": "青禾"},"share": "authorized_assistants"}]},
+    "steps": [
+      {"id": "baseline","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "unclear","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S2","idempotency_key": "S2"}},
+      {"id": "still_default","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}},
+      {"id": "detail","action": "读取 unclear 的所有者分句详情，将待补条件正规化为未决字段名","args": {"actor": "owner","statement": "@unclear"}},
+      {"id": "clarified","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S3","idempotency_key": "S3"}},
+      {"id": "resolved","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}},
+      {"id": "other","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "白桦"}}
+    ],
+    "checks": [
+      {"at": "still_default","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "detail","path": "/missing_fields","op": "contains","value": "project"},
+      {"at": "resolved","path": "/dimensions/code_example.language/value","op": "eq","value": "python"},
+      {"at": "other","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"}
+    ]
+  },
+  {
+    "id": "F01-07",
+    "title": "相对截止日缺时区时只等待该分句",
+    "covers": ["missing_timezone","explicit_timezone","default_clause_survives"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后代码示例用 Rust，项目青禾这周五结束前用 Python。","scope": {"kind": "global"},"share": "authorized_assistants"},{"id": "S2","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "青禾项目到本周五结束，代码示例用 Python。","scope": {"kind": "project","project": "青禾"},"share": "authorized_assistants","timezone": "Asia/Shanghai"}],"project_timezones": {},"owner_timezone": null},
+    "steps": [
+      {"id": "no_zone","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "without","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-27T15:59:59Z"}},
+      {"id": "pending","action": "读取 no_zone 分句的未决详情，列出缺失条件名","args": {"actor": "owner","statement": "@no_zone"}},
+      {"id": "with_zone","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S2","idempotency_key": "S2"}},
+      {"id": "correct","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-27T15:59:59Z"}},
+      {"id": "past","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-27T16:00:00Z"}}
+    ],
+    "checks": [
+      {"at": "without","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "pending","path": "/missing_fields","op": "contains","value": "timezone"},
+      {"at": "correct","path": "/dimensions/code_example.language/value","op": "eq","value": "python"},
+      {"at": "past","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"}
+    ]
+  },
+  {
+    "id": "F01-08",
+    "title": "跨夏令时的周末按项目当地午夜到期",
+    "covers": ["iana_timezone","dst_boundary","configured_project_zone"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-03-06T15:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-03-06T15:00:00Z","original": "以后代码示例用 Rust，青禾项目到这周日结束用 Python。","scope": {"kind": "global"},"share": "authorized_assistants"}],"project_timezones": {"青禾": "America/New_York"}},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "before","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-03-09T03:59:59Z"}},
+      {"id": "after","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-03-09T04:00:00Z"}}
+    ],
+    "checks": [
+      {"at": "before","path": "/dimensions/code_example.language/value","op": "eq","value": "python"},
+      {"at": "after","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "after","path": "/dimensions/code_example.language/scope/kind","op": "eq","value": "global"}
+    ]
+  },
+  {
+    "id": "F01-09",
+    "title": "永久纠正只改目标维度，遗忘后不能复活旧值",
+    "covers": ["explicit_supersession","revoke_no_resurrection","independent_dimension"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "报告用中文。以后代码示例用 Rust。","scope": {"kind": "global"},"share": "authorized_assistants"},{"id": "S2","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "我改主意了，以后代码示例用 Go。","scope": {"kind": "global"},"share": "authorized_assistants"}]},
+    "steps": [
+      {"id": "first","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "replace","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S2","idempotency_key": "S2","corrects_revision_id": "@first:code_example.language"}},
+      {"id": "current","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}},
+      {"id": "forget","action": "所有者预览后确认 POST /v2/operations 的 forget，目标为 replace 的 statement_id","args": {"actor": "owner","target": "@replace"}},
+      {"id": "after","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}}
+    ],
+    "checks": [
+      {"at": "current","path": "/dimensions/code_example.language/value","op": "eq","value": "go"},
+      {"at": "after","path": "/dimensions/code_example.language","op": "absent"},
+      {"at": "after","path": "/dimensions/report.language/value","op": "eq","value": "zh"}
+    ]
+  },
+  {
+    "id": "F01-10",
+    "title": "重投同一命令复用修订，不同正文不能复用键",
+    "covers": ["duplicate_declaration","idempotency_conflict","atomic_write"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后所有代码示例使用 Rust。","scope": {"kind": "global"},"share": "authorized_assistants"},{"id": "S2","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后所有代码示例使用 Go。","scope": {"kind": "global"},"share": "authorized_assistants"}]},
+    "steps": [
+      {"id": "first","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "intent-1"}},
+      {"id": "retry","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "intent-1"}},
+      {"id": "conflict","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S2","idempotency_key": "intent-1"}},
+      {"id": "audit","action": "对比 first 和 retry 的实际 statement_id 与 revision_id，并只读统计本次工作库修订","args": {"actor": "owner","responses": ["@first","@retry"]}},
+      {"id": "current","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}}
+    ],
+    "checks": [
+      {"at": "audit","path": "/same_statement_and_revisions","op": "eq","value": true},
+      {"at": "audit","path": "/revision_count","op": "eq","value": 1},
+      {"at": "conflict","path": "/code","op": "eq","value": "key_conflict"},
+      {"at": "current","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"}
+    ]
+  },
+  {
+    "id": "F01-11",
+    "title": "助手的转述不覆盖本人约定，私有分句不交付",
+    "covers": ["assistant_paraphrase","owner_authority","private_delivery"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后所有代码示例使用 Rust。","scope": {"kind": "global"},"share": "authorized_assistants"},{"id": "S2","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "青禾项目的代码示例使用 Go。","scope": {"kind": "project","project": "青禾"},"share": "owner"}],"events": [{"id": "E1","role": "assistant_message","task": "T1","at": "2026-11-23T01:00:00Z","text": "用户说今后全球都用 Python。"}],"tasks": [{"id": "T1","project": "青禾","anchor": "示例"}],"host": {"name": "Codex","task": "T1","shared_statements": true}},
+    "steps": [
+      {"id": "global","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "private","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S2","idempotency_key": "S2"}},
+      {"id": "intake","action": "通过有采集授权的宿主入口提交 fixture.events，再运行获准提炼","args": {"actor": "Codex"}},
+      {"id": "owner","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}},
+      {"id": "other","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "白桦"}},
+      {"id": "read","action": "在新会话装入 T1，收集实际提供的代码语言值（小写）与序列化声明片段","args": {"actor": "Codex","task": "T1"}}
+    ],
+    "checks": [
+      {"at": "owner","path": "/dimensions/code_example.language/value","op": "eq","value": "go"},
+      {"at": "other","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "read","path": "/code_languages","op": "excludes","value": "go"},
+      {"at": "read","path": "/statements_text","op": "excludes","value": "青禾项目的代码示例使用 Go"},
+      {"at": "read","path": "/code_languages","op": "excludes","value": "python"}
+    ]
+  },
+  {
+    "id": "F01-12",
+    "title": "旧修订无分句表仍能查询，新增维度不改变旧格式",
+    "covers": ["legacy_schema_migration","backwards_compatibility"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "old","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "所有报告用中文，先写结论。","scope": {"kind": "global"},"share": "authorized_assistants"},{"id": "fresh","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后所有代码示例使用 Rust。","scope": {"kind": "global"},"share": "authorized_assistants"}]},
+    "steps": [
+      {"id": "old_write","action": "用 004 release 初始化隔离库并按 old 原话执行声明，停止进程以供升级","args": {"actor": "owner","statement": "old"}},
+      {"id": "upgrade","action": "在同一测试副本运行升级迁移并启动新服务，保留旧声明 ID","args": {"actor": "owner"}},
+      {"id": "legacy","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}},
+      {"id": "new","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "fresh","idempotency_key": "fresh"}},
+      {"id": "all","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}}
+    ],
+    "checks": [
+      {"at": "legacy","path": "/dimensions/report.language/value","op": "eq","value": "zh"},
+      {"at": "legacy","path": "/dimensions/report.opening/value","op": "eq","value": "conclusion"},
+      {"at": "legacy","path": "/dimensions/code_example.language","op": "absent"},
+      {"at": "all","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "all","path": "/dimensions/report.opening/value","op": "eq","value": "conclusion"}
+    ]
+  },
+  {
+    "id": "F01-13",
+    "title": "CLI 和 Web 对同一候选时点试算，查询不产生动作",
+    "covers": ["owner_cli_web_parity","readonly_preview","no_delivery_side_effect"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后代码示例用 Rust，项目青禾这周五结束前用 Python。","scope": {"kind": "global"},"share": "authorized_assistants","timezone": "Asia/Shanghai"}]},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "before","action": "只读统计 authority_changes.seq、context_deliveries 和 context_receipts 行数","args": {"actor": "owner"}},
+      {"id": "cli","action": "用所有者本机 CLI 试算，记录选中的代码语言小写及 revision_id","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-27T15:59:59Z"}},
+      {"id": "web","action": "在所有者本机 Web 的当前声明界面选同一项目和时刻，读取显示语言并跟进详情比对 revision_id","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-27T15:59:59Z","compare": "@cli"}},
+      {"id": "after","action": "复查 before 的三项计数并记录差值","args": {"actor": "owner","baseline": "@before"}}
+    ],
+    "checks": [
+      {"at": "cli","path": "/language","op": "eq","value": "python"},
+      {"at": "web","path": "/language","op": "eq","value": "python"},
+      {"at": "web","path": "/same_revision_as_cli","op": "eq","value": true},
+      {"at": "after","path": "/changes","op": "eq","value": {"authority_seq": 0,"deliveries": 0,"receipts": 0}}
+    ]
+  },
+  {
+    "id": "F01-14",
+    "title": "两款真实宿主跨两个项目输出最小示例",
+    "covers": ["real_claude_code","real_codex","four_host_project_cells","actual_model_input","observed_code_output"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后代码示例用 Rust，项目青禾这周五结束前用 Python。","scope": {"kind": "global"},"share": "authorized_assistants","timezone": "Asia/Shanghai"}],"host_matrix": {"hosts": ["Claude Code","Codex"],"projects": ["青禾","白桦"],"ask": "给个最小示例","clock": "2026-11-27T15:59:59Z","sessions": "每格单独新会话","share": "两款宿主均获声明读取及各自任务访问"}},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "runs","action": "启动矩阵中四个真实 CLI/Hook 会话，绑定各项目任务，逐格只发 ask，抓取实际模型输入及回答中的代码。宿主缺失记录未执行，不用桩补齐","args": {"actor": "real_host_driver","matrix": "fixture.host_matrix"}},
+      {"id": "judge","action": "从实际输入的适用声明和实际回答的代码围栏、语法提取语言；无可信代码片段记 unknown。按宿主/项目输出 [输入语言,代码语言]","args": {"actor": "independent_verifier","runs": "@runs"}}
+    ],
+    "checks": [
+      {"at": "judge","path": "/Claude Code/青禾","op": "eq","value": ["python","python"]},
+      {"at": "judge","path": "/Claude Code/白桦","op": "eq","value": ["rust","rust"]},
+      {"at": "judge","path": "/Codex/青禾","op": "eq","value": ["python","python"]},
+      {"at": "judge","path": "/Codex/白桦","op": "eq","value": ["rust","rust"]}
+    ]
+  },
+  {
+    "id": "F01-15",
+    "title": "只查询与实际装入在两个客户端分别显示",
+    "covers": ["provided_loaded_unknown","per_session_status","no_inferred_adoption"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后所有代码示例使用 Rust。","scope": {"kind": "global"},"share": "authorized_assistants"}],"clients": [{"name": "Codex","can_observe_final_input": true},{"name": "lookup","can_observe_final_input": false}],"task": {"id": "T1","project": "青禾","allowed_clients": ["Codex","lookup"]}},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "loaded","action": "Codex 将当前声明真正放入下一次模型输入，按该调用发 loaded 回执，不发 used","args": {"actor": "Codex","task": "T1"}},
+      {"id": "lookup","action": "仅调用已授权共享声明查询，收集命中；不申请任务装入","args": {"actor": "lookup","query": "代码示例"}},
+      {"id": "status","action": "所有者查询该 revision 的生效、两个客户端的装入状态与采用状态；缺凭据记 unknown","args": {"actor": "owner","revision": "@add:code_example.language"}}
+    ],
+    "checks": [
+      {"at": "status","path": "/effective","op": "eq","value": true},
+      {"at": "status","path": "/Codex/loaded","op": "eq","value": "observed"},
+      {"at": "status","path": "/lookup/loaded","op": "eq","value": "unknown"},
+      {"at": "status","path": "/Codex/used","op": "eq","value": "unknown"}
+    ]
+  },
+  {
+    "id": "F01-16",
+    "title": "同一范围同时给出两种互斥语言",
+    "covers": ["ambiguous_same_scope","conflicting_values","independent_clause"],
+    "fixture": {"setup": "新建隔离实例、创建列明的项目/任务，注册具名宿主并按 fixture 授权；只由 steps 追加声明或采集事件。未指定项目时区时不采用主机时区。","clock": "2026-11-23T01:00:00Z","projects": ["青禾","白桦"],"statements": [{"id": "S1","author": "owner","received_at": "2026-11-23T01:00:00Z","original": "以后所有代码示例必须使用 Rust，同时所有代码示例必须使用 Go；所有报告用中文。","scope": {"kind": "global"},"share": "authorized_assistants"}]},
+    "steps": [
+      {"id": "add","action": "按 fixture 的 received_at 设置服务时钟，以上述身份 POST /v2/statements；记录响应及分句修订别名","args": {"actor": "owner","statement": "S1","idempotency_key": "S1"}},
+      {"id": "current","action": "所有者 GET /v2/statements（explain=true）；将实返 statements 按 key 索引为 dimensions，代码语言值转小写","args": {"actor": "owner","project": "青禾"}},
+      {"id": "explain","action": "从 add 关联的声明详情提取未决维度和对应原话","args": {"actor": "owner","statement": "@add"}}
+    ],
+    "checks": [
+      {"at": "current","path": "/dimensions/code_example.language","op": "absent"},
+      {"at": "current","path": "/dimensions/report.language/value","op": "eq","value": "zh"},
+      {"at": "explain","path": "/pending_keys","op": "contains","value": "code_example.language"},
+      {"at": "explain","path": "/original","op": "contains","value": "Rust"},
+      {"at": "explain","path": "/original","op": "contains","value": "Go"}
+    ]
+  },
+  {
+    "id": "F01-17",
+    "title": "纽约秋季回拨的 01:30 出现两次，明确偏移后采用第二次",
+    "covers": ["dst_fall_fold","ambiguous_local_time","explicit_utc_offset"],
+    "fixture": {"clock": "2026-10-30T13:00:00Z","projects": ["青禾"],"statements": [{"id": "base","original": "以后代码示例用 Rust。","author": "owner","received_at": "2026-10-30T13:00:00Z","scope": {"kind": "global"},"timezone": "America/New_York"},{"id": "local","original": "从纽约当地 2026-11-01 01:30 起，青禾项目的代码示例用 Python。","author": "owner","received_at": "2026-10-30T13:00:00Z","scope": {"kind": "project","project": "青禾"},"timezone": "America/New_York"},{"id": "clarified","original": "纠正生效时间，从 2026-11-01T01:30:00-05:00 起，青禾项目的代码示例用 Python。","author": "owner","received_at": "2026-10-30T13:00:00Z","scope": {"kind": "project","project": "青禾"},"timezone": "America/New_York"}]},
+    "steps": [
+      {"id": "propose","action": "隔离服务时钟设为 fixture.clock，分别以两个幂等键 POST /v2/statements 提交原句；保留 local 的 statement_id","args": {"actor": "owner","statements": ["base","local"]}},
+      {"id": "explain","action": "按 local 的实际 statement_id 读所有者分句处理结果，记录是否需要补充时间、是否产生已生效项目修订","args": {"actor": "owner","statement": "@propose:local"}},
+      {"id": "pending","action": "所有者 GET /v2/statements?explain=true，以项目和 valid_at 试算；按 key 索引实返 statements，将代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-01T06:30:00Z"}},
+      {"id": "clarify","action": "用新幂等键将 clarified 的含明确 UTC 偏移原话 POST /v2/statements 追加到同一项目","args": {"actor": "owner","statement": "clarified"}},
+      {"id": "before","action": "所有者 GET /v2/statements?explain=true，以项目和 valid_at 试算；按 key 索引实返 statements，将代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-01T06:29:59Z"}},
+      {"id": "start","action": "所有者 GET /v2/statements?explain=true，以项目和 valid_at 试算；按 key 索引实返 statements，将代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-11-01T06:30:00Z"}}
+    ],
+    "checks": [
+      {"at": "explain","path": "/needs_time_clarification","op": "eq","value": true},
+      {"at": "explain","path": "/active_project_revision_count","op": "eq","value": 0},
+      {"at": "pending","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "before","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "start","path": "/dimensions/code_example.language/value","op": "eq","value": "python"}
+    ]
+  },
+  {
+    "id": "F01-18",
+    "title": "纽约春季跳时跳过 02:30，重报 03:30 后生效",
+    "covers": ["dst_spring_gap","nonexistent_local_time","explicit_correction"],
+    "fixture": {"clock": "2026-03-06T13:00:00Z","projects": ["青禾"],"statements": [{"id": "base","original": "以后代码示例用 Rust。","author": "owner","received_at": "2026-03-06T13:00:00Z","scope": {"kind": "global"},"timezone": "America/New_York"},{"id": "local","original": "从纽约当地 2026-03-08 02:30 起，青禾项目的代码示例用 Python。","author": "owner","received_at": "2026-03-06T13:00:00Z","scope": {"kind": "project","project": "青禾"},"timezone": "America/New_York"},{"id": "clarified","original": "纠正生效时间，从 2026-03-08T03:30:00-04:00 起，青禾项目的代码示例用 Python。","author": "owner","received_at": "2026-03-06T13:00:00Z","scope": {"kind": "project","project": "青禾"},"timezone": "America/New_York"}]},
+    "steps": [
+      {"id": "propose","action": "隔离服务时钟设为 fixture.clock，分别以两个幂等键 POST /v2/statements 提交原句；保留 local 的 statement_id","args": {"actor": "owner","statements": ["base","local"]}},
+      {"id": "explain","action": "按 local 的实际 statement_id 读所有者分句处理结果，记录是否需要补充时间、是否产生已生效项目修订","args": {"actor": "owner","statement": "@propose:local"}},
+      {"id": "pending","action": "所有者 GET /v2/statements?explain=true，以项目和 valid_at 试算；按 key 索引实返 statements，将代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-03-08T07:30:00Z"}},
+      {"id": "clarify","action": "用新幂等键将 clarified 的含明确 UTC 偏移原话 POST /v2/statements 追加到同一项目","args": {"actor": "owner","statement": "clarified"}},
+      {"id": "before","action": "所有者 GET /v2/statements?explain=true，以项目和 valid_at 试算；按 key 索引实返 statements，将代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-03-08T07:29:59Z"}},
+      {"id": "start","action": "所有者 GET /v2/statements?explain=true，以项目和 valid_at 试算；按 key 索引实返 statements，将代码语言值转小写","args": {"actor": "owner","project": "青禾","valid_at": "2026-03-08T07:30:00Z"}}
+    ],
+    "checks": [
+      {"at": "explain","path": "/needs_time_clarification","op": "eq","value": true},
+      {"at": "explain","path": "/active_project_revision_count","op": "eq","value": 0},
+      {"at": "pending","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "before","path": "/dimensions/code_example.language/value","op": "eq","value": "rust"},
+      {"at": "start","path": "/dimensions/code_example.language/value","op": "eq","value": "python"}
+    ]
+  }
+]

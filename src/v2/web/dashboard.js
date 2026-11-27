@@ -216,12 +216,51 @@ window.MemoryDashboard = (() => {
       ];
       if (row.kind === 'statement' && row.id) {
         const button = rowButton('feed-row series-' + row.kind, '查看这条声明的历史与出处', kids, true);
+        button.dataset.key = row.id;
         button.addEventListener('click', () => openStatementHistory(row.id, button));
         list.append(button);
       } else {
         list.append(el('div', { class: 'feed-row series-' + row.kind }, kids));
       }
     }
+  }
+
+  function jobQueue(rows) {
+    const queue = $('#job-summary');
+    queue.replaceChildren(
+      ...rows.map((job) => {
+        const button = rowButton('queue-row', '查看后台作业', [
+          jobNames[job.status] || job.status,
+          el('b', { text: numbers.format(job.count) })
+        ]);
+        button.dataset.key = job.status;
+        button.addEventListener('click', () => navigate('jobs'));
+        return button;
+      })
+    );
+    if (!rows.length)
+      queue.append(el('p', { class: 'chart-empty', text: '暂无后台作业。导入获准的事件后可在此查看进度。' }));
+  }
+
+  // 轮询每 15 秒重读总览：数据没变的区域保留原节点；变化时才重绘，并带回区域内
+  // <details> 的展开状态与键盘焦点，避免把正在看明细的用户打回页首。
+  const drawn = new WeakMap();
+  function redraw(host, rows, render) {
+    const sig = JSON.stringify(rows);
+    const last = drawn.get(host);
+    if (last && last.sig === sig && last.node === host.firstChild) return;
+    const open = [...host.querySelectorAll('details')].map((node) => node.open);
+    const active = host.contains(document.activeElement) ? document.activeElement : null;
+    const key = active && (active.dataset.key || active.textContent);
+    render(rows);
+    host.querySelectorAll('details').forEach((node, i) => {
+      node.open = !!open[i];
+    });
+    if (key)
+      [...host.querySelectorAll('button, summary')]
+        .find((node) => (node.dataset.key || node.textContent) === key)
+        ?.focus({ preventScroll: true });
+    drawn.set(host, { sig, node: host.firstChild });
   }
 
   // 首次进入 / 失败清空后展示骨架屏；刷新与轮询保留既有内容，成功时整体替换。
@@ -272,22 +311,10 @@ window.MemoryDashboard = (() => {
       const metric = $('#metric-' + name);
       if (metric) metric.textContent = numbers.format(count);
     }
-    activity(data.activity);
-    composition(data.distribution);
-    recent(data.recent);
-    const queue = $('#job-summary');
-    queue.replaceChildren(
-      ...data.jobs.map((job) => {
-        const button = rowButton('queue-row', '查看后台作业', [
-          jobNames[job.status] || job.status,
-          el('b', { text: numbers.format(job.count) })
-        ]);
-        button.addEventListener('click', () => navigate('jobs'));
-        return button;
-      })
-    );
-    if (!data.jobs.length)
-      queue.append(el('p', { class: 'chart-empty', text: '暂无后台作业。导入获准的事件后可在此查看进度。' }));
+    redraw($('#activity-chart'), data.activity, activity);
+    redraw($('#distribution-chart'), data.distribution, composition);
+    redraw($('#recent-feed'), data.recent, recent);
+    redraw($('#job-summary'), data.jobs, jobQueue);
     const updated = $('#overview-updated');
     if (updated) {
       updated.hidden = false;

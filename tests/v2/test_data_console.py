@@ -229,6 +229,11 @@ class DataConsoleTest(unittest.TestCase):
             targets, accepted, duplicates = expected[job["kind"]]
             self.assertEqual((done["target_count"], done["completed_targets"]), (targets, targets))
             self.assertEqual((done["accepted"], done["duplicates"]), (accepted, duplicates), done)
+        # The fixture contains two DMs, four group messages (including a thread)
+        # and three documents. All contain "fixture", so categories select by provenance.
+        for exclude, count in [(["group"], 5), (["dm", "docs"], 4), (["feishu"], 0)]:
+            found = service.post(fresh, "/v2/search", {"query": "fixture", "exclude": exclude})
+            self.assertEqual(len(found["results"]), count, (exclude, found))
         row = next(s for s in service.cli("connector", "list")["sources"] if s["source_id"] == registered)
         self.assertFalse(row["capture_enabled"])
 

@@ -1,0 +1,73 @@
+---
+config:
+  theme: base
+  htmlLabels: false
+  fontFamily: '"PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif'
+  themeVariables:
+    fontFamily: '"PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif'
+    fontSize: 18px
+    primaryColor: '#e6f4f1'
+    primaryTextColor: '#163942'
+    primaryBorderColor: '#377774'
+    lineColor: '#45616a'
+    secondaryColor: '#f4f8fa'
+    tertiaryColor: '#f6f9f9'
+    clusterBkg: '#f5f9f9'
+    clusterBorder: '#a3b8b8'
+    edgeLabelBackground: '#ffffff'
+    actorBkg: '#e3f3ef'
+    actorBorder: '#4b7774'
+    actorTextColor: '#15363d'
+    actorLineColor: '#799397'
+    signalColor: '#3c5864'
+    signalTextColor: '#173842'
+    loopTextColor: '#254955'
+    labelBoxBkgColor: '#edf5f5'
+    labelBoxBorderColor: '#739295'
+    labelTextColor: '#254955'
+    noteBkgColor: '#ffffff'
+    noteBorderColor: '#adbdc3'
+    noteTextColor: '#254955'
+  flowchart:
+    htmlLabels: false
+    curve: linear
+    nodeSpacing: 28
+    rankSpacing: 42
+    padding: 10
+    diagramPadding: 14
+    useMaxWidth: true
+  sequence:
+    showSequenceNumbers: false
+    mirrorActors: false
+    actorMargin: 64
+    width: 145
+    height: 50
+    messageMargin: 30
+    boxMargin: 12
+    diagramMarginX: 30
+    diagramMarginY: 15
+---
+flowchart TB
+  accTitle: 目标系统结构与信任边界
+  accDescr: 外部访问经入口当前授权，权威裁决后写入SQLite，派生受限，按接收者过滤宿主授权包
+  U["所有者 Web / CLI"] -->|本人声明与治理| E
+  H["已绑定的 Harness"] -->|事件、装入回执| E
+  M["普通 MCP 查询端"] -->|查询有效全局声明| E
+  subgraph BM[" "]
+    E["本机 bmem 信任边界<br/>入口校验与当前授权"]
+    E -->|授权采集| J["采集与权威裁决"]
+    J <-->|授权输入、候选返回| R["可替换提炼策略"]
+    J -->|裁决后写入| DB[("SQLite 权威表<br/>证据、修订、依赖")]
+    DB -->|受限派生| X[("可重建的派生索引<br/>FTS5、可选向量")]
+    E -->|授权检索| P["检索组包"]
+    DB -->|权威状态| P
+    X -->|派生投影| P
+    P -->|按接收者过滤| O["依调用方裁剪的结果"]
+  end
+  classDef act fill:#e9eff7,stroke:#456988,color:#183e56
+  classDef proc fill:#e3f2ef,stroke:#337568,color:#17423f
+  classDef store fill:#fbf1d8,stroke:#987032,color:#59401d
+  class U,H,M,O act
+  class E,J,R,P proc
+  class DB,X store
+  style BM fill:#f7faf9,stroke:#65918c,stroke-dasharray:5 5

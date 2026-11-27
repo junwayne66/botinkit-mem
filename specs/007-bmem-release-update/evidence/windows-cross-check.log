@@ -1,0 +1,37 @@
+Spec Kit 007 T009 / Windows x64 and ARM64 type check
+Host: macOS arm64. Native Windows U08 and Task Scheduler: NOT_RUN.
+
+Scope: actual update/files.rs, update/supervisor.rs, update/supervisor/windows_task.rs with facade for Error and Instance.
+Build: cargo check --offline --locked --features update-test --target <target> using an isolated MSVC Rust std sysroot.
+No full executable link or Windows execution was performed.
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+Module SHA-256
+72c6e272ccf00c972f59936dfe252895a5d7dbf21a4830129f08238517890deb  src/v2/bmem/src/update/files.rs
+3cdf2e200c32b5cb291168b5efc5cfd0372cca9082580a389c773f341e3a0e3c  src/v2/bmem/src/update/supervisor.rs
+154292f7be93d2b5afb7d8c7248493833d09bbfc48befd110fed2695682dc909  src/v2/bmem/src/update/supervisor/windows_task.rs
+
+x86_64-pc-windows-msvc Rust std archive SHA-256 24ad2f28791e08a573b9c7df5efa3ace884eecd1fa7e7f5b62c65f4b49bb4532
+Checking bmem-windows-cross-check v0.1.0 (<temporary>/smoke)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.50s
+
+aarch64-pc-windows-msvc Rust std archive SHA-256 685fe68603036a9726d42ddc287ea8d15a42b50e538018efdd1b4a39dd427fd6
+Checking bmem-windows-cross-check v0.1.0 (<temporary>/smoke)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.27s
+
+Windows scenarios collected on macOS
+test_u08_native_stdio_holds_executable_until_it_closes (__main__.UpdateAcceptance) ... skipped 'requires Windows EXE handles and native updater'
+test_u08_managed_update_sharing_violation_and_interrupted_swap_recovery (__main__.UpdateAcceptance) ... skipped 'requires Windows EXE handles and native updater'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.009s
+
+OK (skipped=2)
+
+Native Task Scheduler fixture collected on macOS
+test_registered_task_restores_running_or_stopped_state (__main__.WindowsTaskSchedulerAcceptance) ... skipped 'requires native Windows Task Scheduler'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK (skipped=1)

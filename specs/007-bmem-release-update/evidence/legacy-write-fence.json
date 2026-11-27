@@ -1,0 +1,48 @@
+{
+  "exit": 1,
+  "error": "{\"code\":\"internal_error\",\"message\":\"no such function: bmem_writer_epoch\",\"request_id\":\"2c510788-d95a-4d8e-83f3-34062b73e8d9\",\"retryable\":false}",
+  "before": {
+    "epoch": [
+      [
+        2
+      ]
+    ],
+    "schema_version": [
+      [
+        160
+      ]
+    ],
+    "authority_sequence": [
+      [
+        0
+      ]
+    ],
+    "authority_catalogue_entries": [
+      [
+        261
+      ]
+    ]
+  },
+  "after": {
+    "epoch": [
+      [
+        2
+      ]
+    ],
+    "schema_version": [
+      [
+        160
+      ]
+    ],
+    "authority_sequence": [
+      [
+        0
+      ]
+    ],
+    "authority_catalogue_entries": [
+      [
+        261
+      ]
+    ]
+  }
+}

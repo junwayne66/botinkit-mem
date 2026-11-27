@@ -1,0 +1,126 @@
+{
+  "scope": "internal-tuf",
+  "target": "x86_64-unknown-linux-gnu",
+  "execution_mode": "native",
+  "system": "Linux",
+  "system_release": "6.6.87.2-microsoft-standard-WSL2",
+  "runtime_machine": "x86_64",
+  "status": "PASS",
+  "root_sha256": "ccc2dc73785afee8cac864f86058cb69465cad3076bddc3b259b5f71f065b87e",
+  "legacy_sha256": "7f6d297e31ed6cba96376fc1d900caa177eeba6ceed0d8b6d80e57c66b4e1c88",
+  "initial_sha256": "470cd0087229d156c6fd17ff40d395059c45e8186746bd218445192734dfc830",
+  "successor_sha256": "0a9ac4d5d08144926366fe3a1424327203e6c82357d1fe48dfc350c7905ae516",
+  "metadata": [
+    {
+      "scope": "internal",
+      "tuf": {
+        "catalogue_sha256": "5314b1d49d3b9b655a08edd79df22de7f44f9b21d5b27be7056e65da5ff6491a",
+        "metadata_versions": {
+          "root": 1,
+          "targets": 1,
+          "snapshot": 1,
+          "timestamp": 1
+        },
+        "bootstrap_sha256": "ccc2dc73785afee8cac864f86058cb69465cad3076bddc3b259b5f71f065b87e",
+        "verifier": "python-tuf 7.0.1"
+      },
+      "assets": [
+        {
+          "version": "0.3.0",
+          "build_id": "d361fdcd4d3823add1f033d423c27e520fe0ac00b83ec05a880cc78310890dfd",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "x86_64-unknown-linux-gnu",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "470cd0087229d156c6fd17ff40d395059c45e8186746bd218445192734dfc830",
+          "len": 27903016
+        }
+      ]
+    },
+    {
+      "scope": "internal",
+      "tuf": {
+        "catalogue_sha256": "d4881de50b001c563b464be210871f1f601fd0d30162862695115b788fdd12a4",
+        "metadata_versions": {
+          "root": 1,
+          "targets": 2,
+          "snapshot": 2,
+          "timestamp": 2
+        },
+        "bootstrap_sha256": "ccc2dc73785afee8cac864f86058cb69465cad3076bddc3b259b5f71f065b87e",
+        "verifier": "python-tuf 7.0.1"
+      },
+      "assets": [
+        {
+          "version": "0.3.0",
+          "build_id": "d361fdcd4d3823add1f033d423c27e520fe0ac00b83ec05a880cc78310890dfd",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "x86_64-unknown-linux-gnu",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "470cd0087229d156c6fd17ff40d395059c45e8186746bd218445192734dfc830",
+          "len": 27903016
+        },
+        {
+          "version": "0.3.1",
+          "build_id": "a05ca26f683f08541f02240246e799cfa29956163e4e899d1cee54da848a5118",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "x86_64-unknown-linux-gnu",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "0a9ac4d5d08144926366fe3a1424327203e6c82357d1fe48dfc350c7905ae516",
+          "len": 27902744
+        }
+      ]
+    }
+  ],
+  "tests_run": 5,
+  "failures": [],
+  "skipped": [],
+  "observations": [
+    {
+      "case": "test_u01_bootstrap",
+      "seconds": 1.123,
+      "installed_version": "0.3.0",
+      "installed_build": "d361fdcd4d3823add1f033d423c27e520fe0ac00b83ec05a880cc78310890dfd",
+      "installed_sha256": "470cd0087229d156c6fd17ff40d395059c45e8186746bd218445192734dfc830",
+      "embedded_root_unchanged": true
+    },
+    {
+      "case": "test_u02_adopt_0_2_0",
+      "seconds": 2.538,
+      "installed_version": "0.3.0",
+      "installed_build": "d361fdcd4d3823add1f033d423c27e520fe0ac00b83ec05a880cc78310890dfd",
+      "installed_sha256": "470cd0087229d156c6fd17ff40d395059c45e8186746bd218445192734dfc830"
+    },
+    {
+      "case": "test_u03_update_and_repeat",
+      "seconds": 2.818,
+      "installed_version": "0.3.1",
+      "installed_build": "a05ca26f683f08541f02240246e799cfa29956163e4e899d1cee54da848a5118",
+      "installed_sha256": "0a9ac4d5d08144926366fe3a1424327203e6c82357d1fe48dfc350c7905ae516",
+      "stale_generation": "update_metadata_rollback"
+    },
+    {
+      "case": "test_u04_u06_reject_tampering_and_restore_after_failed_probe",
+      "seconds": 3.662,
+      "installed_version": "0.3.1",
+      "installed_build": "a05ca26f683f08541f02240246e799cfa29956163e4e899d1cee54da848a5118",
+      "installed_sha256": "0a9ac4d5d08144926366fe3a1424327203e6c82357d1fe48dfc350c7905ae516",
+      "rejections": {
+        "timestamp": "update_signature_invalid",
+        "catalogue": "update_transport_failed",
+        "binary": "update_asset_digest_mismatch"
+      },
+      "rollback": "candidate_health_failed",
+      "restored_sha256": "470cd0087229d156c6fd17ff40d395059c45e8186746bd218445192734dfc830"
+    },
+    {
+      "case": "test_u07_compatible_program_rollback_keeps_new_writes",
+      "seconds": 4.226,
+      "installed_version": "0.3.1",
+      "installed_build": "a05ca26f683f08541f02240246e799cfa29956163e4e899d1cee54da848a5118",
+      "installed_sha256": "0a9ac4d5d08144926366fe3a1424327203e6c82357d1fe48dfc350c7905ae516"
+    }
+  ]
+}

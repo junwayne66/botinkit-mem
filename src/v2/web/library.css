@@ -13,7 +13,7 @@
 .library-fact,.library-job {padding:17px 20px; border-top:1px solid var(--divider); min-width:0; overflow-wrap:anywhere}
 .library-fact-head,.library-fact-value,.library-fact-actions,.job-row-head,.job-actions,.job-digest,.jobs-pages {display:flex; align-items:center; gap:10px; flex-wrap:wrap}
 .library-fact-head,.job-row-head {justify-content:space-between}
-.library-fact-head h4,.job-row-head strong {font-size:15px; font-weight:620}
+.library-fact-head :is(h3,h4),.job-row-head h3,.library-job > h3 {font-size:15px; font-weight:620}
 .library-fact-value {margin:8px 0 12px; align-items:baseline; color:var(--accent)}
 .library-fact-value strong {font-size:clamp(19px,2vw,23px); font-weight:550}
 .library-fact-value .fact-key {color:var(--muted); font-weight:400; font-size:11px}

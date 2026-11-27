@@ -1,0 +1,19 @@
+{
+  "build": {
+    "authority_epoch": 2,
+    "build_id": "b5709134431841f07326132082d9b52b7dd83767e91658886b02846f58ba5bed",
+    "commit": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+    "official_update_root_sha256": null,
+    "settings_epoch": 0,
+    "target": "aarch64-apple-darwin",
+    "test_build": false,
+    "version": "0.3.0",
+    "web_build_id": "7534383d01626838642c26e27aa2638997813c39eb7295d272ea9c019f96d4b7"
+  },
+  "binary_sha256": "f2a926b6618829b02e4e6b7a20b299430808e234c8782fd3b0d958694c09359a",
+  "legacy_unchanged_sha256": "d0e36329b8de767013e0dd3a58c220df67e1d634aa04d9efb6689509226f02b1",
+  "expected_refusal_code": "update_trust_root_missing",
+  "exit_status": 21,
+  "older_service_still_running": true,
+  "accepted_statement_still_available": true
+}

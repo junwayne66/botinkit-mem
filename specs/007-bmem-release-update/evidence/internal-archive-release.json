@@ -1,0 +1,56 @@
+{
+  "scope": "internal",
+  "tuf": {
+    "catalogue_sha256": "4413c59879602cfee4b04013a385c417b2bd8162ec5456d73cbc0cd35eca5053",
+    "metadata_versions": {
+      "root": 1,
+      "targets": 1,
+      "snapshot": 1,
+      "timestamp": 1
+    },
+    "bootstrap_sha256": "ccc2dc73785afee8cac864f86058cb69465cad3076bddc3b259b5f71f065b87e",
+    "verifier": "python-tuf 7.0.1"
+  },
+  "assets": [
+    {
+      "version": "0.3.0",
+      "build_id": "f2d34a6282e58f71fb303cc25bc83b04f3771a2ad7126bfd7924c2e0b883756d",
+      "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+      "target": "aarch64-apple-darwin",
+      "authority_epoch": 2,
+      "settings_epoch": 0,
+      "sha256": "af68c1135e6e3d97cca8ad53495ee4aa7ed55a1d205d47b452acc4de7e33389e",
+      "len": 22345952
+    },
+    {
+      "version": "0.3.0",
+      "build_id": "a9f92365d9634934cee97df4cd2d8ee4339d8c4e2537edcdcd39545d9a6a8624",
+      "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+      "target": "x86_64-apple-darwin",
+      "authority_epoch": 2,
+      "settings_epoch": 0,
+      "sha256": "1fa023be8cfe564217c42bcebc9a01c7b92a0d5352303a86290481cbefced4e8",
+      "len": 24993224
+    },
+    {
+      "version": "0.3.0",
+      "build_id": "564699439e78ee1c2c283043b032355beee4695dc4bbf8e78a1b3d54aa31bb86",
+      "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+      "target": "aarch64-unknown-linux-gnu",
+      "authority_epoch": 2,
+      "settings_epoch": 0,
+      "sha256": "1b9c43be2506f3a66809510afa4c73cd0352e667c966ce019c5fbbc4c784cba8",
+      "len": 25360576
+    },
+    {
+      "version": "0.3.0",
+      "build_id": "d361fdcd4d3823add1f033d423c27e520fe0ac00b83ec05a880cc78310890dfd",
+      "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+      "target": "x86_64-unknown-linux-gnu",
+      "authority_epoch": 2,
+      "settings_epoch": 0,
+      "sha256": "470cd0087229d156c6fd17ff40d395059c45e8186746bd218445192734dfc830",
+      "len": 27903016
+    }
+  ]
+}

@@ -82,7 +82,7 @@ def claude_events(body, provider):
         for part in msg["content"]
         if part.get("type") == "tool_result"
     ]
-    if tool and not tool_outputs:
+    if tool and not tool_outputs and provider.get("command"):
         content = event("tool_use", id="toolu_bmem_fixture", name="Bash", input={})
         delta = event(
             "input_json_delta",
@@ -118,7 +118,7 @@ def codex_events(body, provider):
     has_output = any(item.get("type") == "function_call_output" for item in body.get("input", []))
     response = {"id": "resp_bmem_fixture_result" if has_output else "resp_bmem_fixture_first", "object": "response"}
     events = [event("response.created", response={**response, "status": "in_progress"})]
-    if tool and not has_output:
+    if tool and not has_output and provider.get("command"):
         item = event("function_call", name="exec_command", call_id="call_bmem_fixture", arguments="")
         events.append(event("response.output_item.added", output_index=0, item=item))
         item = {**item, "arguments": json.dumps({"cmd": provider["command"], "max_output_tokens": 40})}
@@ -164,10 +164,12 @@ def fixture_server(provider):
                 return
             if self.path.startswith("/v1/messages"):
                 captured["claude-code"].append(body)
-                events = claude_events(body, provider)
+                response = provider("claude-code", body) if callable(provider) else provider
+                events = claude_events(body, response)
             elif self.path.startswith("/v1/responses"):
                 captured["codex"].append(body)
-                events = codex_events(body, provider)
+                response = provider("codex", body) if callable(provider) else provider
+                events = codex_events(body, response)
             else:
                 self.send_error(404)
                 return
@@ -274,7 +276,8 @@ def _tail(value, limit=800):
     return value[-limit:].replace("\n", "\\n")
 
 
-def run_host(host, command, prompt, endpoint, work, environment, fixture, phase="0-unlabelled"):
+def run_host(host, command, prompt, endpoint, work, environment, fixture, phase="0-unlabelled",
+             *, tool_commands=None, writable=False):
     if host == "claude-code":
         settings = work / "claude-settings.json"
         settings.write_text(json.dumps({
@@ -295,7 +298,8 @@ def run_host(host, command, prompt, endpoint, work, environment, fixture, phase=
         argv = [
             "claude", "-p", "--max-turns", "3", "--no-session-persistence",
             "--setting-sources", "", "--settings", str(settings), "--strict-mcp-config",
-            "--model", "claude-haiku-4-5", "--tools", "Bash", "--allowedTools", "Bash(printf *)",
+            "--model", "claude-haiku-4-5", "--tools", "Bash", "--allowedTools",
+            *[f"Bash({allowed})" for allowed in (tool_commands or ("printf *",))],
             "--permission-mode", "dontAsk", "--effort", "low", prompt,
         ]
     else:
@@ -317,7 +321,7 @@ def run_host(host, command, prompt, endpoint, work, environment, fixture, phase=
         # All three command hooks are constructed above from the selected bmem
         # binary and an isolated instance; no persisted hooks are loaded.
         argv = [
-            "codex", "-a", "never", "exec", "--sandbox", "read-only",
+            "codex", "-a", "never", "exec", "--sandbox", "workspace-write" if writable else "read-only",
             "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules",
             "--dangerously-bypass-hook-trust", *options, "-m", "gpt-5.1-codex-mini", prompt,
         ]
@@ -345,6 +349,7 @@ def run_host(host, command, prompt, endpoint, work, environment, fixture, phase=
     if result.returncode or fixture["finished"] not in result.stdout:
         raise RuntimeError(f"{host} failed after {time.monotonic() - started:.1f}s: "
                            f"{result.returncode}: {result.stdout[-500:]} {result.stderr[-1000:]}")
+    return result.stdout
 
 
 def text_blocks(value):

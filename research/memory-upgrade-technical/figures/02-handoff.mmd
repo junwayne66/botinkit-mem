@@ -1,0 +1,70 @@
+---
+config:
+  theme: base
+  htmlLabels: false
+  fontFamily: '"PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif'
+  themeVariables:
+    fontFamily: '"PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif'
+    fontSize: 18px
+    primaryColor: '#e6f4f1'
+    primaryTextColor: '#163942'
+    primaryBorderColor: '#377774'
+    lineColor: '#45616a'
+    secondaryColor: '#f4f8fa'
+    tertiaryColor: '#f6f9f9'
+    clusterBkg: '#f5f9f9'
+    clusterBorder: '#a3b8b8'
+    edgeLabelBackground: '#ffffff'
+    actorBkg: '#e3f3ef'
+    actorBorder: '#4b7774'
+    actorTextColor: '#15363d'
+    actorLineColor: '#799397'
+    signalColor: '#3c5864'
+    signalTextColor: '#173842'
+    loopTextColor: '#254955'
+    labelBoxBkgColor: '#edf5f5'
+    labelBoxBorderColor: '#739295'
+    labelTextColor: '#254955'
+    noteBkgColor: '#ffffff'
+    noteBorderColor: '#adbdc3'
+    noteTextColor: '#254955'
+  flowchart:
+    htmlLabels: false
+    curve: linear
+    nodeSpacing: 28
+    rankSpacing: 42
+    padding: 10
+    diagramPadding: 14
+    useMaxWidth: true
+  sequence:
+    showSequenceNumbers: false
+    mirrorActors: false
+    actorMargin: 64
+    width: 145
+    height: 50
+    messageMargin: 30
+    boxMargin: 12
+    diagramMarginX: 30
+    diagramMarginY: 15
+---
+sequenceDiagram
+  accTitle: 接手与回执时序
+  accDescr: 基线可证返增量，否则返有效约定、仍存阻塞与最后验证，真实调用后loaded，引用可定位后used
+  participant H as Harness
+  participant B as 本机 bmem
+  participant M as 模型
+  H->>B: 请求接手任务，提交当前上下文凭据
+  B->>B: 核对会话、上下文代数、路由、任务与授权
+  alt 凭据匹配，旧基线仍在真实上下文
+    B-->>H: 返回授权范围内的变化
+  else 新会话、上下文重建或凭据缺失
+    B-->>H: 返回有效约定、仍存阻塞、最后验证及变化
+  end
+  Note over H,B: 按实际提供的条目记 provided
+  H->>M: 将证据包放进实际模型请求
+  H->>B: 确认实际装入 · loaded
+  M-->>H: 返回结果或工具动作
+  opt 采用证据可定位
+    H->>B: 上报采用依据 · used
+  end
+  Note over H,B: 任务成败另凭独立验证判定

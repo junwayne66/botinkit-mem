@@ -16,8 +16,11 @@ async function verifySearch(page, cli) {
   assert.equal(ingested.status(), 201, await ingested.text());
   assert.equal(cli('search', 'lunarchecksum').results.length, 1);
   const expandCalls = [];
+  const searchCalls = [];
   const watch = req => {
-    if (new URL(req.url()).pathname === '/v2/evidence/expand') expandCalls.push(req.postDataJSON());
+    const endpoint = new URL(req.url()).pathname;
+    if (endpoint === '/v2/evidence/expand') expandCalls.push(req.postDataJSON());
+    if (endpoint === '/v2/search') searchCalls.push(req.postDataJSON());
   };
   page.on('request', watch);
   try {
@@ -42,6 +45,28 @@ async function verifySearch(page, cli) {
     await page.keyboard.press('Enter');
     await dialog.getByText(raw, { exact: true }).waitFor();
     assert.equal(expandCalls.length, 1);
+
+    await dialog.locator('summary').getByText('排除条件').click();
+    const previousSearches = searchCalls.length;
+    // Trigger both changes in one browser task, independent of Playwright round-trip timing.
+    const remainingHits = await dialog.getByRole('checkbox', { name: /^(本人对话|飞书群聊)$/ }).evaluateAll(boxes => {
+      for (const box of boxes) box.click();
+      return document.querySelectorAll('#ms-results .ms-hit').length;
+    });
+    assert.equal(remainingHits, 0, 'changing exclusions must clear previous results immediately');
+    await dialog.getByRole('status').getByText(/没有匹配结果.*排除条件/).waitFor();
+    assert.deepEqual(searchCalls.slice(previousSearches), [
+      { query: 'lunarchecksum', mode: 'lexical', exclude: ['user_message', 'group'] },
+    ]);
+    await dialog.getByRole('button', { name: '语义', exact: true }).click();
+    await dialog.getByRole('status').getByText(/已使用关键词.*排除条件/).waitFor();
+    assert.equal(await dialog.locator('.ms-hit').count(), 0);
+    await dialog.getByRole('button', { name: '清除排除条件' }).click();
+    await read.waitFor();
+    assert.equal(await dialog.getByRole('checkbox', { checked: true }).count(), 0);
+    assert.equal(await query.inputValue(), 'lunarchecksum');
+    await dialog.getByRole('button', { name: '关键词', exact: true }).click();
+    await dialog.locator('summary').getByText('排除条件').click();
 
     // Hold a real response while the search box is cleared, then deliver it after the newer input.
     let release;
@@ -74,7 +99,7 @@ async function verifySearch(page, cli) {
     assert.equal(await query.inputValue(), '');
     assert.equal(await dialog.locator('.ms-hit').count(), 0);
     await dialog.getByRole('button', { name: '关闭搜索' }).click();
-    console.log('Search returned native facts, fell back to keywords and fetched original evidence only on demand.');
+    console.log('Search returned native facts, batched exclusions, fell back to keywords and fetched original evidence only on demand.');
   } finally {
     page.off('request', watch);
   }

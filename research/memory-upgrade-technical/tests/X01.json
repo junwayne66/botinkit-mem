@@ -1,0 +1,299 @@
+[
+  {
+    "id": "X01-01",
+    "title": "直接复用 Hindsight 与独立公式在合成排名上逐条对照",
+    "covers": ["library_reuse","formula_reproduction","stable_tie"],
+    "fixture": {
+      "upstream_commit": "0aca9f80ec87237756c445ac27bf9e5affdc67fe",
+      "metric": "RRF k=60",
+      "runs": {"overlap":[["S","X"],["X","L"]],"empty":[[],["L","M"]],"tie":[["Z"],["A"]],"swapped":[["A"],["Z"]]},
+      "reference": "../replay-example.md"
+    },
+    "steps": [
+      {"id":"replay","action":"执行固定提交的融合函数与本地独立公式，对每组按名次连接句柄；同时记录原函数给 X 的分数（9 位小数）","args":{}}
+    ],
+    "checks": [
+      {"at":"replay","path":"/upstream","op":"eq","value":{"overlap":"XSL","empty":"LM","tie":"ZA","swapped":"AZ"}},
+      {"at":"replay","path":"/local","op":"eq","value":{"overlap":"XSL","empty":"LM","tie":"AZ","swapped":"AZ"}},
+      {"at":"replay","path":"/overlap_score_x","op":"eq","value":"0.032522475"}
+    ]
+  },
+  {
+    "id": "X01-02",
+    "title": "新版采集器从共同边界续读旧游标",
+    "covers": ["capture_cursor","adapter_replacement"],
+    "fixture": {
+      "old_checkpoint": {"native":"page-20","opaque":"v1|20"},
+      "new_adapter": "v2",
+      "pages": [{"after":"page-19","end":"page-20","items":[{"id":"obj20","version":1,"text":"旧页末尾"}]},{"after":"page-20","end":"page-21","items":[{"id":"obj21","version":1,"text":"下一页首条"}]}],
+      "initial_records": [["obj20",1]]
+    },
+    "steps": [
+      {"id":"switch","action":"让 v2 拒绝旧格式游标，按共同原生边界对账后重放两页；读采集回执和新游标","args":{}}
+    ],
+    "checks": [
+      {"at":"switch","path":"/active_version_count","op":"eq","value":2},
+      {"at":"switch","path":"/extraction_jobs_for_obj20","op":"eq","value":1},
+      {"at":"switch","path":"/native_checkpoint","op":"eq","value":"page-21"},
+      {"at":"switch","path":"/native_ids","op":"contains","value":"obj21"}
+    ]
+  },
+  {
+    "id": "X01-03",
+    "title": "换分段器后中文及标点仍能回指同一原句",
+    "covers": ["chunk_mapping","chinese_offset"],
+    "fixture": {
+      "root": "R-13",
+      "version": "V-3",
+      "original": "解析✓。写入：超时！重试待定。",
+      "query": "写入为什么失败？",
+      "splitters": ["句号分段","逐子句分段"],
+      "granted": ["R-13"]
+    },
+    "steps": [
+      {"id":"slice","action":"分别用两个切分器索引同一版本，在命中“超时”后按每个返回片段的位置从原文切回原句","args":{}}
+    ],
+    "checks": [
+      {"at":"slice","path":"/all_offsets_match_original","op":"eq","value":true},
+      {"at":"slice","path":"/unique_source_versions","op":"eq","value":["V-3"]},
+      {"at":"slice","path":"/quotes_joined","op":"contains","value":"超时"},
+      {"at":"slice","path":"/quotes_joined","op":"excludes","value":"写入成功"}
+    ]
+  },
+  {
+    "id": "X01-04",
+    "title": "有相同文字的两次原生运行不能由相似度算法合根",
+    "covers": ["dedup_independent_runs"],
+    "fixture": {
+      "events": [{"id":"r7","role":"tool","run":"7","text":"校验通过"},{"id":"r8","role":"tool","run":"8","text":"校验通过"},{"id":"f7","role":"assistant","quotes":"r7","text":"校验通过"}],
+      "candidate_strategy": "内容相同即建议归并"
+    },
+    "steps": [
+      {"id":"apply","action":"让候选去重器处理三个输入，按上游原生运行与转述链核对正式独立支持数","args":{}}
+    ],
+    "checks": [
+      {"at":"apply","path":"/independent_roots","op":"eq","value":2},
+      {"at":"apply","path":"/verified_roots","op":"contains","value":"r8"},
+      {"at":"apply","path":"/verified_roots","op":"excludes","value":"f7"}
+    ]
+  },
+  {
+    "id": "X01-05",
+    "title": "提炼服务离线和无原文提议均不会污染正式声明",
+    "covers": ["sidecar_timeout","unsupported_proposal"],
+    "fixture": {
+      "authorized": {"id":"s","span":"s#1","text":"这一次演示用 Go。"},
+      "forbidden": {"id":"secret","text":"不向此服务发送 鹭灯-8。"},
+      "route": "local-extractor",
+      "scripted_responses": ["timeout",{"proposed_kind":"global","text":"所有项目以后用 Go","support":["unknown-span"]}]
+    },
+    "steps": [
+      {"id":"attempt","action":"记录第一次提炼时服务实际收到的文本与超时后的作业状态","args":{}},
+      {"id":"retry","action":"触发同一作业重试，提交无出处提议，查询正式声明","args":{}}
+    ],
+    "checks": [
+      {"at":"attempt","path":"/outbound_text","op":"excludes","value":"鹭灯-8"},
+      {"at":"attempt","path":"/retryable","op":"eq","value":true},
+      {"at":"retry","path":"/global_values","op":"excludes","value":"Go"},
+      {"at":"retry","path":"/recorded_source_versions","op":"eq","value":1}
+    ]
+  },
+  {
+    "id": "X01-06",
+    "title": "更新邻居元数据时以稳定版本标识定位",
+    "covers": ["neighbor_identity","stable_version"],
+    "fixture": {
+      "insertion_order": ["A","B"],
+      "notes": {"A":{"revision":"a1","context":"baseline-A"},"B":{"revision":"b1","context":"baseline-B"}},
+      "retrieved": [{"rank":1,"id":"B","revision":"b1"}],
+      "model_reply": {"action":"update_neighbor","context":"write-timeout"}
+    },
+    "steps": [
+      {"id":"propose","action":"在隔离副本运行候选适配器并捕获它提交的修订提案","args":{}},
+      {"id":"apply","action":"提交经核验的候选，再按稳定 ID 检查两份笔记与旧版本","args":{}}
+    ],
+    "checks": [
+      {"at":"propose","path":"/target_id","op":"eq","value":"B"},
+      {"at":"propose","path":"/expected_revision","op":"eq","value":"b1"},
+      {"at":"apply","path":"/A/context","op":"eq","value":"baseline-A"},
+      {"at":"apply","path":"/B/context","op":"eq","value":"write-timeout"},
+      {"at":"apply","path":"/preserved_revision_ids","op":"contains","value":"b1"}
+    ]
+  },
+  {
+    "id": "X01-07",
+    "title": "迟到的自进化提案不能覆盖新纠正",
+    "covers": ["stale_proposal","content_evolution"],
+    "fixture": {
+      "versions": [{"id":"b1","text":"v1 先重试"},{"id":"b2","corrects":"b1","text":"v2 禁止重试，先检查事务"}],
+      "late_patch": {"target":"B","expected_revision":"b1","context":"所有版本都先重试"}
+    },
+    "steps": [
+      {"id":"race","action":"先提交 b2，再完成针对 b1 的旧 worker；检查当前方法和迟到提案","args":{}}
+    ],
+    "checks": [
+      {"at":"race","path":"/current_revision","op":"eq","value":"b2"},
+      {"at":"race","path":"/old_patch_applied","op":"eq","value":false},
+      {"at":"race","path":"/current_text","op":"excludes","value":"所有版本都先重试"}
+    ]
+  },
+  {
+    "id": "X01-08",
+    "title": "时态图仅在每一跳仍获准时提供路径",
+    "covers": ["graph_rebuild","authorized_hops"],
+    "fixture": {
+      "edges": [{"id":"g1","from":"工件","to":"任务","root":"R1"},{"id":"g2","from":"任务","to":"原因","root":"R2"},{"id":"g3","from":"工件","to":"替代原因","root":"R3"}],
+      "initial_grants": ["R1","R2","R3"],
+      "handoff_reader": "claude-code"
+    },
+    "steps": [
+      {"id":"build","action":"建立派生图并检索工件到两个原因的获准路径","args":{}},
+      {"id":"revoke","action":"撤 R2 后先保持旧索引，再用同一读者检索、补读并重建投影","args":{}}
+    ],
+    "checks": [
+      {"at":"build","path":"/reachable","op":"contains","value":"原因"},
+      {"at":"revoke","path":"/reachable_before_rebuild","op":"excludes","value":"原因"},
+      {"at":"revoke","path":"/reachable_after_rebuild","op":"contains","value":"替代原因"},
+      {"at":"revoke","path":"/expanded_refs","op":"excludes","value":"g2"}
+    ]
+  },
+  {
+    "id": "X01-09",
+    "title": "更换冷热算法保住低频有效约定和历史定向查询",
+    "covers": ["eviction_vs_forget","cold_tier"],
+    "fixture": {
+      "clock": "2026-11-25",
+      "records": [{"id":"pref","kind":"active_declaration","text":"报告开头给结论","last_access":"2025-01-01"},{"id":"case","kind":"episode","text":"旧错误 E170 曾由重试解决","last_access":"2025-01-01"}],
+      "retention_proposal": {"cool":["pref","case"],"hard_delete":["case"]}
+    },
+    "steps": [
+      {"id":"cool","action":"应用冷热排序建议，未进行所有者遗忘确认；分别读取当前约定、默认任务包及定向查询 E170","args":{}}
+    ],
+    "checks": [
+      {"at":"cool","path":"/current_declarations","op":"contains","value":"pref"},
+      {"at":"cool","path":"/default_episode_refs","op":"excludes","value":"case"},
+      {"at":"cool","path":"/explicit_search_refs","op":"contains","value":"case"},
+      {"at":"cool","path":"/physical_deletions","op":"eq","value":0}
+    ]
+  },
+  {
+    "id": "X01-10",
+    "title": "权威存储迁移在新库写入后必须追平再回切",
+    "covers": ["core_storage_migration","new_write_rollback"],
+    "fixture": {
+      "source": {"checkpoint":"p2","events":["e1","e2"],"grants":["r0"],"intents":["i2"],"tombstones":[]},
+      "migration_mode": "single_writer",
+      "post_cutover": [{"op":"correct","id":"e3","intent":"i3","text":"有效值改为 Rust"},{"op":"forget","id":"e1","intent":"f1"}]
+    },
+    "steps": [
+      {"id":"move","action":"在隔离的两个后端演练停写、排空、迁移、核对旧游标与幂等键后切换写主，向目标提交两条新写","args":{}},
+      {"id":"rollback","action":"在源库尚未追平时尝试回切；再回放新写并按相同幂等键重试，最后查读","args":{}}
+    ],
+    "checks": [
+      {"at":"move","path":"/write_primaries","op":"eq","value":1},
+      {"at":"move","path":"/checkpoint","op":"eq","value":"p2"},
+      {"at":"rollback","path":"/stale_cutback_allowed","op":"eq","value":false},
+      {"at":"rollback","path":"/visible_value_after_sync","op":"eq","value":"Rust"},
+      {"at":"rollback","path":"/visible_events","op":"excludes","value":"e1"},
+      {"at":"rollback","path":"/i3_effect_count","op":"eq","value":1}
+    ]
+  },
+  {
+    "id": "X01-11",
+    "title": "相同维度的新嵌入空间独立重建并核撤回水位",
+    "covers": ["projection_version","embedding_rollback"],
+    "fixture": {
+      "versions": {"old":{"model":"eA","dimension":3},"candidate":{"model":"eB","dimension":3}},
+      "source_sequence": [{"seq":10,"id":"s0","text":"可读对照"},{"seq":11,"id":"s1","text":"即将撤回"},{"seq":12,"withdraw":"s1"}],
+      "candidate_applied_through": 11,
+      "reader": "codex"
+    },
+    "steps": [
+      {"id":"probe","action":"在候选仅追到 11 时尝试启用，对 s1 和 s0 做受限读，记录实际命名空间","args":{}},
+      {"id":"back","action":"停用候选并让旧投影不可用，执行同一条精确词法查询","args":{}}
+    ],
+    "checks": [
+      {"at":"probe","path":"/candidate_enabled","op":"eq","value":false},
+      {"at":"probe","path":"/mixed_embedding_spaces","op":"eq","value":false},
+      {"at":"probe","path":"/visible_ids","op":"excludes","value":"s1"},
+      {"at":"back","path":"/channel","op":"eq","value":"lexical"},
+      {"at":"back","path":"/visible_ids","op":"contains","value":"s0"}
+    ]
+  },
+  {
+    "id": "X01-12",
+    "title": "整系统黑盒在隔离副本比较，不可观察项记未知",
+    "covers": ["whole_system_benchmark","black_box"],
+    "fixture": {
+      "arms": ["现行系统","完整上游","仅替换归并器"],
+      "ordered_events": [{"id":"e1","time":1,"text":"默认 Python"},{"id":"e2","time":3,"text":"更正 Rust"}],
+      "queries": [{"time":2,"q":"当前语言？"},{"time":4,"q":"当前语言？"}],
+      "blackbox_contract": {"output":["answer_text"],"no_source_refs":true}
+    },
+    "steps": [
+      {"id":"compare","action":"各组从相同空快照按时间交错注入事件与查询，采集输入水位和结果观察能力","args":{}}
+    ],
+    "checks": [
+      {"at":"compare","path":"/evaluated_arms","op":"eq","value":3},
+      {"at":"compare","path":"/first_query_visible_refs","op":"eq","value":["e1"]},
+      {"at":"compare","path":"/blackbox_lineage_verdict","op":"eq","value":"unknown"},
+      {"at":"compare","path":"/production_writes","op":"eq","value":0}
+    ]
+  },
+  {
+    "id": "X01-13",
+    "title": "新排序规则只用获准样本做影子评测",
+    "covers": ["strategy_evolution","shadow_isolation"],
+    "fixture": {
+      "observation_stream": [{"id":"devA","role":"verifier","verdict":"failed","allow":["evaluation"]},{"id":"privateB","role":"owner","verdict":"failed","allow":["delivery"]}],
+      "active": "rule1",
+      "candidate": "rule2",
+      "proposal": "把错项目的同义回忆降权",
+      "evaluation_mode": "离线比较"
+    },
+    "steps": [
+      {"id":"shadow","action":"将 fixture.proposal 中预先给定的规则登记为候选，不训练模型。分别请求两条记录用于离线评测，捕获实际送入的输入、服务指针和试验记录。","args":{}}
+    ],
+    "checks": [
+      {"at":"shadow","path":"/evaluated_refs","op":"eq","value":["devA"]},
+      {"at":"shadow","path":"/active_policy","op":"eq","value":"rule1"},
+      {"at":"shadow","path":"/candidate_versions","op":"contains","value":"rule2"},
+      {"at":"shadow","path":"/training_examples_exported","op":"eq","value":0}
+    ]
+  },
+  {
+    "id": "X01-14",
+    "title": "只有论文描述时区分本地复现与上游一致性",
+    "covers": ["paper_only","reproducibility"],
+    "fixture": {
+      "paper_fixture": {"version":"synthetic-v1","rule":"在相同根中按首次出现保留一个候选，按出现顺序返回","released_code":false},
+      "sequence": ["R3","R2","R3","R1"],
+      "rerun_count": 2
+    },
+    "steps": [
+      {"id":"run","action":"按描述独立实现，在两个干净状态上运行相同序列，检查复现记录和任务结果","args":{}}
+    ],
+    "checks": [
+      {"at":"run","path":"/first","op":"eq","value":["R3","R2","R1"]},
+      {"at":"run","path":"/second","op":"eq","value":["R3","R2","R1"]},
+      {"at":"run","path":"/compared_with_author_code","op":"eq","value":false}
+    ]
+  },
+  {
+    "id": "X01-15",
+    "title": "兼容读端加载旧修订和旧导入账目",
+    "covers": ["legacy_schema","migration_unknown"],
+    "fixture": {
+      "legacy": {"statement":{"dimension":"report.language","value":"中文","effective":"2026-10-01","terms":null},"receipt":{"kind":"loaded","complete":true,"revision_ids":["r0"]},"history_job":{"accepted":2,"page_mapping":null}}
+    },
+    "steps": [
+      {"id":"upgrade","action":"在旧格式副本上线兼容读端，查询 11 月当前约定、旧证据装入状态和导入去向，再尝试由不识别新语义的服务写入已升级库","args":{}}
+    ],
+    "checks": [
+      {"at":"upgrade","path":"/current_report_language","op":"eq","value":"中文"},
+      {"at":"upgrade","path":"/evidence_loaded","op":"eq","value":"unknown"},
+      {"at":"upgrade","path":"/history_detail","op":"eq","value":"summary_only"},
+      {"at":"upgrade","path":"/legacy_write_allowed","op":"eq","value":false}
+    ]
+  }
+]

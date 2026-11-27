@@ -1,0 +1,320 @@
+[
+  {
+    "id": "F04-01",
+    "title": "带连字符的完整错误码定位原句和版本",
+    "covers": ["exact_identifier", "punctuated_code", "source_version"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "w1", "text": "先重试 ERR-WRITE-71。", "task": "tQ", "project": "Q", "source": "lab", "role": "user", "root": "w", "event_id": "event-w1", "version": "1"}, {"ref": "w2", "text": "诊断回执：ERR-WRITE-17 再现。", "task": "tQ", "project": "Q", "source": "lab", "role": "user", "root": "w", "event_id": "event-w2", "version": "2"}, {"ref": "r1", "text": "本次 ERR-READ-17。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}]},
+    "steps": [
+      {"id": "find", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "ERR-WRITE-17", "mode": "hybrid", "candidate_limit": 1}}
+    ],
+    "checks": [
+      {"at": "find", "path": "/refs", "op": "eq", "value": ["w2"]},
+      {"at": "find", "path": "/hits/0/quote", "op": "eq", "value": "诊断回执：ERR-WRITE-17 再现。"},
+      {"at": "find", "path": "/hits/0/version", "op": "eq", "value": "2"},
+      {"at": "find", "path": "/hits/0/channels", "op": "contains", "value": "exact"}
+    ]
+  },
+  {
+    "id": "F04-02",
+    "title": "语义改写在真实搜索入口找回无共同关键词的原句",
+    "covers": ["paraphrase_only", "real_vector_search"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "save", "text": "持久化等候逾期。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}, {"ref": "cache", "text": "缓存命中率上升。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}], "vector_enabled": true, "embedding_stub": {"model": "fixture-2d", "document_vectors": {"save": [1, 0], "cache": [0, 1]}, "query_vectors": {"落盘耗时过长": [1, 0]}}},
+    "steps": [
+      {"id": "lex", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "落盘耗时过长", "mode": "lexical", "candidate_limit": 1}},
+      {"id": "mix", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "落盘耗时过长", "mode": "hybrid", "candidate_limit": 1}}
+    ],
+    "checks": [
+      {"at": "lex", "path": "/refs", "op": "excludes", "value": "save"},
+      {"at": "mix", "path": "/refs", "op": "eq", "value": ["save"]},
+      {"at": "mix", "path": "/hits/0/channels", "op": "contains", "value": "semantic"},
+      {"at": "mix", "path": "/hits/0/quote", "op": "eq", "value": "持久化等候逾期。"}
+    ]
+  },
+  {
+    "id": "F04-03",
+    "title": "精确码和语义独有证据分别获得候选名额",
+    "covers": ["independent_channel_admission", "exact_budget_reservation"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "ID", "text": "E417 暂停。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}, {"ref": "S", "text": "落盘逾时。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}, {"ref": "N", "text": "刷新耗时。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}], "channel_fixture": {"exact": ["ID"], "lexical": [], "semantic": ["S", "N"]}},
+    "steps": [
+      {"id": "exact", "action": "以合成的有序句柄驱动实际候选融合函数，读取有序引用和通道归因", "args": {"enabled_channels": ["exact"], "candidate_limit": 2}},
+      {"id": "sem", "action": "以合成的有序句柄驱动实际候选融合函数，读取有序引用和通道归因", "args": {"enabled_channels": ["semantic"], "candidate_limit": 2}},
+      {"id": "mix", "action": "以合成的有序句柄驱动实际候选融合函数，读取有序引用和通道归因", "args": {"enabled_channels": ["exact", "lexical", "semantic"], "candidate_limit": 2, "exact_reserved": 1}}
+    ],
+    "checks": [
+      {"at": "exact", "path": "/refs", "op": "eq", "value": ["ID"]},
+      {"at": "sem", "path": "/refs", "op": "eq", "value": ["S", "N"]},
+      {"at": "mix", "path": "/refs", "op": "contains", "value": "ID"},
+      {"at": "mix", "path": "/refs", "op": "contains", "value": "S"},
+      {"at": "mix", "path": "/refs", "op": "excludes", "value": "N"}
+    ]
+  },
+  {
+    "id": "F04-04",
+    "title": "同片段两路命中只占一格，保留每路名次",
+    "covers": ["cross_channel_dedup", "rrf_per_arm_rank"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "X", "text": "写入阻塞。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}, {"ref": "S", "text": "队列堆积。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}, {"ref": "L", "text": "进程退出。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}], "channel_fixture": {"semantic": ["S", "X"], "lexical": ["X", "L"]}},
+    "steps": [
+      {"id": "mix", "action": "以合成的有序句柄驱动实际候选融合函数，读取有序引用和通道归因", "args": {"enabled_channels": ["semantic", "lexical"], "k": 60, "candidate_limit": 3}}
+    ],
+    "checks": [
+      {"at": "mix", "path": "/refs", "op": "eq", "value": ["X", "S", "L"]},
+      {"at": "mix", "path": "/ranks/X/semantic", "op": "eq", "value": 2},
+      {"at": "mix", "path": "/ranks/X/lexical", "op": "eq", "value": 1}
+    ]
+  },
+  {
+    "id": "F04-05",
+    "title": "交换通道遍历顺序后，只有一席的同分结果保持稳定",
+    "covers": ["stable_tie_break", "candidate_limit"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "A", "text": "第一个证据。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}, {"ref": "Z", "text": "第二个证据。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}], "channel_fixture": {"semantic": ["Z"], "lexical": ["A"]}},
+    "steps": [
+      {"id": "sfirst", "action": "以合成的有序句柄驱动实际候选融合函数，读取有序引用和通道归因", "args": {"traverse": ["semantic", "lexical"], "k": 60, "candidate_limit": 1}},
+      {"id": "lfirst", "action": "以合成的有序句柄驱动实际候选融合函数，读取有序引用和通道归因", "args": {"traverse": ["lexical", "semantic"], "k": 60, "candidate_limit": 1}}
+    ],
+    "checks": [
+      {"at": "sfirst", "path": "/refs", "op": "eq", "value": ["A"]},
+      {"at": "lfirst", "path": "/refs", "op": "eq", "value": ["A"]},
+      {"at": "sfirst", "path": "/ranks/A/lexical", "op": "eq", "value": 1}
+    ]
+  },
+  {
+    "id": "F04-06",
+    "title": "诊断补读仅取同次工具调用的回执",
+    "covers": ["neighbor_expansion", "same_tool_call", "adjacent_different_run"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "hit", "text": "E417，启动重放。", "task": "tQ", "project": "Q", "source": "lab", "role": "tool_call", "run_id": "r1", "tool_call_id": "c1", "ts": "2026-11-01T09:00:00Z"}, {"ref": "other", "text": "修复完成 exit=0。", "task": "tQ", "project": "Q", "source": "lab", "role": "tool_result", "run_id": "r2", "tool_call_id": "c2", "ts": "2026-11-01T09:00:01Z"}, {"ref": "own", "text": "持久化等待超时 exit=24。", "task": "tQ", "project": "Q", "source": "lab", "role": "tool_result", "run_id": "r1", "tool_call_id": "c1", "ts": "2026-11-01T09:00:02Z"}]},
+    "steps": [
+      {"id": "window", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "E417", "mode": "hybrid", "expand_same_run": true, "evidence_slots": 2}},
+      {"id": "input", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "继续处理 E417", "evidence_slots": 2}}
+    ],
+    "checks": [
+      {"at": "window", "path": "/expanded_refs", "op": "eq", "value": ["own"]},
+      {"at": "window", "path": "/expanded_refs", "op": "excludes", "value": "other"},
+      {"at": "input", "path": "/model_input_evidence_text", "op": "contains", "value": "持久化等待超时 exit=24"},
+      {"at": "input", "path": "/model_input_evidence_text", "op": "excludes", "value": "修复完成 exit=0"}
+    ]
+  },
+  {
+    "id": "F04-07",
+    "title": "附近只有计划时保留计划并标记结果未知",
+    "covers": ["plan_without_result", "evidence_gap"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "code", "text": "E639，又遇到同一编号。", "task": "tQ", "project": "Q", "source": "lab", "role": "user", "run_id": "r3"}, {"ref": "plan", "text": "准备重跑一次。", "task": "tQ", "project": "Q", "source": "lab", "role": "assistant", "run_id": "r3"}]},
+    "steps": [
+      {"id": "input", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "继续定位 E639，并说上次有没有跑通", "evidence_slots": 3}}
+    ],
+    "checks": [
+      {"at": "input", "path": "/model_input_evidence_text", "op": "contains", "value": "准备重跑一次"},
+      {"at": "input", "path": "/result_status", "op": "eq", "value": "unknown"},
+      {"at": "input", "path": "/verified_result_refs", "op": "eq", "value": []}
+    ]
+  },
+  {
+    "id": "F04-08",
+    "title": "无依据的查询可以交付空证据包",
+    "covers": ["no_answer", "abstention"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "palette", "text": "界面颜色改为蓝色。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}]},
+    "steps": [
+      {"id": "find", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "E999 冷却泵告警的结果", "mode": "lexical"}},
+      {"id": "input", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "E999 冷却泵告警是否复现？", "evidence_slots": 2}}
+    ],
+    "checks": [
+      {"at": "find", "path": "/refs", "op": "eq", "value": []},
+      {"at": "input", "path": "/model_input_evidence_refs", "op": "eq", "value": []},
+      {"at": "input", "path": "/verified_result_refs", "op": "eq", "value": []}
+    ]
+  },
+  {
+    "id": "F04-09",
+    "title": "向量关闭和服务超时都继续返回词法精确命中",
+    "covers": ["vector_opt_out", "timeout_fallback"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "msg", "text": "E303：设备暂不可用。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}], "embedding_stub": {"model": "fixture-2d", "document_vectors": {"msg": [1, 0]}, "query_behavior": "timeout"}},
+    "steps": [
+      {"id": "off", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "E303", "mode": "hybrid", "vector_enabled": false}},
+      {"id": "toggle", "action": "开启语义检索，用文档向量建成对应模型的索引，然后令同一模型的查询请求返回超时", "args": {"enabled": true, "query_timeout_ms": 15}},
+      {"id": "late", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "E303", "mode": "hybrid", "vector_enabled": true}}
+    ],
+    "checks": [
+      {"at": "off", "path": "/refs", "op": "eq", "value": ["msg"]},
+      {"at": "off", "path": "/query_embedding_calls", "op": "eq", "value": 0},
+      {"at": "late", "path": "/refs", "op": "eq", "value": ["msg"]},
+      {"at": "late", "path": "/vector_status", "op": "eq", "value": "timeout"}
+    ]
+  },
+  {
+    "id": "F04-10",
+    "title": "所有者仍能找同码的两个项目，助手实收只含本任务获准记录",
+    "covers": ["owner_vs_agent", "same_code_cross_project", "model_input"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "allowed", "text": "E417 青禾：写入暂停。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}, {"ref": "secret", "text": "E417 海岚：机柜青铜钥匙。", "task": "tH", "project": "H", "source": "private-lab", "role": "user"}], "initial_source_grants_to_hA": ["lab", "private-lab"], "destination": "hA"},
+    "steps": [
+      {"id": "narrow", "action": "所有者预览并撤掉 hA 对 private-lab 的 task_delivery 权限", "args": {"client": "hA", "source": "private-lab"}},
+      {"id": "owner", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "E417", "mode": "hybrid"}},
+      {"id": "input", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "接着青禾的 E417 继续", "evidence_slots": 3}}
+    ],
+    "checks": [
+      {"at": "owner", "path": "/refs", "op": "contains", "value": "allowed"},
+      {"at": "owner", "path": "/refs", "op": "contains", "value": "secret"},
+      {"at": "input", "path": "/model_input_evidence_refs", "op": "contains", "value": "allowed"},
+      {"at": "input", "path": "/model_input_evidence_text", "op": "excludes", "value": "机柜青铜钥匙"},
+      {"at": "input", "path": "/model_input_evidence_refs", "op": "excludes", "value": "secret"}
+    ]
+  },
+  {
+    "id": "F04-11",
+    "title": "加入更高匹配的禁读记录不改变助手所见顺序和解释",
+    "covers": ["permission_noninterference", "prefilter_before_limit", "no_hidden_metadata"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "A", "text": "E719，记录甲。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}, {"ref": "B", "text": "E719，记录乙。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}], "later_hidden": [{"ref": "H1", "text": "E719 E719 E719，保密诊断紫金。", "task": "tQ", "project": "Q", "source": "restricted", "role": "user"}, {"ref": "H2", "text": "E719 E719，保密副标题。", "task": "tQ", "project": "Q", "source": "restricted", "role": "user"}], "grants": {"hA": {"lab": "allow", "restricted": "deny"}}},
+    "steps": [
+      {"id": "before", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "E719", "evidence_slots": 1}},
+      {"id": "hidden", "action": "通过所有者采集入口插入 later_hidden 并等待检索投影建好", "args": {"fixture_field": "later_hidden"}},
+      {"id": "after", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "E719", "evidence_slots": 1}},
+      {"id": "compare", "action": "对两次实际输入的有序引用、命中原因以及宿主可见候选数量逐项比较，忽略投递时间与标识", "args": {"first": "before", "second": "after"}}
+    ],
+    "checks": [
+      {"at": "compare", "path": "/same_ordered_refs", "op": "eq", "value": true},
+      {"at": "compare", "path": "/same_reason_list", "op": "eq", "value": true},
+      {"at": "compare", "path": "/same_recipient_visible_counts", "op": "eq", "value": true},
+      {"at": "after", "path": "/model_input_evidence_text", "op": "excludes", "value": "保密"},
+      {"at": "after", "path": "/recipient_metadata/hidden_count", "op": "absent"}
+    ]
+  },
+  {
+    "id": "F04-12",
+    "title": "命中获准但邻文被拒时，按授权跳过并保留可读结果",
+    "covers": ["neighbor_acl_recheck", "same_run_permitted_counterpart"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "code", "text": "E566 捕捉到磁盘故障。", "task": "tQ", "project": "Q", "source": "lab", "role": "tool_call", "run_id": "r", "tool_call_id": "c"}, {"ref": "restricted", "text": "机柜封条紫三。", "task": "tQ", "project": "Q", "source": "private", "role": "tool_result", "run_id": "r", "tool_call_id": "c"}, {"ref": "public", "text": "可分享的返回值 exit=15。", "task": "tQ", "project": "Q", "source": "lab", "role": "tool_result", "run_id": "r", "tool_call_id": "c"}], "grants": {"hA": {"lab": "allow", "private": "deny"}}},
+    "steps": [
+      {"id": "input", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "E566 的工具返回是什么？", "evidence_slots": 2}}
+    ],
+    "checks": [
+      {"at": "input", "path": "/model_input_evidence_refs", "op": "contains", "value": "code"},
+      {"at": "input", "path": "/model_input_evidence_text", "op": "contains", "value": "可分享的返回值 exit=15"},
+      {"at": "input", "path": "/model_input_evidence_text", "op": "excludes", "value": "机柜封条紫三"},
+      {"at": "input", "path": "/model_input_evidence_refs", "op": "excludes", "value": "restricted"}
+    ]
+  },
+  {
+    "id": "F04-13",
+    "title": "补读只能用剩余预算，预算增加后真实输入含结果",
+    "covers": ["remaining_read_budget", "fixed_candidate_expansion"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "code", "text": "E512 发起一致性检查。", "task": "tQ", "project": "Q", "source": "lab", "role": "tool_call", "run_id": "r5", "tool_call_id": "c5"}, {"ref": "rc", "text": "校验不通过 exit=19。", "task": "tQ", "project": "Q", "source": "lab", "role": "tool_result", "run_id": "r5", "tool_call_id": "c5"}]},
+    "steps": [
+      {"id": "one", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "E512 上次检查有什么结果？", "candidate_limit": 1, "evidence_slots": 1}},
+      {"id": "two", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "E512 上次检查有什么结果？", "candidate_limit": 1, "evidence_slots": 2}}
+    ],
+    "checks": [
+      {"at": "one", "path": "/ranked_seed_refs", "op": "eq", "value": ["code"]},
+      {"at": "two", "path": "/ranked_seed_refs", "op": "eq", "value": ["code"]},
+      {"at": "one", "path": "/model_input_evidence_refs", "op": "eq", "value": ["code"]},
+      {"at": "one", "path": "/evidence_gap", "op": "eq", "value": true},
+      {"at": "two", "path": "/model_input_evidence_refs", "op": "contains", "value": "rc"},
+      {"at": "two", "path": "/model_input_evidence_text", "op": "contains", "value": "校验不通过 exit=19"}
+    ]
+  },
+  {
+    "id": "F04-14",
+    "title": "只给定向阅读许可的来源不进入助手接手上下文",
+    "covers": ["usage_purpose", "recipient_binding"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "q", "text": "E814 公开诊断。", "task": "tQ", "project": "Q", "source": "lab", "role": "user"}, {"ref": "private", "text": "E814 私有附件：雪松序列。", "task": "tQ", "project": "Q", "source": "attachments", "role": "user"}], "grants": {"hA": {"lab": ["task_delivery"], "attachments": []}, "hB": {"attachments": ["task_delivery"]}}, "other_client": {"id": "hB", "task": "tQ", "project": "Q"}},
+    "steps": [
+      {"id": "owner", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "E814", "mode": "hybrid"}},
+      {"id": "a", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "E814"}},
+      {"id": "b", "action": "在 hB 的新会话执行同一任务，捕获回环模型真实输入", "args": {"client": "hB", "task": "tQ", "query": "E814"}}
+    ],
+    "checks": [
+      {"at": "owner", "path": "/refs", "op": "contains", "value": "private"},
+      {"at": "a", "path": "/model_input_evidence_text", "op": "contains", "value": "公开诊断"},
+      {"at": "a", "path": "/model_input_evidence_text", "op": "excludes", "value": "雪松序列"},
+      {"at": "b", "path": "/model_input_evidence_text", "op": "contains", "value": "雪松序列"}
+    ]
+  },
+  {
+    "id": "F04-15",
+    "title": "区分找到原句、送入证据、最后任务验证失败",
+    "covers": ["stage_separated_metrics", "independent_verifier"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "code", "text": "E421，开始检测。", "task": "tQ", "project": "Q", "source": "lab", "role": "tool_call", "run_id": "r6", "tool_call_id": "c6"}, {"ref": "rc", "text": "探测返回 17。", "task": "tQ", "project": "Q", "source": "lab", "role": "tool_result", "run_id": "r6", "tool_call_id": "c6"}], "verifier": {"fixture_file": "result.txt", "contents": "17\n", "rule": "submitted_file_bytes_equal_fixture"}, "scripted_test_host": {"on_model_input": "write 0 plus newline to submitted.txt"}},
+    "steps": [
+      {"id": "seed", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "E421", "mode": "hybrid", "candidate_limit": 1}},
+      {"id": "passage", "action": "用已绑定的真实宿主适配器在新会话请求该任务，记录服务证据并截取本机回环模型收到的实际输入", "args": {"client": "hA", "task": "tQ", "query": "E421：请把上次探测返回值原样写入 submitted.txt", "evidence_slots": 2}},
+      {"id": "judge", "action": "运行测试宿主的固定错误动作后，以独立比较器比较 submitted.txt 与 fixture_file 的字节", "args": {"session_from": "passage", "actual_file": "submitted.txt", "expected_file": "result.txt"}}
+    ],
+    "checks": [
+      {"at": "seed", "path": "/refs", "op": "eq", "value": ["code"]},
+      {"at": "passage", "path": "/model_input_evidence_text", "op": "contains", "value": "探测返回 17"},
+      {"at": "judge", "path": "/match", "op": "eq", "value": false},
+      {"at": "judge", "path": "/observed_text", "op": "eq", "value": "0\n"}
+    ]
+  },
+  {
+    "id": "F04-16",
+    "title": "读取精确命中时只返回匹配时的版本，当前版本另可检索",
+    "covers": ["version_addressable_hit", "no_silent_current_substitution"],
+    "fixture": {"owner": "owner-Q", "clients": {"hA": {"task": "tQ", "project": "Q", "source": "lab", "purposes": ["task_delivery"]}}, "defaults": {"owner_read": "allow", "capture": "allow", "embedding": "allow", "vector_enabled": false}, "events": [{"ref": "old", "text": "旧记录 E101，发生时返回 12。", "task": "tQ", "project": "Q", "source": "lab", "role": "user", "root": "trace", "version": "r1"}, {"ref": "new", "text": "更正后的编号 E202，返回 21。", "task": "tQ", "project": "Q", "source": "lab", "role": "user", "root": "trace", "version": "r2"}], "retention": {"read_historical_versions": "allow"}},
+    "steps": [
+      {"id": "new", "action": "将 fixture 语料经采集和索引后，执行所有者 POST /v2/search 并读取候选与命中片段", "args": {"reader": "owner-Q", "query": "E202", "mode": "hybrid"}},
+      {"id": "history", "action": "以所有者获准历史读取身份按旧版本稳定引用展开旧片段", "args": {"ref": "old", "root": "trace", "version": "r1"}}
+    ],
+    "checks": [
+      {"at": "new", "path": "/refs", "op": "contains", "value": "new"},
+      {"at": "history", "path": "/version", "op": "eq", "value": "r1"},
+      {"at": "history", "path": "/text", "op": "eq", "value": "旧记录 E101，发生时返回 12。"},
+      {"at": "history", "path": "/text", "op": "excludes", "value": "返回 21"}
+    ]
+  },
+  {
+    "id": "F04-17",
+    "title": "四类题同预算对照三种召回，再冻结同一批候选比较补读",
+    "covers": ["four_query_paired_retrieval", "fixed_candidate_and_read_budget", "frozen_seed_neighbor_ablation", "independently_scored_outcome"],
+    "fixture": {
+      "owner": "owner-Q",
+      "reader": "hA",
+      "bound_task": "tQ",
+      "bound_project": "Q",
+      "grants": {"owner-Q": {"log-Q": ["read", "embedding"], "log-H": ["read", "embedding"]}, "hA": {"log-Q": ["task_delivery"], "log-H": []}},
+      "events": [
+        {"ref": "K", "text": "E401 开始检查。", "embedding": [0, 0, 0, 0, 1], "project": "Q", "task": "tQ", "source": "log-Q", "role": "tool_call", "run_id": "run-k", "tool_call_id": "call-run-k"},
+        {"ref": "Kr", "text": "探针 RESULT=17。", "embedding": [0, 0, 0, 0, 1], "project": "Q", "task": "tQ", "source": "log-Q", "role": "tool_result", "run_id": "run-k", "tool_call_id": "call-run-k"},
+        {"ref": "S", "text": "固态介质排队逾期。", "embedding": [0, 1, 0, 0, 0], "project": "Q", "task": "tQ", "source": "log-Q", "role": "tool_call", "run_id": "run-s", "tool_call_id": "call-run-s"},
+        {"ref": "Sr", "text": "落盘探针 RESULT=23。", "embedding": [0, 0, 0, 0, 1], "project": "Q", "task": "tQ", "source": "log-Q", "role": "tool_result", "run_id": "run-s", "tool_call_id": "call-run-s"},
+        {"ref": "Q", "text": "E711 启动回放。", "embedding": [0, 0, 1, 0, 0], "project": "Q", "task": "tQ", "source": "log-Q", "role": "tool_call", "run_id": "run-q", "tool_call_id": "call-run-q"},
+        {"ref": "Qr", "text": "回放探针 RESULT=31。", "embedding": [0, 0, 0, 0, 1], "project": "Q", "task": "tQ", "source": "log-Q", "role": "tool_result", "run_id": "run-q", "tool_call_id": "call-run-q"},
+        {"ref": "H", "text": "E711 海岚也启动回放。", "embedding": [0, 0, 1, 0, 0], "project": "H", "task": "tH", "source": "log-H", "role": "tool_call", "run_id": "run-h", "tool_call_id": "call-run-h"},
+        {"ref": "Hr", "text": "海岚探针 RESULT=88。", "embedding": [0, 0, 0, 0, 1], "project": "H", "task": "tH", "source": "log-H", "role": "tool_result", "run_id": "run-h", "tool_call_id": "call-run-h"}
+      ],
+      "questions": [
+        {"id": "keyword", "query": "E401", "query_embedding": [1, 0, 0, 0, 0]},
+        {"id": "paraphrase", "query": "写入阶段总是超时", "query_embedding": [0, 1, 0, 0, 0]},
+        {"id": "same_code", "query": "E711", "query_embedding": [0, 0, 1, 0, 0]},
+        {"id": "unanswered", "query": "E999", "query_embedding": [0, 0, 0, 1, 0]}
+      ],
+      "conditions": {"model": "loopback-extract-v1", "candidate_limit_after_fusion": 2, "evidence_slots": 2, "evidence_byte_limit_utf8": 256, "semantic_cosine_floor": 0.95, "index": "same_immutable_snapshot", "vector_provider": "fixture_embeddings", "host_session": "new_empty_for_every_question_and_arm"},
+      "host_protocol": "同一宿主和本机固定模型对每次调用只读实际输入的记忆片段。若其中有且只有一个不同的 RESULT=数字，将该数字写到该次输出文件；缺失或冲突写 UNKNOWN。只给宿主检索问题及此操作指令。所有输出文件均使用 UTF-8 并以一个 LF 换行结束。",
+      "verifier_only": {"keyword": {"anchor": "K", "required": ["K", "Kr"], "file_bytes": "17\n"}, "paraphrase": {"anchor": "S", "required": ["S", "Sr"], "file_bytes": "23\n"}, "same_code": {"anchor": "Q", "required": ["Q", "Qr"], "forbidden": ["H", "Hr"], "file_bytes": "31\n"}, "unanswered": {"anchor": null, "required": [], "file_bytes": "UNKNOWN\n"}}
+    },
+    "steps": [
+      {"id": "modes", "action": "一次性采集并建索引。对每题在同一冻结语料和读者范围内依次执行词法、向量、两路并集。三组均开启同次调用补读，复用同一限额与宿主，每次使用空会话。记录实际生效的参数、有序候选、回环模型实际输入引用和本次任务输出文件；保留并集有序候选快照。", "args": {"questions": ["keyword", "paraphrase", "same_code", "unanswered"], "modes": ["lexical", "vector", "union"], "neighbor": true, "budgets_from": "fixture.conditions"}},
+      {"id": "window", "action": "逐题读取 modes 中并集的有序候选快照，重放组包和宿主调用两次。锁定同一输入句柄顺序、内容版本、权限快照和阅读预算，只切换同次工具回执补读。留存两侧候选指纹、实际模型输入与各自的独立输出文件。", "args": {"seeds_from": "modes.union", "arms": ["off", "on"], "rerun_retrieval": false, "budgets_from": "fixture.conditions"}},
+      {"id": "score", "action": "独立裁判按题读取两次实验的候选日志、回环模型实际输入与输出文件。对有答案题检查目标原句候选命中和全部必需依据实际装入；对无答案题检查空包和正确弃答。单独逐字节与 verifier_only 比较任务产物，记录禁止项、预算变化及配对差异。", "args": {"modes_from": "modes", "ablation_from": "window", "gold_from": "fixture.verifier_only", "visible_to_host": false}}
+    ],
+    "checks": [
+      {"at": "score", "path": "/query_order", "op": "eq", "value": ["keyword", "paraphrase", "same_code", "unanswered"]},
+      {"at": "score", "path": "/mode_runs_observed", "op": "eq", "value": 12},
+      {"at": "score", "path": "/window_runs_observed", "op": "eq", "value": 8},
+      {"at": "score", "path": "/distinct_effective_candidate_limits", "op": "eq", "value": [2]},
+      {"at": "score", "path": "/distinct_effective_read_budgets", "op": "eq", "value": [{"slots": 2, "bytes": 256}]},
+      {"at": "score", "path": "/over_budget_runs", "op": "eq", "value": 0},
+      {"at": "score", "path": "/anchor_hit/lexical", "op": "eq", "value": [true, false, true, null]},
+      {"at": "score", "path": "/anchor_hit/vector", "op": "eq", "value": [false, true, true, null]},
+      {"at": "score", "path": "/anchor_hit/union", "op": "eq", "value": [true, true, true, null]},
+      {"at": "score", "path": "/same_seed_fingerprint_for_window", "op": "eq", "value": [true, true, true, true]},
+      {"at": "score", "path": "/retrieval_calls_during_window", "op": "eq", "value": 0},
+      {"at": "score", "path": "/actual_input_complete/window_off", "op": "eq", "value": [false, false, false, null]},
+      {"at": "score", "path": "/actual_input_complete/window_on", "op": "eq", "value": [true, true, true, null]},
+      {"at": "score", "path": "/file_matches/lexical", "op": "eq", "value": [true, false, true, true]},
+      {"at": "score", "path": "/file_matches/vector", "op": "eq", "value": [false, true, true, true]},
+      {"at": "score", "path": "/file_matches/union", "op": "eq", "value": [true, true, true, true]},
+      {"at": "score", "path": "/file_matches/window_off", "op": "eq", "value": [false, false, false, true]},
+      {"at": "score", "path": "/file_matches/window_on", "op": "eq", "value": [true, true, true, true]},
+      {"at": "score", "path": "/unanswered_nonempty_inputs", "op": "eq", "value": 0},
+      {"at": "score", "path": "/same_code_forbidden_refs_in_any_candidate_or_actual_input", "op": "eq", "value": []}
+    ]
+  }
+]

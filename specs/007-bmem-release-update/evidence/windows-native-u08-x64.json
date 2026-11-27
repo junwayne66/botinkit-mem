@@ -1,0 +1,18 @@
+{
+  "reviewed_legacy_commit": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+  "tests": 2,
+  "commit": "e6034563c8a4869ad79930383c619a440207367b",
+  "legacy_web_tree": "6c999f2ae44e99307706ee5cec1ee59d3a931b47",
+  "legacy_commit": "bbd7a39ef393717f597d5fcccc467f6bffbf0d41",
+  "legacy_rust_tree": "aa4b9e2a60e6225121afb0221ecf7a50a1fc9487",
+  "windows_version": "10.0.20348.0",
+  "architecture": "X64",
+  "status": "PASS",
+  "target": "x86_64-pc-windows-msvc",
+  "log_sha256": "a27d97a9757f0c54aeb95d09b3ef02cfa23ff5145c269598d68aad450a4eced6",
+  "updated_sha256": "c752420ce62a7b752068d581fc0768a23040a1a489b3b0aa2e7426ccd32de6a0",
+  "legacy_sha256": "95600c0303bc3a00063dc18d4a3d22507c49e3e18e73678afe6a2580f0de9c6f",
+  "scope": "isolated-test-signing",
+  "scenario": "U08",
+  "initial_sha256": "aa0bb1d1fa2cf2c9a5a36740e52e08a4398d25d99d8eb2764691422c97fcf429"
+}

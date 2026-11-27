@@ -1,0 +1,92 @@
+---
+config:
+  theme: base
+  htmlLabels: false
+  fontFamily: '"PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif'
+  themeVariables:
+    fontFamily: '"PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif'
+    fontSize: 18px
+    primaryColor: '#e6f4f1'
+    primaryTextColor: '#163942'
+    primaryBorderColor: '#377774'
+    lineColor: '#45616a'
+    secondaryColor: '#f4f8fa'
+    tertiaryColor: '#f6f9f9'
+    clusterBkg: '#f5f9f9'
+    clusterBorder: '#a3b8b8'
+    edgeLabelBackground: '#ffffff'
+    actorBkg: '#e3f3ef'
+    actorBorder: '#4b7774'
+    actorTextColor: '#15363d'
+    actorLineColor: '#799397'
+    signalColor: '#3c5864'
+    signalTextColor: '#173842'
+    loopTextColor: '#254955'
+    labelBoxBkgColor: '#edf5f5'
+    labelBoxBorderColor: '#739295'
+    labelTextColor: '#254955'
+    noteBkgColor: '#ffffff'
+    noteBorderColor: '#adbdc3'
+    noteTextColor: '#254955'
+  flowchart:
+    htmlLabels: false
+    curve: linear
+    nodeSpacing: 28
+    rankSpacing: 42
+    padding: 10
+    diagramPadding: 14
+    useMaxWidth: true
+  sequence:
+    showSequenceNumbers: false
+    mirrorActors: false
+    actorMargin: 64
+    width: 145
+    height: 50
+    messageMargin: 30
+    boxMargin: 12
+    diagramMarginX: 30
+    diagramMarginY: 15
+---
+flowchart TB
+  accTitle: 社区组件接入、整系统对照与核心迁移
+  accDescr: 可独立验证的能力可以复用组件或复现算法，在相同获准样本上回放。通过来源、权限和效果核验后才能在域内切换实现。整系统黑盒作为隔离基准，涉及权威语义或事务的变更单独评审与迁移。
+
+    SRC(["社区项目或论文<br/>固定提交或论文版本"])
+
+    %% 判定与实现
+    BENCH["整系统黑盒基准<br/>仅在隔离环境比较"]
+    CAP["可独立验收的一项能力"]
+    LIB["适配已有库或服务"]
+    REPRO["按论文复现算法"]
+    REPLAY["同批获准样本<br/>隔离回放"]
+    VERIFY{"来源、权限和效果<br/>均达到验收条件？"}
+
+    %% 三条出路
+    SWITCH(["在适用域内切换实现<br/>指针可切回旧版本"])
+    CORE["单独评审核心变更<br/>显式迁移并验证"]
+
+    SRC -->|整系统对照| BENCH
+    SRC -->|拆解能力| CAP
+    SRC -->|更改权威语义或事务| CORE
+    CAP --> LIB
+    CAP --> REPRO
+    LIB --> REPLAY
+    REPRO --> REPLAY
+    REPLAY --> VERIFY
+    VERIFY -->|通过| SWITCH
+    VERIFY -.->|修订后重测| REPLAY
+
+  %% 虚线框为整系统隔离对照，浅红框为核心迁移。
+  classDef external fill:#f4f5f7,stroke:#6b7280,color:#1f2937
+  classDef internal fill:#eaf1f8,stroke:#3f6fa3,color:#1f2937
+  classDef gate fill:#fbf3e0,stroke:#b08a3e,color:#1f2937
+  classDef ok fill:#e9f2ea,stroke:#4a7c59,color:#1f2937
+  classDef isolated fill:#f5f5f5,stroke:#9aa0a6,stroke-dasharray:4 3,color:#4b5563
+  classDef core fill:#f6eaea,stroke:#a05a5a,color:#1f2937
+
+  class SRC external
+  class CAP,VERIFY gate
+  class LIB,REPRO,REPLAY internal
+  class SWITCH ok
+  class BENCH isolated
+  class CORE core

@@ -1,0 +1,1649 @@
+{
+  "date": "2026-11-27",
+  "timezone": "Asia/Shanghai",
+  "repository_head": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+  "baseline_binary_sha256": "d0e36329b8de767013e0dd3a58c220df67e1d634aa04d9efb6689509226f02b1",
+  "candidate_binary_sha256": "f2a1552f7b1d58d1fcf3673f0b11bfc9932d02e18867a4e2e5e37a63dd89c535",
+  "snapshot_source_digests": {
+    "src/v2/bmem/Cargo.lock": "90dcdf76a7a84e9e6fd41b0bd1c25fcddc5f0efeba13087ae5a851b468987549",
+    "src/v2/bmem/src/authority.rs": "97adfbc25ffbf11a7f3782b75223ac4f954b737150563d994631b4863332ca19",
+    "src/v2/bmem/src/context.rs": "f7ab13828298a3a8acb2ec9139fbc02cfd2b7f9da58cb18a1d09f9f1949fe912",
+    "src/v2/bmem/src/history_tasks.rs": "ac935774d49d8d5641f662dc4f54057f2799917cd80977233680a17b73e003cb",
+    "src/v2/bmem/src/ingestion.rs": "f48e2ec3e7ac987726cfd2508ee559dcad7b35a6b94bec3a260e47936c9ebb03",
+    "src/v2/bmem/src/retrieval.rs": "52eade43d0da5bb1bbfae84a4f5b6faa184b14dbf762726e913350499bed2d12",
+    "src/v2/bmem/src/server.rs": "092b2bc60ee4be966277c580895c840b8c81f9a824c5013eaf5a81157bed9989",
+    "src/v2/bmem/src/main.rs": "2700f18047f4e7d8ceffba4a27ae35cd1518239facfe9ebd5df832096025d694",
+    "src/v2/bmem/src/archive.rs": "f747753c5376879c9b1c8ac905091d8ba2311ef16a1c26d603894717c395f408",
+    "src/v2/web/search.js": "8b80f3acb97ac02dab7fde0dfd98c8526766e60f9d888c75c30f4b331c9201c5",
+    "research/memory-upgrade-technical/tests/baseline_probe.py": "f4906e0f7f3b8825395f97924410d3a33df564f6c6e1a2eb9c40986b61291654",
+    "research/memory-upgrade-technical/tests/score.py": "015ac7bdf831e91e1a5dc4b7e8b582e5f5fb670ab62855be3461e2b55217e8ff"
+  },
+  "suite_sha256": {
+    "F01": "73c2fc662bb4a8c74d4a8cbafee2770faaa4c90d6c6cc35a5fa537617d8951d2",
+    "F02": "2c01e3f8c53bd714b7ac76ebf84e6fc23ecf3875afbd2635c01d0a11f8ce6be7",
+    "F03": "2bb2614f72fd3d18073d9df542a0f01db5ed38615a3103dd11d36db04758d78a",
+    "F04": "dcf9c5de381e26fe3bd59025bf3b990fb5af23a8bf4da347d260f780d760fb65",
+    "F05": "8ee746d58ee5d5d72530390709cb724b1809e1923dc974bc62788579dab4b810",
+    "F06": "6e92d6828ac97ad399da6e71ac4e05f8adc0a32c729d0197775047e1af27e156",
+    "F07": "f408aa9c425476ef7c7c76d5cbdd0c0c567e31677c8898af6ecefd73b4999ba7",
+    "X01": "347e6349e61725b7196666511d963461286cba3b992e111743c85efa8774a578",
+    "E2E": "72a977ef0bd136b9c1f18621b08a8b710216c617461d8474ad0f9651ff51a848"
+  },
+  "case_count": 134,
+  "check_count": 652,
+  "candidate_probed": 43,
+  "counts": {
+    "before": {
+      "PASS": 4,
+      "FAIL": 10,
+      "NOT_RUN": 120
+    },
+    "after": {
+      "PASS": 30,
+      "FAIL": 1,
+      "NOT_RUN": 103
+    }
+  },
+  "features": {
+    "F01": {
+      "before": {
+        "PASS": 0,
+        "FAIL": 8,
+        "NOT_RUN": 10
+      },
+      "after": {
+        "PASS": 11,
+        "FAIL": 0,
+        "NOT_RUN": 7
+      }
+    },
+    "F02": {
+      "before": {
+        "PASS": 2,
+        "FAIL": 1,
+        "NOT_RUN": 13
+      },
+      "after": {
+        "PASS": 9,
+        "FAIL": 0,
+        "NOT_RUN": 7
+      }
+    },
+    "F03": {
+      "before": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOT_RUN": 16
+      },
+      "after": {
+        "PASS": 1,
+        "FAIL": 0,
+        "NOT_RUN": 15
+      }
+    },
+    "F04": {
+      "before": {
+        "PASS": 0,
+        "FAIL": 1,
+        "NOT_RUN": 16
+      },
+      "after": {
+        "PASS": 6,
+        "FAIL": 0,
+        "NOT_RUN": 11
+      }
+    },
+    "F05": {
+      "before": {
+        "PASS": 1,
+        "FAIL": 0,
+        "NOT_RUN": 15
+      },
+      "after": {
+        "PASS": 2,
+        "FAIL": 1,
+        "NOT_RUN": 13
+      }
+    },
+    "F06": {
+      "before": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOT_RUN": 16
+      },
+      "after": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOT_RUN": 16
+      }
+    },
+    "F07": {
+      "before": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOT_RUN": 17
+      },
+      "after": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOT_RUN": 17
+      }
+    },
+    "X01": {
+      "before": {
+        "PASS": 1,
+        "FAIL": 0,
+        "NOT_RUN": 14
+      },
+      "after": {
+        "PASS": 1,
+        "FAIL": 0,
+        "NOT_RUN": 14
+      }
+    },
+    "E2E": {
+      "before": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOT_RUN": 3
+      },
+      "after": {
+        "PASS": 0,
+        "FAIL": 0,
+        "NOT_RUN": 3
+      }
+    }
+  },
+  "transitions": {
+    "FAIL->NOT_RUN": 1,
+    "FAIL->PASS": 9,
+    "NOT_RUN->FAIL": 1,
+    "NOT_RUN->NOT_RUN": 102,
+    "NOT_RUN->PASS": 17,
+    "PASS->PASS": 4
+  },
+  "cases": [
+    {
+      "id": "F01-01",
+      "title": "新维度与已有报告维度同时生效",
+      "before": "FAIL",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-01",
+      "after_evidence": "/replays/F01-01"
+    },
+    {
+      "id": "F01-02",
+      "title": "一句原话中项目例外按当地周五结束",
+      "before": "FAIL",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。收件时钟为本次实时时钟，周界或读时点使用样本值；需在冻结时钟下重新验证。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-02",
+      "after_evidence": "/replays/F01-02"
+    },
+    {
+      "id": "F01-03",
+      "title": "追溯后来才收到的过去生效声明",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "历史读取入口可用，隔离服务仍从系统时间取得收件时点，无法重现原样本的双时态顺序。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-03",
+      "after_evidence": "/replays/F01-03"
+    },
+    {
+      "id": "F01-04",
+      "title": "单次要求限定任务，任务结束即退出",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。收件时钟为本次实时时钟，周界或读时点使用样本值；需在冻结时钟下重新验证。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-04",
+      "after_evidence": "/replays/F01-04"
+    },
+    {
+      "id": "F01-05",
+      "title": "已支持分句继续生效，陌生维度保留原文",
+      "before": "FAIL",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-05",
+      "after_evidence": "/replays/F01-05"
+    },
+    {
+      "id": "F01-06",
+      "title": "任务指代不明时保留候选，明确条件后可重申",
+      "before": "FAIL",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-06",
+      "after_evidence": "/replays/F01-06"
+    },
+    {
+      "id": "F01-07",
+      "title": "相对截止日缺时区时只等待该分句",
+      "before": "FAIL",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。收件时钟为本次实时时钟，周界或读时点使用样本值；需在冻结时钟下重新验证。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-07",
+      "after_evidence": "/replays/F01-07"
+    },
+    {
+      "id": "F01-08",
+      "title": "跨夏令时的周末按项目当地午夜到期",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "已支持显式具名时区的周截止时间，本例仍缺项目缺省时区及固定收件时钟。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-08",
+      "after_evidence": "/replays/F01-08"
+    },
+    {
+      "id": "F01-09",
+      "title": "永久纠正只改目标维度，遗忘后不能复活旧值",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-09",
+      "after_evidence": "/replays/F01-09"
+    },
+    {
+      "id": "F01-10",
+      "title": "重投同一命令复用修订，不同正文不能复用键",
+      "before": "FAIL",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-10",
+      "after_evidence": "/replays/F01-10"
+    },
+    {
+      "id": "F01-11",
+      "title": "助手的转述不覆盖本人约定，私有分句不交付",
+      "before": "FAIL",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "所有者写入和试算已探测，缺本例私有原话与项目覆盖的真实授权宿主输入。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-11",
+      "after_evidence": "/replays/F01-11"
+    },
+    {
+      "id": "F01-12",
+      "title": "旧修订无分句表仍能查询，新增维度不改变旧格式",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-12",
+      "after_evidence": "/replays/F01-12"
+    },
+    {
+      "id": "F01-13",
+      "title": "CLI 和 Web 对同一候选时点试算，查询不产生动作",
+      "before": "FAIL",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。收件时钟为本次实时时钟，周界或读时点使用样本值；需在冻结时钟下重新验证。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-13",
+      "after_evidence": "/replays/F01-13"
+    },
+    {
+      "id": "F01-14",
+      "title": "两款真实宿主跨两个项目输出最小示例",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "真实两宿主回环能捕获输入，固定模型回复无法验证两项目的生成语言依从性。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-14",
+      "after_evidence": "/replays/F01-14"
+    },
+    {
+      "id": "F01-15",
+      "title": "只查询与实际装入在两个客户端分别显示",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "缺真实宿主逐修订装入及采用回执和只查询客户端的本例对照。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-15",
+      "after_evidence": "/replays/F01-15"
+    },
+    {
+      "id": "F01-16",
+      "title": "同一范围同时给出两种互斥语言",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-16",
+      "after_evidence": "/replays/F01-16"
+    },
+    {
+      "id": "F01-17",
+      "title": "纽约秋季回拨的 01:30 出现两次，明确偏移后采用第二次",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "本地绝对时点已阻止直接沉淀为永久规则，仍缺重复或不存在钟点的细分裁定、带偏移纠正和固定收件时钟。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-17",
+      "after_evidence": "/replays/F01-17"
+    },
+    {
+      "id": "F01-18",
+      "title": "纽约春季跳时跳过 02:30，重报 03:30 后生效",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "本地绝对时点已阻止直接沉淀为永久规则，仍缺重复或不存在钟点的细分裁定、带偏移纠正和固定收件时钟。",
+      "check_failures": [],
+      "before_evidence": "/replays/F01-18",
+      "after_evidence": "/replays/F01-18"
+    },
+    {
+      "id": "F02-01",
+      "title": "真实交接 Claude Code → Codex",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "既有双宿主桥接回归可捕获真实输入，原样本还缺按回执选择修复步骤、实际执行与独立工件归因。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F02-02",
+      "title": "真实交接 Codex → Claude Code",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "既有双宿主桥接回归可捕获真实输入，原样本还缺按回执选择修复步骤、实际执行与独立工件归因。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F02-03",
+      "title": "同一上下文已证实保有基线后只发送变化",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "observable_loopback_adapter",
+      "reason": "可观测适配器经真实服务取得送入回环端点的证据及回执，全部断言通过。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": "/replays/F02-03"
+    },
+    {
+      "id": "F02-04",
+      "title": "同一宿主另开空会话必须补回基线",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "observable_loopback_adapter",
+      "reason": "可观测适配器经真实服务取得送入回环端点的证据及回执，全部断言通过。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": "/replays/F02-04"
+    },
+    {
+      "id": "F02-05",
+      "title": "压缩重新建上下文后旧摘要不作留存凭证",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "observable_loopback_adapter",
+      "reason": "可观测适配器经真实服务取得送入回环端点的证据及回执，全部断言通过。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": "/replays/F02-05"
+    },
+    {
+      "id": "F02-06",
+      "title": "旧宿主只出具声明 complete 回执",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "observable_loopback_adapter",
+      "reason": "可观测适配器经真实服务取得送入回环端点的证据及回执，全部断言通过。",
+      "check_failures": [],
+      "before_evidence": "/replays/F02-06",
+      "after_evidence": "/replays/F02-06"
+    },
+    {
+      "id": "F02-07",
+      "title": "宿主只装入前半份证据，必须重给整包",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "observable_loopback_adapter",
+      "reason": "可观测适配器经真实服务取得送入回环端点的证据及回执，全部断言通过。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": "/replays/F02-07"
+    },
+    {
+      "id": "F02-08",
+      "title": "声明与证据预算独立，预算不足时显示缺口",
+      "before": "PASS",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F02-08",
+      "after_evidence": "/replays/F02-08"
+    },
+    {
+      "id": "F02-09",
+      "title": "第 51 条工具失败越过旧版前 50 条截断",
+      "before": "FAIL",
+      "after": "PASS",
+      "run_scope": "native_host_replay",
+      "reason": "真实宿主在隔离环境向回环模型端点发出的请求及服务观测满足本例全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F02-09",
+      "after_evidence": "/replays/F02-09"
+    },
+    {
+      "id": "F02-10",
+      "title": "同仓另一任务的成功不能抵消本任务失败",
+      "before": "PASS",
+      "after": "PASS",
+      "run_scope": "native_host_replay",
+      "reason": "真实宿主在隔离环境向回环模型端点发出的请求及服务观测满足本例全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F02-10",
+      "after_evidence": "/replays/F02-10"
+    },
+    {
+      "id": "F02-11",
+      "title": "同名任务只能提示获准区分的候选",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "已绑定的 task_id 可交接，缺同名任务的读者权限裁剪及选择入口。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F02-12",
+      "title": "只有准备执行的计划，查不到真实结果",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "实际任务包已探测，缺上次接手位置及计划与未知执行结果的完整原样本观测。",
+      "check_failures": [],
+      "before_evidence": "/replays/F02-12",
+      "after_evidence": "/replays/F02-12"
+    },
+    {
+      "id": "F02-13",
+      "title": "撤权限后仅追加宿主拒用旧包，重开保留合法检查",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "证据清单和独立回执入口已具备，缺原样本同会话撤权、两次投递对账及迟到回执的宿主执行记录。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F02-14",
+      "title": "交付回包丢失与较迟回执均不能制造装入或采用",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "证据清单和独立回执入口已具备，缺原样本同会话撤权、两次投递对账及迟到回执的宿主执行记录。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F02-15",
+      "title": "证明的摘要或路由不匹配时不得省略必需证据",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "observable_loopback_adapter",
+      "reason": "可观测适配器经真实服务取得送入回环端点的证据及回执，全部断言通过。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": "/replays/F02-15"
+    },
+    {
+      "id": "F02-16",
+      "title": "四类观测分别计数，未知结果保留在接手分母",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺必需证据、采用状态、补背景轮数及独立结果的同一次尝试汇总。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-01",
+      "title": "选中对象和日期只在所有者确认后开始采集",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "作业结果已可按页读取，原样本的对象选择、确认、服务中断恢复或分页游标尚无完整回放。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-02",
+      "title": "作业含空目标与失败目标时保留各自状态",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "作业结果已可按页读取，原样本的对象选择、确认、服务中断恢复或分页游标尚无完整回放。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-03",
+      "title": "同一提交页重试只推进一次游标",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "已探测原生页重投，缺原样本空目标受理、作业级去向和水位端到端观测。",
+      "check_failures": [],
+      "before_evidence": "/replays/F03-03",
+      "after_evidence": "/replays/F03-03"
+    },
+    {
+      "id": "F03-04",
+      "title": "独立作业重导同一原生版本显示重复",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F03-04",
+      "after_evidence": "/replays/F03-04"
+    },
+    {
+      "id": "F03-05",
+      "title": "首屏水位在新增页后保持稳定，刷新可见末页",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "作业结果已可按页读取，原样本的对象选择、确认、服务中断恢复或分页游标尚无完整回放。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-06",
+      "title": "页提交中断后用同一游标重试不会跨过事件",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "作业结果已可按页读取，原样本的对象选择、确认、服务中断恢复或分页游标尚无完整回放。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-07",
+      "title": "暂停后收紧提炼授权，恢复仅处理仍获准的版本",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "已能读取导入作业分页及部分计数，缺逐原生版本关联提炼资格、暂停、失败或候选裁定的链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-08",
+      "title": "提炼完成且零候选仍可查看已采集原句",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "已能读取导入作业分页及部分计数，缺逐原生版本关联提炼资格、暂停、失败或候选裁定的链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-09",
+      "title": "提炼报错的版本在重试后仍只采集一次",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "已能读取导入作业分页及部分计数，缺逐原生版本关联提炼资格、暂停、失败或候选裁定的链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-10",
+      "title": "同片段两个候选归并到同一核验观察",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "已能读取导入作业分页及部分计数，缺逐原生版本关联提炼资格、暂停、失败或候选裁定的链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-11",
+      "title": "待证的建议和没有原句的提议分别保留裁定",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "已能读取导入作业分页及部分计数，缺逐原生版本关联提炼资格、暂停、失败或候选裁定的链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-12",
+      "title": "两个可证转述沿原文去重，独立运行回执单列",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺跨来源支持组和转述根关系，或导入覆盖缺口及旧记录去向联查。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-13",
+      "title": "跨来源同文且没有版本引用时保留未确定关系",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺跨来源支持组和转述根关系，或导入覆盖缺口及旧记录去向联查。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-14",
+      "title": "来源新增版本后掉线仍能回查本地获准旧版本",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺跨来源支持组和转述根关系，或导入覆盖缺口及旧记录去向联查。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-15",
+      "title": "根撤回优先于迟到页及已在途的提炼结果",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "所有者单根遗忘已可用，缺原样本撤回后迟到候选的关联回执与复跑。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F03-16",
+      "title": "一次回填保持持续采集开关，老作业只给历史汇总",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "持续采集与一次回填已有独立控制，缺本样本的完整历史去向和开关对账。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-01",
+      "title": "带连字符的完整错误码定位原句和版本",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F04-01",
+      "after_evidence": "/replays/F04-01"
+    },
+    {
+      "id": "F04-02",
+      "title": "语义改写在真实搜索入口找回无共同关键词的原句",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F04-02",
+      "after_evidence": "/replays/F04-02"
+    },
+    {
+      "id": "F04-03",
+      "title": "精确码和语义独有证据分别获得候选名额",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "服务混合检索已提供通道名次，缺将原样本的预排通道独立送入实际融合函数并回读的适配。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-04",
+      "title": "同片段两路命中只占一格，保留每路名次",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "服务混合检索已提供通道名次，缺将原样本的预排通道独立送入实际融合函数并回读的适配。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-05",
+      "title": "交换通道遍历顺序后，只有一席的同分结果保持稳定",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "服务混合检索已提供通道名次，缺将原样本的预排通道独立送入实际融合函数并回读的适配。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-06",
+      "title": "诊断补读仅取同次工具调用的回执",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺同次工具结果的补读申请、剩余预算、原文片段和独立执行结果之间的完整关联。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-07",
+      "title": "附近只有计划时保留计划并标记结果未知",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺同次工具结果的补读申请、剩余预算、原文片段和独立执行结果之间的完整关联。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-08",
+      "title": "无依据的查询可以交付空证据包",
+      "before": "FAIL",
+      "after": "PASS",
+      "run_scope": "native_host_replay",
+      "reason": "真实宿主在隔离环境向回环模型端点发出的请求及服务观测满足本例全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F04-08",
+      "after_evidence": "/replays/F04-08"
+    },
+    {
+      "id": "F04-09",
+      "title": "向量关闭和服务超时都继续返回词法精确命中",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "混合查询可用，旧探针仅取得查询反馈，缺 15ms 向量查询超时设置及超时原因观测。",
+      "check_failures": [],
+      "before_evidence": "/replays/F04-09",
+      "after_evidence": "/replays/F04-09"
+    },
+    {
+      "id": "F04-10",
+      "title": "所有者仍能找同码的两个项目，助手实收只含本任务获准记录",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "native_host_replay",
+      "reason": "真实宿主在隔离环境向回环模型端点发出的请求及服务观测满足本例全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F04-10",
+      "after_evidence": "/replays/F04-10"
+    },
+    {
+      "id": "F04-11",
+      "title": "加入更高匹配的禁读记录不改变助手所见顺序和解释",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "绑定宿主可读取授权任务证据，缺按读者权限裁剪的混合候选和计数接口。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-12",
+      "title": "命中获准但邻文被拒时，按授权跳过并保留可读结果",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺同次工具结果的补读申请、剩余预算、原文片段和独立执行结果之间的完整关联。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-13",
+      "title": "补读只能用剩余预算，预算增加后真实输入含结果",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺同次工具结果的补读申请、剩余预算、原文片段和独立执行结果之间的完整关联。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-14",
+      "title": "只给定向阅读许可的来源不进入助手接手上下文",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "native_host_replay",
+      "reason": "真实宿主在隔离环境向回环模型端点发出的请求及服务观测满足本例全部断言。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": "/replays/F04-14"
+    },
+    {
+      "id": "F04-15",
+      "title": "区分找到原句、送入证据、最后任务验证失败",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺候选种子、宿主实际输入与独立验证结果的统一引用。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F04-16",
+      "title": "读取精确命中时只返回匹配时的版本，当前版本另可检索",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F04-16",
+      "after_evidence": "/replays/F04-16"
+    },
+    {
+      "id": "F04-17",
+      "title": "四类题同预算对照三种召回，再冻结同一批候选比较补读",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺同一冻结候选集下的邻文开关与三路宿主实配对照。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-01",
+      "title": "同一快照试算两位助手，核对真实授权和凭单",
+      "before": "NOT_RUN",
+      "after": "FAIL",
+      "run_scope": "bmem_replay",
+      "reason": "原样本查询和 128 预算下，双读者试算及实际定向交付都为空，缺快照数及模型调用数的观测。短查询大预算的额外对照能区分 A/B，但不参与本例判分。",
+      "check_failures": [
+        "preview/A/before contains \"r1.1\"",
+        "preview/A/after eq [\"r2.1\"]",
+        "preview/B/before contains \"r1.1\"",
+        "preview/B/after contains \"r1.1\"",
+        "audit/comparison_snapshot_count eq 1",
+        "audit/model_calls eq 0",
+        "actual/root_versions contains \"r1.1\""
+      ],
+      "before_evidence": null,
+      "after_evidence": "/replays/F05-01"
+    },
+    {
+      "id": "F05-02",
+      "title": "确认只撤 A 对单根的权限，旧句柄和待发包同样失效",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "单根拒读已支持，缺按话题成员变化判定旧凭单失效的操作契约和用例复跑。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-03",
+      "title": "受限助手收不到标题、摘要、计数和对照描述",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "单根拒读、遗忘和同步的双读者试算入口已具备，仍缺本例预算、试算审计或受影响派生工件的完整观测。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-04",
+      "title": "所有者试算也按本人当前可读范围裁剪",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "单根拒读、遗忘和同步的双读者试算入口已具备，仍缺本例预算、试算审计或受影响派生工件的完整观测。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-05",
+      "title": "经历降温后可按原句找回，低频声明仍生效",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺降温及恢复优先级的治理操作。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-06",
+      "title": "临时覆盖到期后重选默认值，历史查询保留时点解释",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "已支持部分限时代码约定；原样本需要临时报告语言及可控宿主时钟。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-07",
+      "title": "永久纠正项撤回后，被替换的旧值不能自动复活",
+      "before": "PASS",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": "/replays/F05-07",
+      "after_evidence": "/replays/F05-07"
+    },
+    {
+      "id": "F05-08",
+      "title": "讨论所含根集合变化，旧凭单不能扩大确认范围",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "单根拒读已支持，缺按话题成员变化判定旧凭单失效的操作契约和用例复跑。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-09",
+      "title": "联合前提缺一时立即屏蔽旧结论及其下游",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺联合与替代支持组、派生依赖级联与重建。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-10",
+      "title": "备用支持组可独立证明结论，重建文本清除撤回细节",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺联合与替代支持组、派生依赖级联与重建。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-11",
+      "title": "遗忘先提交，持旧租约的提炼结果不得再交付",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "根已可撤回，缺在途租约关联到原样本迟到提炼的裁定和联查。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-12",
+      "title": "迟到的历史导入页重送已遗忘版本和同源合法版本",
+      "before": "NOT_RUN",
+      "after": "PASS",
+      "run_scope": "bmem_replay",
+      "reason": "隔离候选服务的实际响应及本例所需的只读观测满足全部断言。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": "/replays/F05-12"
+    },
+    {
+      "id": "F05-13",
+      "title": "原机旧备份恢复预览应用本机更新的撤回清单",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "已探测隔离备份及旧包恢复预览，缺按原样本固定备份时点或外发副本的完整撤回证明。",
+      "check_failures": [],
+      "before_evidence": "/replays/F05-13",
+      "after_evidence": "/replays/F05-13"
+    },
+    {
+      "id": "F05-14",
+      "title": "空实例只剩旧备份时标明可证明截止点",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "partial_probe",
+      "reason": "已探测隔离备份及旧包恢复预览，缺按原样本固定备份时点或外发副本的完整撤回证明。",
+      "check_failures": [],
+      "before_evidence": "/replays/F05-14",
+      "after_evidence": "/replays/F05-14"
+    },
+    {
+      "id": "F05-15",
+      "title": "受管清理失败时禁读继续，已发的外部副本单独列示",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受管清理故障注入、外发副本和删除证明的联查。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F05-16",
+      "title": "按旧日期查历史仍受今天的接收端许可约束",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "当前授权会裁剪旧句柄，缺用原样本的绑定助手历史时点查询整例。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-01",
+      "title": "同一方法在 v1 两次独立通过，v2 反例保留出处",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-02",
+      "title": "询问 v2 时先指出失败条件并给待验步骤",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-03",
+      "title": "输入没有工件版本时保留不确定性",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-04",
+      "title": "仅有一次成功时说明实际案例数，不能推及全版本",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-05",
+      "title": "转发和截图沿来源链折叠为一次运行",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-06",
+      "title": "来源关系无法证实的转述单列未知",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-07",
+      "title": "取消和待执行计划都不计为成功或失败案例",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-08",
+      "title": "唯一前提来源被撤回，其他方法仍能进入交接",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-09",
+      "title": "缺失的前提由新来源补齐，只发布新修订",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-10",
+      "title": "撤回唯一的 v2 失败证据后不得产生 v2 成功结论",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-11",
+      "title": "同名工件在另一项目的成功回执不能给当前方法背书",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-12",
+      "title": "部分步骤通过时保留阶段结果，整项修复仍失败",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-13",
+      "title": "同版本出现反例时按额外条件收窄建议",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-14",
+      "title": "提炼器提出全版本有效时必须经权威裁定",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-15",
+      "title": "关闭反例归纳器后，已裁定的修订继续受现行治理",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F06-16",
+      "title": "相同反例仅向当前获准读者说明失败细节",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺工件版本、独立支持组、前提、反例和撤回重算的正式方法链。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-01",
+      "title": "关闭评测时纠正仍在下次调用生效",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-02",
+      "title": "有评测许可的错项目反馈形成可重放用例",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-03",
+      "title": "获准评测的样本不能直接转为训练材料",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-04",
+      "title": "冻结后撤销评测授权会阻止旧集再次运行",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-05",
+      "title": "根来源、任务族和时间留出阻止转述泄入验证集",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-06",
+      "title": "四组配对使用独立空会话，逐组核对最终输入",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-07",
+      "title": "分别报告两款宿主上的修复、退化与未知",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-08",
+      "title": "服务提供、实际装入、采用与独立通过分别计数",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-09",
+      "title": "无答案题把借用另一项目的证据计为错用",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-10",
+      "title": "回退排序策略保留刚纠正的声明与删除标记",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-11",
+      "title": "冻结集中的查询本身也受遗忘约束",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-12",
+      "title": "撤去训练授权后沿工件依赖停用受影响版本",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-13",
+      "title": "有收益但缺少足够独立核验时保留现行版本",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-14",
+      "title": "收益达标仍会被禁止证据命中阻断",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-15",
+      "title": "每成功任务成本含失败消耗，三个主指标分别计算",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-16",
+      "title": "按预登记口径报告查询尾延迟、采集等待和补背景轮数",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "F07-17",
+      "title": "净收益下界和成本恰好达标时只发布到获准宿主与项目",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺受许可约束的纠错到评测、配对统计、限定发布及回切的正式链路。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-01",
+      "title": "直接复用 Hindsight 与独立公式在合成排名上逐条对照",
+      "before": "PASS",
+      "after": "PASS",
+      "run_scope": "standalone_algorithm",
+      "reason": "重新运行按哈希锁定的上游 Hindsight 函数和独立公式，全部用例断言通过。",
+      "check_failures": [],
+      "before_evidence": "/replays/X01-01",
+      "after_evidence": "/replays/X01-01"
+    },
+    {
+      "id": "X01-02",
+      "title": "新版采集器从共同边界续读旧游标",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-03",
+      "title": "换分段器后中文及标点仍能回指同一原句",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-04",
+      "title": "有相同文字的两次原生运行不能由相似度算法合根",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-05",
+      "title": "提炼服务离线和无原文提议均不会污染正式声明",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-06",
+      "title": "更新邻居元数据时以稳定版本标识定位",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-07",
+      "title": "迟到的自进化提案不能覆盖新纠正",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-08",
+      "title": "时态图仅在每一跳仍获准时提供路径",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-09",
+      "title": "更换冷热算法保住低频有效约定和历史定向查询",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-10",
+      "title": "权威存储迁移在新库写入后必须追平再回切",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-11",
+      "title": "相同维度的新嵌入空间独立重建并核撤回水位",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-12",
+      "title": "整系统黑盒在隔离副本比较，不可观察项记未知",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-13",
+      "title": "新排序规则只用获准样本做影子评测",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-14",
+      "title": "只有论文描述时区分本地复现与上游一致性",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "对应社区模块的版本化接口、替换实现或可观测双轨演练仍待完成。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "X01-15",
+      "title": "兼容读端加载旧修订和旧导入账目",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "F01-12 已通过旧声明迁移，原样本还需旧导入账和装入状态兼容及旧写端拒写证明。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "E2E-01",
+      "title": "导入分散的排查记录，在另一款宿主从失败步骤继续",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺历史页影响、跨宿主跨会话选择重试及独立工件验证的整链对账。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "E2E-02",
+      "title": "撤权后旧句柄、可见候选、方法与空会话立即一致",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "已有根级撤回和宿主侧授权裁剪，仍缺方法查询、两款宿主及旧句柄的同一根级整链实测。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    },
+    {
+      "id": "E2E-03",
+      "title": "纠正经进程重启、索引重建和算法回退后仍有效",
+      "before": "NOT_RUN",
+      "after": "NOT_RUN",
+      "run_scope": "blocked_without_probe",
+      "reason": "缺策略回切、独立评测数与索引重建后两客户端校验的组合。",
+      "check_failures": [],
+      "before_evidence": null,
+      "after_evidence": null
+    }
+  ]
+}

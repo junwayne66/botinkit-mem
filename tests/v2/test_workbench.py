@@ -86,6 +86,7 @@ class WorkbenchTest(unittest.TestCase):
         self.assertEqual(first["jobs"][0]["event_id"], receipt["events"][-1]["event_id"])
         self.assertEqual(second["jobs"][0]["event_id"], receipt["events"][0]["event_id"])
         self.assertEqual(self.get("/v2/jobs?limit=1&status=failed")["jobs"], [])
+        self.assertEqual(self.get("/v2/jobs?has_candidates=true")["jobs"], [])
         self.assertEqual(self.get("/v2/jobs")["jobs"],
                          self.get("/v2/jobs?limit=40")["jobs"])
 
@@ -139,6 +140,10 @@ class WorkbenchTest(unittest.TestCase):
         with closing(sqlite3.connect(service.root / "data/bmem.sqlite3")) as writer:
             with writer:
                 writer.execute("UPDATE ing_jobs SET status='failed' WHERE job_id=?", (job_id,))
+                writer.execute(
+                    "INSERT INTO ing_grants(source_id,purpose,active,updated_at) VALUES (?,'extract',1,datetime('now')) "
+                    "ON CONFLICT(source_id,purpose) DO UPDATE SET active=1", (source_id,),
+                )
             writer.execute("BEGIN IMMEDIATE")
             with ThreadPoolExecutor(max_workers=6) as executor:
                 pending_write = executor.submit(write)

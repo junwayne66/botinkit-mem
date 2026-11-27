@@ -1,0 +1,9 @@
+test_registered_launcher_upgrade (test_launchers.LauncherAcceptance) ... ok
+test_registered_demand_launcher_resumes_previously_running_job (test_launchers.LauncherAcceptance) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 82.770s
+
+OK
+{"target": "aarch64-apple-darwin", "before_launcher_pid": 24204, "after_launcher_pid": 28170, "matching_instance": true, "build_id": "8ce3195b5a6dc07aeb7d933ce40b0db8d4c55e0def46838518e7927059fdb9b2", "configuration_preserved": true}
+{"target": "aarch64-apple-darwin", "before_launcher_pid": 28214, "after_launcher_pid": 29699, "matching_instance": true, "build_id": "8ce3195b5a6dc07aeb7d933ce40b0db8d4c55e0def46838518e7927059fdb9b2", "configuration_preserved": true}

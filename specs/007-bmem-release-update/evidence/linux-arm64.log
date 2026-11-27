@@ -1,0 +1,106 @@
+Linux arm64 acceptance in an offline Docker container; fixture data and signing keys only.
+Image sha256 ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea
+Initial 40 Rust tests ran on Bookworm arm64. The runtime acceptance below ran there as UID 501.
+The Linux legacy executable was built from the Git HEAD archive that reports bmem 0.2.0.
+Both update candidates used the native target and test-only signing catalogue.
+An isolated build profile enabled opt-level 3 solely for sha2 0.10.9 and 0.11.1 to avoid debug hashing timeouts.
+U02 exercised live stdio MCP against bmem. Actual Codex and Claude Code CLI replay is in the macOS evidence.
+Platform certification, actual launch manager changes, stable trust-root provisioning and release publication are outside this observation.
+
+running 40 tests
+test context::tests::ledger_filters_receipts_and_counts_beyond_the_first_page ... ok
+test history_feishu::tests::accepts_user_envelopes_and_rejects_nonadvancing_tokens ... ok
+test history_feishu::tests::bulk_import_keeps_attachment_record_without_the_download_key ... ok
+test history_feishu::tests::maps_edited_text_and_recalled_messages_with_stable_ids ... ok
+test history_feishu::tests::maps_recoverable_errors_without_returning_upstream_identifiers ... ok
+test data_management::tests::export_rejects_invalid_scope_without_recording_a_transfer ... ok
+test history_feishu::tests::retains_visible_rich_text_without_attachment_artifacts ... ok
+test data_management::tests::export_only_includes_current_unwithdrawn_events_and_persists_no_body ... ok
+test history_hosts::tests::claude_excludes_thinking_and_injected_context_but_preserves_tool_errors ... ok
+test history_hosts::tests::claude_distinguishes_prompt_text_from_notices_and_replays_occupied_turns ... ok
+test history_hosts::tests::codex_retains_visible_layer_and_waits_for_partial_lines ... ok
+test history_hosts::tests::dsh_compressed_history_resumes_and_agrees_with_live_identity ... ok
+test history_tasks::tests::bulk_jobs_with_equal_created_at_drain_in_insertion_order ... ok
+test history_tasks::tests::cancel_rejects_completed_task ... ok
+test history_tasks::tests::cancel_stops_queued_task ... ok
+test history_tasks::tests::capture_revocation_pauses_task ... ok
+test history_tasks::tests::create_conflicts_with_different_fingerprint ... ok
+test history_tasks::tests::create_is_idempotent_with_same_fingerprint ... ok
+test history_tasks::tests::create_writes_task_and_items ... ok
+test history_tasks::tests::deduplication_counts_real_duplicates ... ok
+test history_tasks::tests::interrupted_read_can_resume_after_restart ... ok
+test history_tasks::tests::list_returns_all_tasks_ordered ... ok
+test history_tasks::tests::migrate_creates_tables_idempotently ... ok
+test history_tasks::tests::preview_allows_docs_without_time_window ... ok
+test history_tasks::tests::preview_rejects_empty_targets ... ok
+test history_tasks::tests::preview_rejects_invalid_time_window ... ok
+test history_tasks::tests::preview_rejects_mismatched_adapter ... ok
+test history_tasks::tests::preview_validates_request_without_writing ... ok
+test history_tasks::tests::retry_resumes_failed_targets ... ok
+test history_tasks::tests::run_next_handles_read_error ... ok
+test history_tasks::tests::run_next_processes_one_page ... ok
+test history_tasks::tests::run_next_respects_stop_flag ... ok
+test history_tasks::tests::run_next_resumes_from_checkpoint ... ok
+test history_tasks::tests::withdrawing_source_stops_and_disables_retry_of_explicit_bulk_tasks ... ok
+test ingestion::queue_tests::due_retries_and_backlog_share_the_worker_across_sources ... ok
+test history_hosts::tests::codex_preserves_text_accompanying_large_images_across_page_boundaries ... ok
+test history_feishu::tests::reads_an_individually_paginated_thread_as_the_registered_user ... ok
+test platform::tests::probe_semantics_stay_immediate_while_running ... ok
+test platform::tests::daemon_lock_gives_up_on_a_persistent_owner ... ok
+test platform::tests::daemon_lock_waits_out_a_transient_probe ... ok
+
+test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.53s
+
+ISOLATED_LINUX aarch64 glibc 2.36 uid=501
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+binary: rustc
+commit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a
+commit-date: 2026-11-09
+host: aarch64-unknown-linux-gnu
+release: 1.100.0
+LLVM version: 23.1.5
+   Compiling sha2 v0.10.9
+   Compiling sha2 v0.11.1
+   Compiling bmem v0.3.0 (/run-check/smoke-fast/src/v2/bmem)
+   Compiling rmcp v3.11.0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 34s
+   Compiling bmem v0.3.0 (/run-check/smoke-fast/src/v2/bmem)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 22.27s
+bmem 0.2.0
+{
+  "authority_epoch": 2,
+  "build_id": "87e5a7ee2734fff23f651b03feab189eaf48465ecf1356df90cf63d544d4654c",
+  "commit": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+  "official_update_root_sha256": null,
+  "settings_epoch": 0,
+  "target": "aarch64-unknown-linux-gnu",
+  "test_build": true,
+  "version": "0.3.0",
+  "web_build_id": "7534383d01626838642c26e27aa2638997813c39eb7295d272ea9c019f96d4b7"
+}
+35394085601fa6991b95d013d6aaa8bfda6a3c1f231b83ae6b858a094928b235  /run-check/evidence/fast-linux-0.3.0-test
+a59bda423b64313745793fe6525efe3fdfa9ef8f00a8b594a4a069ee22f705d6  /run-check/evidence/fast-linux-0.3.1-test
+4563c80aac95df04e2ac4b5772d77b46edde1cbc8dbc5048748dde7e4ba98da3  /run-check/evidence/fast-linux-0.2.0-legacy
+test_u01_signed_fresh_install_check_and_own_instance (test_update.UpdateAcceptance.test_u01_signed_fresh_install_check_and_own_instance) ... ok
+test_u02_adoption_reconnects_hosts_and_preserves_authority (test_update.UpdateAcceptance.test_u02_adoption_reconnects_hosts_and_preserves_authority) ... ok
+test_u03_real_continuous_update_and_repeated_noop_while_stopped (test_update.UpdateAcceptance.test_u03_real_continuous_update_and_repeated_noop_while_stopped) ... ok
+test_u04_expired_tampered_unavailable_and_old_metadata (test_update.UpdateAcceptance.test_u04_expired_tampered_unavailable_and_old_metadata) ... ok
+test_u05_concurrent_updaters_and_frozen_old_writer (test_update.UpdateAcceptance.test_u05_concurrent_updaters_and_frozen_old_writer) ... ok
+test_u06_fault_before_commit_rolls_back_the_actual_binary_and_both_databases (test_update.UpdateAcceptance.test_u06_fault_before_commit_rolls_back_the_actual_binary_and_both_databases) ... ok
+test_u06_interrupted_process_can_resume_with_same_transaction (test_update.UpdateAcceptance.test_u06_interrupted_process_can_resume_with_same_transaction) ... ok
+test_u07_no_legacy_database_restore_after_opening_writes (test_update.UpdateAcceptance.test_u07_no_legacy_database_restore_after_opening_writes) ... ok
+test_u07_compatible_program_rollback_preserves_later_writes_and_highest_version (test_update.UpdateAcceptance.test_u07_compatible_program_rollback_preserves_later_writes_and_highest_version) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 77.941s
+
+OK
+
+U09 draft guard and stable target promotion in the same isolated build and UID
+
+test_u09_incomplete_and_corrupt_draft_cannot_move_signed_channel (test_update.UpdateAcceptance.test_u09_incomplete_and_corrupt_draft_cannot_move_signed_channel) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 6.039s
+
+OK

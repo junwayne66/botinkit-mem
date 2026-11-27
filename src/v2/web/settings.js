@@ -35,7 +35,7 @@ let settingsLoadFailures = 0;
 let settingsPollHalted = false;
 let lastConfigResponse = '';
 let editingModel = null;
-const draftBadges = new Map();
+const draftIndicators = new Map();
 const probeStatuses = new Map(); // model.id → { text, error, detail }，跨增量刷新保留
 const probingModels = new Set();
 
@@ -69,8 +69,10 @@ function modelDrafted() {
 function updateDraftBadges() {
   const drafts = configDrafts();
   const show = (formId, on) => {
-    const badge = draftBadges.get(formId);
-    if (badge) badge.hidden = !on;
+    const indicator = draftIndicators.get(formId);
+    if (!indicator) return;
+    indicator.badge.hidden = !on;
+    indicator.submitBtn.classList.toggle('btn--primary', on);
   };
   show('profile-form', 'profile' in drafts);
   show('vector-form', 'vector' in drafts);
@@ -526,7 +528,7 @@ function attachDraftBadge(form, submitBtn) {
     form.insertBefore(row, submitBtn);
     row.append(submitBtn, badge);
   }
-  draftBadges.set(form.id, badge);
+  draftIndicators.set(form.id, { badge, submitBtn });
 }
 
 function bindSettingsForms() {

@@ -1,0 +1,27 @@
+{
+  "X01-01": {
+    "replay": {
+      "upstream": {
+        "overlap": "XSL",
+        "empty": "LM",
+        "tie": "ZA",
+        "swapped": "AZ"
+      },
+      "local": {
+        "overlap": "XSL",
+        "empty": "LM",
+        "tie": "AZ",
+        "swapped": "AZ"
+      },
+      "raw_stdout": [
+        "overlap upstream=XSL local=XSL  X=0.032522475 S=0.016393443 L=0.016129032",
+        "empty   upstream=LM local=LM  L=0.016393443 M=0.016129032",
+        "tie     upstream=ZA local=AZ  Z=0.016393443 A=0.016393443",
+        "swapped upstream=AZ local=AZ  A=0.016393443 Z=0.016393443"
+      ],
+      "source": "../replay-example.md",
+      "commit": "0aca9f80ec87237756c445ac27bf9e5affdc67fe",
+      "overlap_score_x": "0.032522475"
+    }
+  }
+}

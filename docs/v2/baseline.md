@@ -37,3 +37,9 @@ shasum -a 256 -c docs/v2/research.sha256
 ```
 
 本次采用全新数据模型、宿主契约和界面设计。首个实现切片从空的 V2 数据目录起步。旧库导入、旧 API 别名、旧 UI 路径和就地迁移均无兼容验收项。新服务自身的备份恢复、撤回水位及新旧策略切换仍属 V2 的产品承诺。
+
+### 2026-11-26 研究入口导航修订
+
+该次修订在[研究入口](../../research/README.md)新增[升级功能提案](../../research/PRD-memory-upgrade.md)与[本轮调研](../../research/landscape-2026-11-26/README.md)的入口。导航在该次修订时的 SHA-256 为 `c2d70853eb5dca4599a62ab330e7bc19f5f93b6d6d230012870e13dce3952d1a`。提案的功能及批次供后续选定范围，11 月 19 日的产品决定仍以本记录上文为准。
+
+历史清单中的导航指纹为 `7d7e935eca9e195413a16ab4dab913690e7c5d82b3e4b02fce329c217afa79e5`，可用 `git show 65d1a50cb4644fd23f93fe5b6eb938b106c65887:research/README.md | shasum -a 256` 复现。将旧清单用于本次工作树，预期只有导航一项不同，其余九份冻结输入仍可逐项校验。

@@ -1,6 +1,6 @@
 # ---- Rust / Cargo ----
-/target/
-**/target/
+target/
+target-*/
 *.pdb
 
 # ---- Python（集成测试运行环境）----
@@ -17,22 +17,41 @@ npm-debug.log*
 
 # ---- 本地数据与运行时产物 ----
 *.db
-*.db-shm
-*.db-wal
+*.db-*
 *.sqlite
-*.sqlite3-shm
-*.sqlite3-wal
-/.botinkit-mem/
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+.bmem/
+.bmem-updates/
+.botinkit-mem/
 /backups/
-/evidence/
 /runtime/
 /connections/
+
+# ---- 打包与本机验收输出 ----
 /dist/
+/candidate/
+/evidence/
+/windows-u08-evidence/
+/tests/v2/artifacts/
+/legacy-source/
 
 # ---- 密钥与本地环境 ----
 .env
 .env.*
 !.env.example
+*.key
+*.key.pem
+*.p12
+*.pfx
+*.keychain-db
+private.pem
+root.pem
+targets.pem
+snapshot.pem
+timestamp.pem
+/tuf-keys/
 
 # ---- 操作系统 / 编辑器 ----
 .DS_Store
@@ -40,15 +59,16 @@ npm-debug.log*
 .vscode/
 *.swp
 
-# ---- 本地工具生成产物（按需保留目录本身的忽略规则）----
+# ---- 本机工具状态、工作树与设计草稿 ----
+/.claude/
+/.codex/
+/.cursor/
+/.workbuddy/
+/.worktrees/
 .archify/
 .hallmark/
 /docs/assets/ui-refs/
+/docs/v2/ui/drafts/
 
-# ---- 并发开发 worktree 与隔离构建产物（T044）----
-.worktrees/
-**/target-*/
-
-# ---- 机器生成的调研简报（含本机路径，不入库）----
-specs/005-agent-mcp-interface/research-brief.md
-/tests/v2/artifacts/
+# ---- 机器生成的调研简报 ----
+/specs/005-agent-mcp-interface/research-brief.md

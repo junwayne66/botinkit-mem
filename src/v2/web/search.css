@@ -6,22 +6,30 @@
 }
 .ms-dialog::backdrop { background: #030710bb; }
 .ms-dialog[open] { animation: ms-enter .16s ease-out; }
-.ms-panel { display: flex; flex-direction: column; max-height: inherit; padding: clamp(16px, 4vw, 25px); gap: 13px; }
-.ms-heading, .ms-form, .ms-hit-head, .ms-modes { display: flex; align-items: center; gap: 9px; }
+.ms-panel { display: flex; flex-direction: column; max-height: inherit; overflow-y: auto; padding: clamp(16px, 4vw, 25px); gap: 13px; }
+.ms-heading, .ms-form, .ms-hit-head { display: flex; align-items: center; gap: 9px; }
 .ms-heading { justify-content: space-between; }
 .ms-heading h2 { font-size: 1.25rem; }
-.ms-close, .ms-modes button {
-  min-height: 40px; padding: 3px 12px; border: 1px solid transparent; border-radius: 7px;
+.ms-close {
+  min-height: 40px; padding: 3px 12px; border: 1px solid transparent; border-radius: var(--control-radius);
   font: inherit; font-size: .84rem; color: var(--muted); background: transparent;
 }
-.ms-close:hover, .ms-modes button:hover { background: var(--surface-2); color: var(--text); }
+.ms-close:hover { background: var(--surface-2); color: var(--text); }
 .ms-form input {
   min-width: 0; flex: 1; min-height: 44px; padding: 9px 12px; margin: 0;
-  border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 16px;
+  border: 1px solid var(--field-border); border-radius: var(--control-radius); font: inherit; font-size: 16px;
   color: var(--text); background: var(--bg); caret-color: var(--accent);
 }
-.ms-modes { gap: 4px; align-self: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
-.ms-modes button[aria-pressed="true"] { color: var(--accent); background: var(--ok-bg); border-color: var(--border); }
+.ms-modes { align-self: flex-start; }
+.ms-filters { border-block: 1px solid var(--divider); padding-block: 4px; }
+.ms-filters summary { width: fit-content; padding: 5px 0; cursor: pointer; font-size: .9rem; }
+.ms-filter-count { margin-left: 8px; color: var(--muted); font-size: .8rem; }
+.ms-filters fieldset { min-width: 0; margin: 8px 0; padding: 0; border: 0; }
+.ms-filters legend { color: var(--muted); font-size: .8rem; }
+.ms-options { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.ms-options label { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; cursor: pointer; font-size: .86rem; }
+.ms-options input { margin: 0; accent-color: var(--accent); }
+.ms-filters button { margin: 0 0 8px; }
 #ms-status, .ms-hit small { font-size: .83rem; color: var(--muted); overflow-wrap: anywhere; }
 #ms-results { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; transition: opacity .12s ease; }
 #ms-results:empty { display: none; }
@@ -38,6 +46,7 @@
 @keyframes ms-enter { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
 @media (max-width: 600px) {
   .ms-dialog { inset-block-start: max(12px, env(safe-area-inset-top)); max-height: calc(100dvh - 24px); }
-  .ms-close, .ms-modes button, .ms-dialog .btn { min-height: 44px; }
+  .ms-close, .ms-dialog .btn { min-height: 44px; }
+  .ms-filters summary, .ms-options label { padding-block: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .ms-dialog[open] { animation: none; } #ms-results { transition: none; } }

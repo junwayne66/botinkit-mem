@@ -1,0 +1,7 @@
+{"target": "aarch64-pc-windows-msvc", "build_id": "83572c65999737a6eb59a78e9fe032d535f141daec0e8985dcaafe1d0e9bdbf7", "scheduler_restart_verified": true, "configuration_preserved": true, "stopped_state_preserved": true}
+test_registered_task_restores_running_or_stopped_state (__main__.WindowsTaskSchedulerAcceptance.test_registered_task_restores_running_or_stopped_state) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 46.287s
+
+OK

@@ -218,9 +218,12 @@
     meter.setAttribute('aria-hidden', 'true');
     const tip = element('div', 'atlas-tooltip');
     tip.hidden = true;
-    stage.append(base, fx, note, notice, tip, meter, toolbar);
+    stage.append(base, fx, note, notice, tip, meter);
     // 常驻操作提示：缩放 / 平移 / 键盘快捷键不再只藏在图标按钮的 title 里。
-    const hint = element('p', 'atlas-hint', '拖动平移 · Ctrl+滚轮缩放 · +/− 缩放 · 0 复位 · Esc 取消选择');
+    // 触屏没有滚轮与快捷键：纵向滑动交还页面滚动，横向拖动平移，缩放与复位走按钮。
+    const hint = element('p', 'atlas-hint', matchMedia('(pointer: coarse)').matches
+      ? '横向拖动平移 · 纵向滑动滚动页面 · 用按钮缩放与复位'
+      : '拖动平移 · Ctrl+滚轮缩放 · +/− 缩放 · 0 复位 · Esc 取消选择');
     hint.id = 'atlas-hint-' + (++hintSeq);
     base.setAttribute('aria-describedby', hint.id);
     const legend = element('div', 'atlas-legend');
@@ -235,7 +238,7 @@
     const detail = element('div', 'atlas-inspector');
     detail.setAttribute('aria-live', 'polite');
     detail.hidden = true;
-    root.append(stage, hint, legend, explorer, detail);
+    root.append(stage, toolbar, hint, legend, explorer, detail);
     container.replaceChildren(root);
     const signal = new AbortController(),
       listen = { signal: signal.signal };

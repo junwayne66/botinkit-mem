@@ -1,0 +1,16 @@
+private fixture: network=none cgroupns=private host_binds=[]
+aarch64
+systemd
+4563c80aac95df04e2ac4b5772d77b46edde1cbc8dbc5048748dde7e4ba98da3  /qa/bin/bmem-legacy
+b862e94c9d01ea9a92417e37e2352a0f062eb2fa2ffa4ce8e1e38b03a355e506  /qa/bin/bmem-candidate
+test_registered_launcher_upgrade (test_launchers.LauncherAcceptance.test_registered_launcher_upgrade) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 26.885s
+
+OK
+{"target": "aarch64-unknown-linux-gnu", "before_launcher_pid": 750, "after_launcher_pid": 814, "matching_instance": true, "build_id": "528dd192c5abebb947444188bea394eac82451c01349735296d16546f1d65e2d", "configuration_preserved": true}
+
+Source SHA-256
+3cdf2e200c32b5cb291168b5efc5cfd0372cca9082580a389c773f341e3a0e3c  src/v2/bmem/src/update/supervisor.rs
+06a8a5d89589c4e31bf3a1bc44ef7d0ba89850f614b0c60e338860387ef1c4db  src/v2/bmem/src/update/supervisor/systemd.rs

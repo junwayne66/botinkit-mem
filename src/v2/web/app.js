@@ -97,7 +97,7 @@ const API_TIMEOUT_MS = 30000;
 const API_LONG_TIMEOUT_MS = 120000;
 function apiTimeoutFor(method, path, opts) {
   if (opts.timeoutMs != null) return opts.timeoutMs;
-  if (/^\/v2\/models\/[^/]+\/test$/.test(path)) return API_LONG_TIMEOUT_MS;
+  if (/^\/v2\/models\/[^/]+\/test$/.test(path)) return 190000;
   const kind = opts.body && opts.body.kind;
   if (kind === 'backup' || kind === 'restore_preview') return API_LONG_TIMEOUT_MS;
   if (method === 'GET' && !path.startsWith('/v2/history/options?')) return API_READ_TIMEOUT_MS;
@@ -617,11 +617,20 @@ function hideSessionBanner() {
 //  当前声明 + 追加
 // =========================================================
 let libraryProject = '';
+let libraryValidAt = '';
 let libraryRequest = 0;
 const libraryTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' });
+const statementTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'medium' });
+
+function statementTimeElement(value) {
+  return el('time', { datetime: value, title: value, text: statementTime.format(new Date(value)) });
+}
 
 function loadLibraryScope() {
   libraryProject = $('#library-scope').value === 'project' ? $('#library-project').value.trim() : '';
+  // datetime-local 给出本机时区的墙上时间；服务要求带时区的 RFC 3339，这里换算成 UTC。
+  const picked = $('#library-valid-at').value;
+  libraryValidAt = picked ? new Date(picked).toISOString() : '';
   return loadStatements();
 }
 
@@ -637,12 +646,31 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('#library-scope').addEventListener('change', () => {
     const project = $('#library-scope').value === 'project';
-    $('#library-project-field').hidden = $('#library-apply').hidden = !project;
+    $('#library-project-field').hidden = !project;
     $('#library-project').required = project;
     if (project) $('#library-project').focus();
     loadLibraryScope();
   });
 });
+
+let proposalsRequest = 0;
+async function loadLibrary() {
+  const request = ++proposalsRequest;
+  const host = $('#library-proposals');
+  const [, res] = await Promise.all([loadStatements(), api('GET', '/v2/jobs?has_candidates=true&limit=4')]);
+  if (request !== proposalsRequest || currentView !== 'statements') return;
+  const jobs = res.data?.jobs;
+  if (!res.ok || !Array.isArray(jobs)) {
+    host.replaceChildren(emptyMsg(res.ok ? '提炼结果读取失败。' : errorHeadline(res)));
+  } else if (!jobs.length) {
+    host.replaceChildren(emptyMsg('还没有可查看的提炼候选。可以在「后台作业」查看处理进度。'));
+  } else {
+    reconcileList(host, jobs, job => job.job_id, job => el('article', { class: 'library-job' }, [
+      el('h3', { text: job.source_label + ' · ' + (jobKinds[job.actor_kind] || job.actor_kind) }),
+      jobCandidateDetails(job)
+    ]));
+  }
+}
 
 async function loadStatements() {
   const request = ++libraryRequest;
@@ -655,10 +683,10 @@ async function loadStatements() {
     return;
   }
   setLoading(result, '正在读取当前事实…');
-  const res = await api(
-    'GET',
-    '/v2/statements' + (libraryProject ? '?project=' + encodeURIComponent(libraryProject) : '')
-  );
+  const query = new URLSearchParams();
+  if (libraryProject) query.set('project', libraryProject);
+  if (libraryValidAt) query.set('valid_at', libraryValidAt);
+  const res = await api('GET', '/v2/statements' + (query.size ? '?' + query : ''));
   if (request !== libraryRequest) return;
   seq.textContent = '';
   const items = res.ok && res.data && Array.isArray(res.data.statements) ? res.data.statements : null;
@@ -672,7 +700,14 @@ async function loadStatements() {
   setText(seq, '修订序列 ' + res.data.change_seq);
   setText(
     result,
-    libraryProject
+    libraryValidAt
+      ? (libraryProject || '全局') +
+        ' · ' +
+        new Date(libraryValidAt).toLocaleString('zh-CN', { hour12: false }) +
+        ' · ' +
+        items.length +
+        ' 项适用事实'
+      : libraryProject
       ? libraryProject + ' · ' + items.length + ' 项适用事实，含沿用的全局声明'
       : '全局 · ' + items.length + ' 项当前事实'
   );
@@ -684,7 +719,7 @@ async function loadStatements() {
 }
 
 function statementRow(item) {
-  const titles = { 'report.language': '报告语言', 'report.opening': '报告开头' };
+  const titles = { 'report.language': '报告语言', 'report.opening': '报告开头', 'code_example.language': '代码示例语言' };
   const labels = {
     'report.language': { zh: '中文', en: '英文' },
     'report.opening': { actions: '先列行动项', conclusion: '先写结论' }
@@ -698,14 +733,26 @@ function statementRow(item) {
       el('dt', { text: '事实标识' }),
       el('dd', { text: item.fact_id }),
       el('dt', { text: '修订标识' }),
-      el('dd', { text: item.revision_id }),
+      el('dd', { text: item.revision_id, 'data-field': 'revision-id' }),
       el('dt', { text: '生效时间' }),
-      el('dd', { text: libraryTime.format(new Date(item.valid_from)) })
+      el('dd', {}, [statementTimeElement(item.valid_from)]),
+      ...(item.valid_until ? [
+        el('dt', { text: '有效至（不含）' }),
+        el('dd', {}, [statementTimeElement(item.valid_until)]),
+      ] : []),
+      ...(item.timezone ? [
+        el('dt', { text: '解析时区' }),
+        el('dd', { text: item.timezone }),
+      ] : []),
+      ...(item.clause ? [
+        el('dt', { text: '对应分句' }),
+        el('dd', { text: item.clause }),
+      ] : [])
     ])
   ]);
   return el('article', { class: 'library-fact' }, [
     el('div', { class: 'library-fact-head' }, [
-      el('h4', { text: titles[item.key] || item.key }),
+      el('h3', { text: titles[item.key] || item.key }),
       pill(scopeText(item.scope), 'info')
     ]),
     el('div', { class: 'library-fact-value' }, [
@@ -907,7 +954,7 @@ function historyRow(revision) {
     el('dt', { text: '声明标识' }),
     el('dd', { text: revision.statement_id }),
     el('dt', { text: '生效时间' }),
-    el('dd', { text: libraryTime.format(new Date(revision.valid_from)) })
+    el('dd', {}, [statementTimeElement(revision.valid_from)])
   ];
   if (revision.supersedes) metadata.push(el('dt', { text: '取代的修订' }), el('dd', { text: revision.supersedes }));
   return el('article', { class: 'library-fact history-edition' }, [
@@ -994,8 +1041,8 @@ const loadTasks = () =>
       [kv('任务标识', task.task_id), handoff]
     );
   }, (task) => task.task_id);
-const jobLabels = { pending: '等待中', running: '运行中', done: '已完成', failed: '失败', cancelled: '已取消' };
-const jobTones = { pending: 'info', running: 'info', done: 'ok', failed: 'warn', cancelled: 'muted' };
+const jobLabels = { pending: '等待中', retrying: '等待重试', running: '运行中', done: '已完成', failed: '失败队列', cancelled: '已取消', waiting_model: '等待模型' };
+const jobTones = { pending: 'info', retrying: 'warn', running: 'info', done: 'ok', failed: 'warn', cancelled: 'muted', waiting_model: 'warn' };
 const jobKinds = { user_message: '用户消息', assistant_message: '助手回复', tool_result: '工具回执' };
 const candidateKinds = { fact: '事实', plan: '计划', experience: '经验' };
 let jobPages = [null];
@@ -1044,7 +1091,8 @@ async function loadJobPage(pages, message = '', quiet = false) {
   const status = $('#jobs-filter').value;
   const result = $('#jobs-result');
   const query = new URLSearchParams({ limit: '40' });
-  if (status) query.set('status', status);
+  if (status === 'candidates') query.set('has_candidates', 'true');
+  else if (status) query.set('status', status);
   if (pages.at(-1)) query.set('before', pages.at(-1));
   if (!quiet) {
     setLoading(result, '正在读取作业…');
@@ -1071,8 +1119,22 @@ async function loadJobPage(pages, message = '', quiet = false) {
   }
   jobPages = pages;
   nextJobCursor = res.data.next_cursor;
-  jobsLive = jobs.some((job) => job.status === 'pending' || job.status === 'running');
-  setText(result, message || (jobs.length ? '最近创建优先 · 本页 ' + jobs.length + ' 项' : ''));
+  const extraction = res.data.extraction;
+  jobsLive = ['waiting_model', 'probing'].includes(extraction?.state) || extraction?.queued > 0
+    || jobs.some((job) => ['pending', 'retrying', 'running'].includes(job.status));
+  const waitNotice = extraction?.state === 'waiting_model' ? [
+    '提炼暂停，采集继续',
+    '该模型待处理 ' + extraction.queued + ' 项',
+    extraction.oldest_queued_at && '最早入队 ' + libraryTime.format(new Date(extraction.oldest_queued_at)),
+    extraction.last_success_at && '上次成功 ' + libraryTime.format(new Date(extraction.last_success_at)),
+    extraction.reason,
+    extraction.next_probe_at && '下次探测 ' + libraryTime.format(new Date(extraction.next_probe_at)),
+    extraction.configuration_attention && '请检查已绑定的提炼模型和凭据',
+  ].filter(Boolean).join(' · ') : extraction?.state === 'probing' ? '正在核查提炼故障，采集继续'
+    : extraction?.state === 'unconfigured' && extraction.configuration_attention
+    ? '当前提炼模型不可用，请检查模型配置。' : '';
+  setText(result, [message, waitNotice].filter(Boolean).join(' · ')
+    || (jobs.length ? '最近创建优先 · 本页 ' + jobs.length + ' 项' : ''));
   if (!jobs.length) {
     body.replaceChildren(
       emptyMsg(status ? '没有处于此状态的作业。' : '尚无提炼作业。接收到来源事件后可在这里查看进度。')
@@ -1089,6 +1151,7 @@ async function loadJobPage(pages, message = '', quiet = false) {
 
 function jobRow(job) {
   const status = job.status;
+  const displayStatus = job.waiting_model ? 'waiting_model' : status;
   const meta = [
     el('dt', { text: '作业标识' }),
     el('dd', { text: job.job_id }),
@@ -1097,7 +1160,7 @@ function jobRow(job) {
     el('dt', { text: '事件标识' }),
     el('dd', { text: job.event_id })
   ];
-  if (status === 'pending' || status === 'failed') {
+  if (!job.waiting_model && (status === 'pending' || status === 'retrying')) {
     meta.push(el('dt', { text: '可领取时间' }), el('dd', { text: libraryTime.format(new Date(job.available_at)) }));
   }
   const actions = el('div', { class: 'job-actions' }, [
@@ -1127,12 +1190,14 @@ function jobRow(job) {
   }
   const row = el('article', { class: 'library-job' }, [
     el('div', { class: 'job-row-head' }, [
-      el('strong', { text: (jobKinds[job.actor_kind] || job.actor_kind) + '提炼' }),
-      pill(jobLabels[status] || status, jobTones[status])
+      el('h3', { text: (jobKinds[job.actor_kind] || job.actor_kind) + '提炼' }),
+      pill(jobLabels[displayStatus] || displayStatus, jobTones[displayStatus])
     ]),
     el('p', { class: 'job-source', text: job.source_label }),
     el('div', { class: 'job-digest' }, [
       el('span', { text: '已尝试 ' + job.attempts + ' 次' }),
+      ...(['retrying', 'failed'].includes(status) && Number.isInteger(job.retry_count)
+        ? [el('span', { text: '本轮失败的自动重试 ' + job.retry_count + '/3' })] : []),
       el('span', { text: '已记录候选 ' + job.candidates_recorded + ' 项' }),
       el('time', { datetime: job.updated_at, text: libraryTime.format(new Date(job.updated_at)) + ' 更新' })
     ])
@@ -1140,11 +1205,15 @@ function jobRow(job) {
   if (job.fail_reason) {
     const reasons = {
       temporarily_unavailable: '提炼服务暂时不可用',
+      model_timeout: '提炼模型响应超时',
+      model_unreachable: '无法连接到提炼模型',
+      model_incomplete: '提炼模型未返回完整候选',
+      model_invalid_output: '提炼模型返回的候选或原文引用无效',
       invalid_input: '提炼输入或模型响应未通过校验',
       model_route_changed: '处理期间模型配置已更改'
     };
     row.appendChild(
-      el('p', { class: 'job-failure' }, [reasons[job.fail_reason] || '提炼失败', el('code', { text: job.fail_reason })])
+      el('p', { class: 'job-failure' }, [reasons[job.fail_reason] || (/^model_http_\d{3}$/.test(job.fail_reason) ? '提炼服务返回 HTTP ' + job.fail_reason.slice(-3) : '提炼失败'), el('code', { text: job.fail_reason })])
     );
   }
   row.appendChild(actions);
@@ -1483,7 +1552,7 @@ function switchView(name) {
       .catch((error) => showFeatureError(host, error));
   } else {
     const load = {
-      statements: loadStatements,
+      statements: loadLibrary,
       history: loadHistory,
       tasks: loadTasks,
       jobs: loadJobs,
@@ -1534,7 +1603,11 @@ function bindNav() {
     navigate('statements');
   };
   const actions = {
-    'reload-statements': loadStatements,
+    'reload-statements': loadLibrary,
+    'show-candidates': () => {
+      $('#jobs-filter').value = 'candidates';
+      navigate('jobs');
+    },
     'reload-history': loadHistory,
     'reload-config': () => (window.MemorySettings ? window.MemorySettings.refresh() : switchView('settings')),
     'reload-tasks': loadTasks,

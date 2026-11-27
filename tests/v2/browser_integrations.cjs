@@ -170,7 +170,14 @@ async function verifyIntegrations(page, cli, workspace, executable, env) {
   assert.equal(cli('connector','list').sources.filter(s=>s.type==='feishu').length,1);
   const codexSource = cli('connector','list').sources.find(s=>s.type==='codex');
   assert.ok(codexSource);
+  // Reverting the sharing draft should let the next poll apply the persisted capture setting.
+  const share = codex.getByLabel('允许助手读取已授权声明');
+  assert.equal(await share.isChecked(),true);
+  await share.uncheck();
   cli('connector','pause',codexSource.source_id);
+  await codex.getByText('新会话采集已暂停',{exact:true}).waitFor({timeout:8000});
+  assert.equal(await share.isChecked(),false,'poll overwrote an unsaved draft');
+  await share.check();
   await page.waitForFunction(() => {
     const card = document.querySelector('#integration-codex');
     return card && [...card.querySelectorAll('label')].some(label =>
@@ -181,7 +188,7 @@ async function verifyIntegrations(page, cli, workspace, executable, env) {
   assert.equal(await codex.getByLabel('开启新会话采集').isChecked(),false);
   assert.equal(await codex.getByLabel('允许助手读取已授权声明').isChecked(),true);
   await feishu.getByText(/飞书已授权并登记为来源/).waitFor();
-  console.log('Browser verified three isolated host installations, install busy-state under polling, poll survival after a failed GET, and Feishu device-flow/QR/source registration.');
+  console.log('Browser verified three isolated host installations, busy and draft states under polling, poll recovery, and Feishu device-flow/QR/source registration.');
 }
 
 module.exports = { integrationEnvironment, verifyIntegrations };

@@ -1,0 +1,80 @@
+name: Assemble bmem release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      public_preview:
+        description: Build manual-install public preview assets without a stable update root
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test on ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: macos-15, target: aarch64-apple-darwin, min_os: "15.0", suffix: ""}
+          - {runner: macos-15-intel, target: x86_64-apple-darwin, min_os: "15.0", suffix: ""}
+          - {runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu, min_os: "2.35", suffix: ""}
+          - {runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, min_os: "2.35", suffix: ""}
+          - {runner: windows-2022, target: x86_64-pc-windows-msvc, min_os: "10.0.20348", suffix: ".exe"}
+          - {runner: windows-11-arm, target: aarch64-pc-windows-msvc, min_os: "10.0.26100", suffix: ".exe"}
+    runs-on: ${{ matrix.runner }}
+    env:
+      BMEM_PUBLIC_PREVIEW: ${{ inputs.public_preview }}
+      BMEM_BUILD_COMMIT: ${{ github.sha }}
+      BMEM_OFFICIAL_TUF_ROOT: ${{ vars.BMEM_OFFICIAL_TUF_ROOT }}
+      CARGO_TARGET_DIR: target-release-candidate
+      TARGET: ${{ matrix.target }}
+      SUFFIX: ${{ matrix.suffix }}
+      RUNNER_ABI: ${{ matrix.min_os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install "1.100.0-$TARGET" --profile minimal --target "$TARGET"
+          test "$(rustc "+1.100.0-$TARGET" -vV | sed -n 's/^host: //p' | tr -d '\r')" = "$TARGET"
+      - name: Run Rust tests and build production profile
+        shell: bash
+        run: |
+          if [ "$BMEM_PUBLIC_PREVIEW" = true ] || [ -z "${BMEM_OFFICIAL_TUF_ROOT:-}" ]; then
+            unset BMEM_OFFICIAL_TUF_ROOT
+          fi
+          cargo "+1.100.0-$TARGET" test --manifest-path src/v2/bmem/Cargo.toml --locked --release --target "$TARGET"
+          cargo "+1.100.0-$TARGET" build --manifest-path src/v2/bmem/Cargo.toml --locked --release --target "$TARGET"
+      - name: Record the actual build for platform signing
+        shell: bash
+        run: |
+          bin="$CARGO_TARGET_DIR/$TARGET/release/bmem$SUFFIX"
+          python_command=python3
+          if [ "$RUNNER_OS" = Windows ]; then python_command=python; fi
+          "$python_command" scripts/release/candidate.py record --binary "$bin" --target "$TARGET" \
+            --min-os "$RUNNER_ABI" --from-version 0.0.0 --from-version 0.2.0 \
+            --from-epoch 0 --from-epoch 1 --output "candidate/$TARGET.record.json"
+          asset="$("$python_command" -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset"])' "candidate/$TARGET.record.json")"
+          cp "$bin" "candidate/$asset"
+      - name: Verify first run, Web authorization and agent grants
+        if: inputs.public_preview
+        shell: bash
+        run: |
+          python_command=python3
+          if [ "$RUNNER_OS" = Windows ]; then python_command=python; fi
+          cd tests/v2
+          export BMEM_V2_TEST_BIN="../../$CARGO_TARGET_DIR/$TARGET/release/bmem$SUFFIX"
+          "$python_command" -B -m unittest -v \
+            test_integration.BmemIntegration.test_first_write_starts_the_registered_instance \
+            test_integration.BmemIntegration.test_web_requires_owner_session_and_same_origin \
+            test_integration.BmemIntegration.test_synthetic_bound_host_receipts_and_revocation
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bmem-unsigned-${{ matrix.target }}
+          path: candidate/*
+          if-no-files-found: error

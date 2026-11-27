@@ -34,6 +34,36 @@ fn codex_retains_visible_layer_and_waits_for_partial_lines() -> Result<()> {
 }
 
 #[test]
+fn codex_preserves_text_accompanying_large_images_across_page_boundaries() -> Result<()> {
+    let mut file = Builder::new().suffix(".jsonl").tempfile()?;
+    let receipt = json!({"type":"response_item","payload":{
+        "type":"function_call_output","call_id":"large-receipt","output":"x".repeat(3 * MAX_RECORD_BYTES as usize)
+    }});
+    writeln!(file, "{receipt}")?;
+    let prompt_offset = file.as_file().metadata()?.len();
+    let with_image = json!({"type":"response_item","payload":{
+        "type":"message","role":"user","content":[
+            {"type":"input_text","text":"compare these photos"},
+            {"type":"input_image","image_url":"x".repeat(MAX_RECORD_BYTES as usize)}
+        ]
+    }});
+    writeln!(file, "{with_image}")?;
+    let text_only = json!({"type":"response_item","payload":{
+        "type":"message","role":"user","content":[{"type":"input_text","text":"x".repeat(MAX_RECORD_BYTES as usize)}]
+    }});
+    writeln!(file, "{text_only}")?;
+    let first = read_page("codex", file.path(), 0, 100)?;
+    assert_eq!(first.offset, prompt_offset);
+    assert!(first.events.is_empty());
+    let next = read_page("codex", file.path(), first.offset, 100)?;
+    assert!(next.eof);
+    assert_eq!(next.events.len(), 1);
+    assert_eq!(next.events[0]["text"], "compare these photos");
+    assert!(!next.events[0].to_string().contains("image_url"));
+    Ok(())
+}
+
+#[test]
 fn claude_excludes_thinking_and_injected_context_but_preserves_tool_errors() -> Result<()> {
     let mut file = Builder::new().suffix(".jsonl").tempfile()?;
     let records = [
@@ -51,6 +81,89 @@ fn claude_excludes_thinking_and_injected_context_but_preserves_tool_errors() -> 
     assert_eq!(page.events[2]["checks"]["output"]["is_error"], true);
     assert_eq!(page.events[2]["checks"]["output"]["result"], "failed");
     assert!(!serde_json::to_string(&page.events)?.contains("hidden"));
+    Ok(())
+}
+
+#[test]
+fn claude_distinguishes_prompt_text_from_notices_and_replays_occupied_turns() -> Result<()> {
+    let session = "fixture";
+    let prompt_id = "same-turn";
+    let mut file = Builder::new().suffix(".jsonl").tempfile()?;
+    for (uuid, content) in [
+        (
+            "stdout",
+            json!("<local-command-stdout>output</local-command-stdout>"),
+        ),
+        (
+            "notification",
+            json!("<task-notification>done</task-notification>"),
+        ),
+        ("interrupted", json!("[Request interrupted by user]")),
+        (
+            "real",
+            json!([{"type":"text","text":"<ide_opened_file>file</ide_opened_file>"},{"type":"text","text":"first question"}]),
+        ),
+        ("follow-up", json!("second question")),
+    ] {
+        writeln!(
+            file,
+            "{}",
+            json!({"timestamp":TIME,"type":"user","sessionId":session,"promptId":prompt_id,"uuid":uuid,"message":{"role":"user","content":content}})
+        )?;
+    }
+    let events = read_page("claude-code", file.path(), 0, 100)?.events;
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["text"], "first question");
+    assert_eq!(events[1]["text"], "second question");
+    let hook = crate::host::normalize(
+        "claude-code",
+        json!({
+            "hook_event_name":"UserPromptSubmit", "session_id":session, "prompt_id":prompt_id,
+            "prompt":"first question", "at":TIME,
+        }),
+    )?;
+    assert_eq!(
+        hook["events"][0]["native_object"],
+        events[0]["native_object"]
+    );
+
+    for legacy_echo in [false, true] {
+        let mut db = rusqlite::Connection::open_in_memory()?;
+        crate::authority::migrate(&db)?;
+        crate::context::migrate(&db)?;
+        crate::ingestion::migrate(&db)?;
+        crate::retrieval::migrate(&mut db)?;
+        let source = crate::ingestion::register(
+            &mut db,
+            json!({"type":"claude-code","account":"local","actors":["owner"]}),
+        )?;
+        let source_id = source["source_id"].as_str().unwrap();
+        crate::ingestion::set_capture(&db, source_id, true)?;
+        let mut accept = |key: &str, prev: &str, events: &Value| {
+            crate::ingestion::accept(
+                &mut db,
+                "owner",
+                key,
+                json!({
+                    "source_id":source_id,"cursor":prev,"next_cursor":key,"events":events,
+                }),
+                "balanced",
+            )
+        };
+        let mut prior = hook["events"].clone();
+        if legacy_echo {
+            prior[0]["text"] = json!("<local-command-stdout>legacy output</local-command-stdout>");
+        }
+        accept("first", "", &prior)?;
+        assert_eq!(
+            accept("second", "first", &json!(events))?["jobs_created"],
+            if legacy_echo { 2 } else { 1 }
+        );
+        assert_eq!(
+            accept("replay", "second", &json!(events))?["jobs_created"],
+            0
+        );
+    }
     Ok(())
 }
 

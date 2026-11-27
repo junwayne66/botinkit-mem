@@ -1,0 +1,1035 @@
+{
+  "date": "2026-11-27",
+  "build": {
+    "authority_epoch": 2,
+    "build_id": "8ef2fe0180f9b4d46253867576e325a36998e215b79074964896dc9d210b5def",
+    "commit": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+    "official_update_root_sha256": null,
+    "settings_epoch": 0,
+    "target": "aarch64-apple-darwin",
+    "test_build": true,
+    "version": "0.3.0",
+    "web_build_id": "7534383d01626838642c26e27aa2638997813c39eb7295d272ea9c019f96d4b7"
+  },
+  "candidate_binary_sha256": "ffb3356173171821b0b3cbc003d0db1a78c8d403bc3496f21a74895efc50f0f6",
+  "legacy_binary_sha256": "d0e36329b8de767013e0dd3a58c220df67e1d634aa04d9efb6689509226f02b1",
+  "fixture_sha256": {
+    "F01": "73c2fc662bb4a8c74d4a8cbafee2770faaa4c90d6c6cc35a5fa537617d8951d2",
+    "F02": "2c01e3f8c53bd714b7ac76ebf84e6fc23ecf3875afbd2635c01d0a11f8ce6be7",
+    "F03": "2bb2614f72fd3d18073d9df542a0f01db5ed38615a3103dd11d36db04758d78a",
+    "F04": "dcf9c5de381e26fe3bd59025bf3b990fb5af23a8bf4da347d260f780d760fb65",
+    "F05": "8ee746d58ee5d5d72530390709cb724b1809e1923dc974bc62788579dab4b810",
+    "F06": "6e92d6828ac97ad399da6e71ac4e05f8adc0a32c729d0197775047e1af27e156",
+    "F07": "f408aa9c425476ef7c7c76d5cbdd0c0c567e31677c8898af6ecefd73b4999ba7",
+    "X01": "347e6349e61725b7196666511d963461286cba3b992e111743c85efa8774a578",
+    "E2E": "72a977ef0bd136b9c1f18621b08a8b710216c617461d8474ad0f9651ff51a848"
+  },
+  "catalogue_cases": 134,
+  "catalogue_checks": 652,
+  "counts": {
+    "PASS": 134,
+    "FAIL": 0,
+    "NOT_RUN": 0
+  },
+  "groups": {
+    "F01": {
+      "PASS": 18,
+      "FAIL": 0,
+      "NOT_RUN": 0
+    },
+    "F02": {
+      "PASS": 16,
+      "FAIL": 0,
+      "NOT_RUN": 0
+    },
+    "F03": {
+      "PASS": 16,
+      "FAIL": 0,
+      "NOT_RUN": 0
+    },
+    "F04": {
+      "PASS": 17,
+      "FAIL": 0,
+      "NOT_RUN": 0
+    },
+    "F05": {
+      "PASS": 16,
+      "FAIL": 0,
+      "NOT_RUN": 0
+    },
+    "F06": {
+      "PASS": 16,
+      "FAIL": 0,
+      "NOT_RUN": 0
+    },
+    "F07": {
+      "PASS": 17,
+      "FAIL": 0,
+      "NOT_RUN": 0
+    },
+    "X01": {
+      "PASS": 15,
+      "FAIL": 0,
+      "NOT_RUN": 0
+    },
+    "E2E": {
+      "PASS": 3,
+      "FAIL": 0,
+      "NOT_RUN": 0
+    }
+  },
+  "cases": [
+    {
+      "id": "F01-01",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-01"
+    },
+    {
+      "id": "F01-02",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-02"
+    },
+    {
+      "id": "F01-03",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-03"
+    },
+    {
+      "id": "F01-04",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-04"
+    },
+    {
+      "id": "F01-05",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-05"
+    },
+    {
+      "id": "F01-06",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-06"
+    },
+    {
+      "id": "F01-07",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-07"
+    },
+    {
+      "id": "F01-08",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-08"
+    },
+    {
+      "id": "F01-09",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-09"
+    },
+    {
+      "id": "F01-10",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-10"
+    },
+    {
+      "id": "F01-11",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-11"
+    },
+    {
+      "id": "F01-12",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-12"
+    },
+    {
+      "id": "F01-13",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-13"
+    },
+    {
+      "id": "F01-14",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-14"
+    },
+    {
+      "id": "F01-15",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-15"
+    },
+    {
+      "id": "F01-16",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-16"
+    },
+    {
+      "id": "F01-17",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-17"
+    },
+    {
+      "id": "F01-18",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F01-18"
+    },
+    {
+      "id": "F02-01",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-01"
+    },
+    {
+      "id": "F02-02",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-02"
+    },
+    {
+      "id": "F02-03",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-03"
+    },
+    {
+      "id": "F02-04",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-04"
+    },
+    {
+      "id": "F02-05",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-05"
+    },
+    {
+      "id": "F02-06",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-06"
+    },
+    {
+      "id": "F02-07",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-07"
+    },
+    {
+      "id": "F02-08",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-08"
+    },
+    {
+      "id": "F02-09",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-09"
+    },
+    {
+      "id": "F02-10",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-10"
+    },
+    {
+      "id": "F02-11",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-11"
+    },
+    {
+      "id": "F02-12",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-12"
+    },
+    {
+      "id": "F02-13",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-13"
+    },
+    {
+      "id": "F02-14",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-14"
+    },
+    {
+      "id": "F02-15",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-15"
+    },
+    {
+      "id": "F02-16",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F02-16"
+    },
+    {
+      "id": "F03-01",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-01"
+    },
+    {
+      "id": "F03-02",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-02"
+    },
+    {
+      "id": "F03-03",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-03"
+    },
+    {
+      "id": "F03-04",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-04"
+    },
+    {
+      "id": "F03-05",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-05"
+    },
+    {
+      "id": "F03-06",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-06"
+    },
+    {
+      "id": "F03-07",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-07"
+    },
+    {
+      "id": "F03-08",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-08"
+    },
+    {
+      "id": "F03-09",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-09"
+    },
+    {
+      "id": "F03-10",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-10"
+    },
+    {
+      "id": "F03-11",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-11"
+    },
+    {
+      "id": "F03-12",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-12"
+    },
+    {
+      "id": "F03-13",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-13"
+    },
+    {
+      "id": "F03-14",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-14"
+    },
+    {
+      "id": "F03-15",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-15"
+    },
+    {
+      "id": "F03-16",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F03-16"
+    },
+    {
+      "id": "F04-01",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-01"
+    },
+    {
+      "id": "F04-02",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-02"
+    },
+    {
+      "id": "F04-03",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-03"
+    },
+    {
+      "id": "F04-04",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-04"
+    },
+    {
+      "id": "F04-05",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-05"
+    },
+    {
+      "id": "F04-06",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-06"
+    },
+    {
+      "id": "F04-07",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-07"
+    },
+    {
+      "id": "F04-08",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-08"
+    },
+    {
+      "id": "F04-09",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-09"
+    },
+    {
+      "id": "F04-10",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-10"
+    },
+    {
+      "id": "F04-11",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-11"
+    },
+    {
+      "id": "F04-12",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-12"
+    },
+    {
+      "id": "F04-13",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-13"
+    },
+    {
+      "id": "F04-14",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-14"
+    },
+    {
+      "id": "F04-15",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-15"
+    },
+    {
+      "id": "F04-16",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-16"
+    },
+    {
+      "id": "F04-17",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F04-17"
+    },
+    {
+      "id": "F05-01",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-01"
+    },
+    {
+      "id": "F05-02",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-02"
+    },
+    {
+      "id": "F05-03",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-03"
+    },
+    {
+      "id": "F05-04",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-04"
+    },
+    {
+      "id": "F05-05",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-05"
+    },
+    {
+      "id": "F05-06",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-06"
+    },
+    {
+      "id": "F05-07",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-07"
+    },
+    {
+      "id": "F05-08",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-08"
+    },
+    {
+      "id": "F05-09",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-09"
+    },
+    {
+      "id": "F05-10",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-10"
+    },
+    {
+      "id": "F05-11",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-11"
+    },
+    {
+      "id": "F05-12",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-12"
+    },
+    {
+      "id": "F05-13",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-13"
+    },
+    {
+      "id": "F05-14",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-14"
+    },
+    {
+      "id": "F05-15",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-15"
+    },
+    {
+      "id": "F05-16",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F05-16"
+    },
+    {
+      "id": "F06-01",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-01"
+    },
+    {
+      "id": "F06-02",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-02"
+    },
+    {
+      "id": "F06-03",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-03"
+    },
+    {
+      "id": "F06-04",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-04"
+    },
+    {
+      "id": "F06-05",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-05"
+    },
+    {
+      "id": "F06-06",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-06"
+    },
+    {
+      "id": "F06-07",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-07"
+    },
+    {
+      "id": "F06-08",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-08"
+    },
+    {
+      "id": "F06-09",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-09"
+    },
+    {
+      "id": "F06-10",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-10"
+    },
+    {
+      "id": "F06-11",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-11"
+    },
+    {
+      "id": "F06-12",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-12"
+    },
+    {
+      "id": "F06-13",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-13"
+    },
+    {
+      "id": "F06-14",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-14"
+    },
+    {
+      "id": "F06-15",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-15"
+    },
+    {
+      "id": "F06-16",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F06-16"
+    },
+    {
+      "id": "F07-01",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-01"
+    },
+    {
+      "id": "F07-02",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-02"
+    },
+    {
+      "id": "F07-03",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-03"
+    },
+    {
+      "id": "F07-04",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-04"
+    },
+    {
+      "id": "F07-05",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-05"
+    },
+    {
+      "id": "F07-06",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-06"
+    },
+    {
+      "id": "F07-07",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-07"
+    },
+    {
+      "id": "F07-08",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-08"
+    },
+    {
+      "id": "F07-09",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-09"
+    },
+    {
+      "id": "F07-10",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-10"
+    },
+    {
+      "id": "F07-11",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-11"
+    },
+    {
+      "id": "F07-12",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-12"
+    },
+    {
+      "id": "F07-13",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-13"
+    },
+    {
+      "id": "F07-14",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-14"
+    },
+    {
+      "id": "F07-15",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-15"
+    },
+    {
+      "id": "F07-16",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-16"
+    },
+    {
+      "id": "F07-17",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/F07-17"
+    },
+    {
+      "id": "X01-01",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-01"
+    },
+    {
+      "id": "X01-02",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-02"
+    },
+    {
+      "id": "X01-03",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-03"
+    },
+    {
+      "id": "X01-04",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-04"
+    },
+    {
+      "id": "X01-05",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-05"
+    },
+    {
+      "id": "X01-06",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-06"
+    },
+    {
+      "id": "X01-07",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-07"
+    },
+    {
+      "id": "X01-08",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-08"
+    },
+    {
+      "id": "X01-09",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-09"
+    },
+    {
+      "id": "X01-10",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-10"
+    },
+    {
+      "id": "X01-11",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-11"
+    },
+    {
+      "id": "X01-12",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-12"
+    },
+    {
+      "id": "X01-13",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-13"
+    },
+    {
+      "id": "X01-14",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-14"
+    },
+    {
+      "id": "X01-15",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/X01-15"
+    },
+    {
+      "id": "E2E-01",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/E2E-01"
+    },
+    {
+      "id": "E2E-02",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/E2E-02"
+    },
+    {
+      "id": "E2E-03",
+      "status": "PASS",
+      "previous": "PASS",
+      "check_failures": [],
+      "evidence": "/replays/E2E-03"
+    }
+  ],
+  "extra_regressions": {
+    "rust": {
+      "exit_code": 0,
+      "evidence": "observations/closure-007-regression-2026-11-27-rust.log"
+    },
+    "integration": {
+      "exit_code": 0,
+      "evidence": "observations/closure-007-regression-2026-11-27-integration.log"
+    },
+    "native": {
+      "exit_code": 0,
+      "evidence": "observations/closure-007-regression-2026-11-27-native.log"
+    }
+  }
+}

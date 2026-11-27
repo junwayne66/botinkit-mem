@@ -313,6 +313,8 @@ class NativeHosts(unittest.TestCase):
                     "tool_response": {
                         "stdout": sentinel,
                         "nested": {"password": "SYNTHETIC-REDACTION-TEST", "check": "present"},
+                        "checks": {"write": {"kind": "artifact_check_v1", "status": "timeout", "marker": "Q7R4"},
+                                   "legacy": "timeout;check-token=Q7R4"},
                     },
                 }
                 command = shlex.split(vault.command(host, client, source, self.task))
@@ -332,6 +334,8 @@ class NativeHosts(unittest.TestCase):
                                  "%s did not scrub a nested credential before persisting evidence" % host)
                 self.assertEqual(sanitized["stdout"], sentinel,
                                  "%s did not scrub a nested credential before persisting evidence" % host)
+                self.assertEqual(checks["write"], {"kind": "artifact_check_v1", "status": "timeout", "marker": "Q7R4"})
+                self.assertEqual(sanitized["checks"]["legacy"], "[redacted credential line]")
 
     def test_cross_host_task_package_grants(self):
         vault = self.vault

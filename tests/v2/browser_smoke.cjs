@@ -132,9 +132,22 @@ async function verifyWorkbench(page) {
   assert.equal(cli('config', 'get').profile, 'data');
 
   cli('declare', fixture.initial, '--scope', 'global', '--share', 'authorized_assistants');
+  const opening = cli('statement', 'list').statements.find((entry) => entry.key === fixture.opening_key);
   await page.locator('nav button[data-view="statements"]').click();
   await page.locator('button[data-action="reload-statements"]').click();
   await page.locator('#stmt-list').getByText(fixture.language_key, { exact: true }).waitFor();
+  const fact = page.locator('#stmt-list .library-fact').filter({ hasText: fixture.opening_key });
+  await fact.getByText('查看原话与出处', { exact: true }).click();
+  const localTime = await page.evaluate((value) => new Date(value).toLocaleString('zh-CN', {
+    dateStyle: 'medium', timeStyle: 'medium',
+  }), opening.valid_from);
+  const effectiveTime = fact.locator('time');
+  assert.equal(await effectiveTime.getAttribute('datetime'), opening.valid_from);
+  assert.equal(await effectiveTime.textContent(), localTime);
+  await page.getByRole('button', { name: '查看全部提炼结果' }).click();
+  await page.locator('#view-jobs:visible').waitFor();
+  assert.equal(await page.locator('#jobs-filter').inputValue(), 'candidates');
+  await page.locator('nav button[data-view="statements"]').click();
   const declaration = page.locator('#append-form');
   await declaration.locator('textarea').fill(fixture.correction);
   await declaration.locator('input[value="authorized_assistants"]').check();

@@ -1,0 +1,6 @@
+test_real_local_model_processes_fixture_page (test_integration.BmemIntegration) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 20.329s
+
+OK

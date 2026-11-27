@@ -1,0 +1,216 @@
+{
+  "scope": "internal-tuf",
+  "target": "aarch64-apple-darwin",
+  "execution_mode": "native",
+  "system": "Darwin",
+  "system_release": "25.3.0",
+  "runtime_machine": "arm64",
+  "status": "PASS",
+  "root_sha256": "ccc2dc73785afee8cac864f86058cb69465cad3076bddc3b259b5f71f065b87e",
+  "legacy_sha256": "d0e36329b8de767013e0dd3a58c220df67e1d634aa04d9efb6689509226f02b1",
+  "initial_sha256": "af68c1135e6e3d97cca8ad53495ee4aa7ed55a1d205d47b452acc4de7e33389e",
+  "successor_sha256": "d179d779eae6db9bc1e02784376534ada477ebd8abad5ad4223db043e2e13fb2",
+  "metadata": [
+    {
+      "scope": "internal",
+      "tuf": {
+        "catalogue_sha256": "4413c59879602cfee4b04013a385c417b2bd8162ec5456d73cbc0cd35eca5053",
+        "metadata_versions": {
+          "root": 1,
+          "targets": 1,
+          "snapshot": 1,
+          "timestamp": 1
+        },
+        "bootstrap_sha256": "ccc2dc73785afee8cac864f86058cb69465cad3076bddc3b259b5f71f065b87e",
+        "verifier": "python-tuf 7.0.1"
+      },
+      "assets": [
+        {
+          "version": "0.3.0",
+          "build_id": "f2d34a6282e58f71fb303cc25bc83b04f3771a2ad7126bfd7924c2e0b883756d",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "aarch64-apple-darwin",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "af68c1135e6e3d97cca8ad53495ee4aa7ed55a1d205d47b452acc4de7e33389e",
+          "len": 22345952
+        },
+        {
+          "version": "0.3.0",
+          "build_id": "a9f92365d9634934cee97df4cd2d8ee4339d8c4e2537edcdcd39545d9a6a8624",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "x86_64-apple-darwin",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "1fa023be8cfe564217c42bcebc9a01c7b92a0d5352303a86290481cbefced4e8",
+          "len": 24993224
+        },
+        {
+          "version": "0.3.0",
+          "build_id": "564699439e78ee1c2c283043b032355beee4695dc4bbf8e78a1b3d54aa31bb86",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "aarch64-unknown-linux-gnu",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "1b9c43be2506f3a66809510afa4c73cd0352e667c966ce019c5fbbc4c784cba8",
+          "len": 25360576
+        },
+        {
+          "version": "0.3.0",
+          "build_id": "d361fdcd4d3823add1f033d423c27e520fe0ac00b83ec05a880cc78310890dfd",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "x86_64-unknown-linux-gnu",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "470cd0087229d156c6fd17ff40d395059c45e8186746bd218445192734dfc830",
+          "len": 27903016
+        }
+      ]
+    },
+    {
+      "scope": "internal",
+      "tuf": {
+        "catalogue_sha256": "a0c12b7d052ce552aa64179fc613a8d32a1b54cc42880f141e092a6575f94497",
+        "metadata_versions": {
+          "root": 1,
+          "targets": 2,
+          "snapshot": 2,
+          "timestamp": 2
+        },
+        "bootstrap_sha256": "ccc2dc73785afee8cac864f86058cb69465cad3076bddc3b259b5f71f065b87e",
+        "verifier": "python-tuf 7.0.1"
+      },
+      "assets": [
+        {
+          "version": "0.3.0",
+          "build_id": "f2d34a6282e58f71fb303cc25bc83b04f3771a2ad7126bfd7924c2e0b883756d",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "aarch64-apple-darwin",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "af68c1135e6e3d97cca8ad53495ee4aa7ed55a1d205d47b452acc4de7e33389e",
+          "len": 22345952
+        },
+        {
+          "version": "0.3.0",
+          "build_id": "a9f92365d9634934cee97df4cd2d8ee4339d8c4e2537edcdcd39545d9a6a8624",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "x86_64-apple-darwin",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "1fa023be8cfe564217c42bcebc9a01c7b92a0d5352303a86290481cbefced4e8",
+          "len": 24993224
+        },
+        {
+          "version": "0.3.0",
+          "build_id": "564699439e78ee1c2c283043b032355beee4695dc4bbf8e78a1b3d54aa31bb86",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "aarch64-unknown-linux-gnu",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "1b9c43be2506f3a66809510afa4c73cd0352e667c966ce019c5fbbc4c784cba8",
+          "len": 25360576
+        },
+        {
+          "version": "0.3.0",
+          "build_id": "d361fdcd4d3823add1f033d423c27e520fe0ac00b83ec05a880cc78310890dfd",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "x86_64-unknown-linux-gnu",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "470cd0087229d156c6fd17ff40d395059c45e8186746bd218445192734dfc830",
+          "len": 27903016
+        },
+        {
+          "version": "0.3.1",
+          "build_id": "88267c1d9646eca3396801f65295f96b204f1427b0b923d09f29235eeccff247",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "aarch64-apple-darwin",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "d179d779eae6db9bc1e02784376534ada477ebd8abad5ad4223db043e2e13fb2",
+          "len": 22345952
+        },
+        {
+          "version": "0.3.1",
+          "build_id": "bde49911246ed83c370da8074ba93930b6ade3d337c47754748419255a2028f2",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "x86_64-apple-darwin",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "4786b2527d5eb92141ca611ab0a705e689e5f41766cd387a3169269700cd7801",
+          "len": 24993224
+        },
+        {
+          "version": "0.3.1",
+          "build_id": "52be0baf6c477ff187ed090efe6095ddc5ab5585edb0fe1cb1256f89e62eb153",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "aarch64-unknown-linux-gnu",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "8cb14ecb9d382d5bc62c420b76d79fc919e096e4d8565d38210f083a3e7baa0e",
+          "len": 25361072
+        },
+        {
+          "version": "0.3.1",
+          "build_id": "a05ca26f683f08541f02240246e799cfa29956163e4e899d1cee54da848a5118",
+          "commit": "2e07cf33c06aed3a8a554156c726240ae3cce89a",
+          "target": "x86_64-unknown-linux-gnu",
+          "authority_epoch": 2,
+          "settings_epoch": 0,
+          "sha256": "0a9ac4d5d08144926366fe3a1424327203e6c82357d1fe48dfc350c7905ae516",
+          "len": 27902744
+        }
+      ]
+    }
+  ],
+  "tests_run": 5,
+  "failures": [],
+  "skipped": [],
+  "observations": [
+    {
+      "case": "test_u01_bootstrap",
+      "seconds": 1.838,
+      "installed_version": "0.3.0",
+      "installed_build": "f2d34a6282e58f71fb303cc25bc83b04f3771a2ad7126bfd7924c2e0b883756d",
+      "installed_sha256": "af68c1135e6e3d97cca8ad53495ee4aa7ed55a1d205d47b452acc4de7e33389e",
+      "embedded_root_unchanged": true
+    },
+    {
+      "case": "test_u02_adopt_0_2_0",
+      "seconds": 2.713,
+      "installed_version": "0.3.0",
+      "installed_build": "f2d34a6282e58f71fb303cc25bc83b04f3771a2ad7126bfd7924c2e0b883756d",
+      "installed_sha256": "af68c1135e6e3d97cca8ad53495ee4aa7ed55a1d205d47b452acc4de7e33389e"
+    },
+    {
+      "case": "test_u03_update_and_repeat",
+      "seconds": 4.392,
+      "installed_version": "0.3.1",
+      "installed_build": "88267c1d9646eca3396801f65295f96b204f1427b0b923d09f29235eeccff247",
+      "installed_sha256": "d179d779eae6db9bc1e02784376534ada477ebd8abad5ad4223db043e2e13fb2",
+      "stale_generation": "update_metadata_rollback"
+    },
+    {
+      "case": "test_u04_u06_reject_tampering_and_restore_after_failed_probe",
+      "seconds": 6.392,
+      "installed_version": "0.3.1",
+      "installed_build": "88267c1d9646eca3396801f65295f96b204f1427b0b923d09f29235eeccff247",
+      "installed_sha256": "d179d779eae6db9bc1e02784376534ada477ebd8abad5ad4223db043e2e13fb2",
+      "rejections": {
+        "timestamp": "update_signature_invalid",
+        "catalogue": "update_transport_failed",
+        "binary": "update_asset_digest_mismatch"
+      },
+      "rollback": "candidate_health_failed",
+      "restored_sha256": "af68c1135e6e3d97cca8ad53495ee4aa7ed55a1d205d47b452acc4de7e33389e"
+    },
+    {
+      "case": "test_u07_compatible_program_rollback_keeps_new_writes",
+      "seconds": 7.312,
+      "installed_version": "0.3.1",
+      "installed_build": "88267c1d9646eca3396801f65295f96b204f1427b0b923d09f29235eeccff247",
+      "installed_sha256": "d179d779eae6db9bc1e02784376534ada477ebd8abad5ad4223db043e2e13fb2"
+    }
+  ]
+}

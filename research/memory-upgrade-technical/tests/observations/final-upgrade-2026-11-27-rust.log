@@ -1,0 +1,58 @@
+   Compiling ring v0.17.14
+   Compiling zstd-sys v2.1.3+zstd.1.5.7
+   Compiling libsqlite3-sys v0.36.0
+   Compiling rustls v0.23.46
+   Compiling rustls-webpki v0.103.17
+   Compiling zstd-safe v7.4.1
+   Compiling zstd v0.13.5
+   Compiling rusqlite v0.38.0
+   Compiling tokio-rustls v0.26.6
+   Compiling hyper-rustls v0.27.10
+   Compiling reqwest v0.12.28
+   Compiling bmem v0.2.0 (src/v2/bmem)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.89s
+     Running unittests src/main.rs (src/v2/bmem/target/debug/build/bmem/eef8606f1ce10e8f/out/bmem-eef8606f1ce10e8f)
+
+running 40 tests
+test history_feishu::tests::accepts_user_envelopes_and_rejects_nonadvancing_tokens ... ok
+test history_feishu::tests::maps_recoverable_errors_without_returning_upstream_identifiers ... ok
+test history_feishu::tests::maps_edited_text_and_recalled_messages_with_stable_ids ... ok
+test history_feishu::tests::bulk_import_keeps_attachment_record_without_the_download_key ... ok
+test history_feishu::tests::retains_visible_rich_text_without_attachment_artifacts ... ok
+test history_hosts::tests::dsh_compressed_history_resumes_and_agrees_with_live_identity ... ok
+test history_hosts::tests::codex_retains_visible_layer_and_waits_for_partial_lines ... ok
+test history_hosts::tests::claude_excludes_thinking_and_injected_context_but_preserves_tool_errors ... ok
+test context::tests::ledger_filters_receipts_and_counts_beyond_the_first_page ... ok
+test history_tasks::tests::cancel_rejects_completed_task ... ok
+test history_tasks::tests::capture_revocation_pauses_task ... ok
+test data_management::tests::export_only_includes_current_unwithdrawn_events_and_persists_no_body ... ok
+test data_management::tests::export_rejects_invalid_scope_without_recording_a_transfer ... ok
+test history_tasks::tests::cancel_stops_queued_task ... ok
+test history_tasks::tests::bulk_jobs_with_equal_created_at_drain_in_insertion_order ... ok
+test history_tasks::tests::create_is_idempotent_with_same_fingerprint ... ok
+test history_tasks::tests::create_conflicts_with_different_fingerprint ... ok
+test history_tasks::tests::preview_rejects_empty_targets ... ok
+test history_tasks::tests::preview_allows_docs_without_time_window ... ok
+test history_tasks::tests::preview_rejects_invalid_time_window ... ok
+test history_tasks::tests::preview_rejects_mismatched_adapter ... ok
+test history_tasks::tests::create_writes_task_and_items ... ok
+test history_tasks::tests::preview_validates_request_without_writing ... ok
+test history_tasks::tests::interrupted_read_can_resume_after_restart ... ok
+test history_tasks::tests::retry_resumes_failed_targets ... ok
+test history_tasks::tests::run_next_handles_read_error ... ok
+test history_tasks::tests::deduplication_counts_real_duplicates ... ok
+test history_hosts::tests::claude_distinguishes_prompt_text_from_notices_and_replays_occupied_turns ... ok
+test history_tasks::tests::list_returns_all_tasks_ordered ... ok
+test ingestion::queue_tests::due_retries_and_backlog_share_the_worker_across_sources ... ok
+test history_tasks::tests::run_next_respects_stop_flag ... ok
+test history_tasks::tests::withdrawing_source_stops_and_disables_retry_of_explicit_bulk_tasks ... ok
+test history_tasks::tests::migrate_creates_tables_idempotently ... ok
+test history_tasks::tests::run_next_processes_one_page ... ok
+test history_tasks::tests::run_next_resumes_from_checkpoint ... ok
+test platform::tests::probe_semantics_stay_immediate_while_running ... ok
+test platform::tests::daemon_lock_waits_out_a_transient_probe ... ok
+test history_hosts::tests::codex_preserves_text_accompanying_large_images_across_page_boundaries ... ok
+test platform::tests::daemon_lock_gives_up_on_a_persistent_owner ... ok
+test history_feishu::tests::reads_an_individually_paginated_thread_as_the_registered_user ... ok
+
+test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s

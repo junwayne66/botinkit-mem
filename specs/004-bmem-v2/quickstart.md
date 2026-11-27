@@ -40,6 +40,38 @@ CLI 用 `bmem connector history-import-all SOURCE_ID --kind sessions` 导入一�
 
 通过 `model add`、`model test`、`model use` 登记模型、运行探针并绑定用途。后台提炼支持通过用途测试的服务器 API 和本地 Ollama。两种用途分别按来源授权。例如对已绑定的生成模型，先用 `grant source <source_id> --purpose extract --allow true --preview` 核对接收端和预览号，再以 `--confirm <preview_id>` 确认。更换提炼接收端后需为该来源重新确认授权。向量默认关闭，启用时绑定通过测试的本机回环嵌入模型，再确认该来源的 `embed` 授权，最后用 `search --mode vector <query>` 执行相似检索。
 
+## 其他本机 Agent 通过 MCP 查询记忆
+
+支持 stdio MCP 的 Agent 可以在这台机器上启动 `bmem mcp serve`。工作台的回环 HTTP 地址供浏览器和 REST API 使用。以 Cursor 为例，在新终端为它登记独立客户端，`--destination` 填便于识别接收端的名称。以下使用默认数据根，若工作台使用自定义数据根，请替换 `bmem_root`。
+
+```sh
+bmem_root="$HOME/.bmem"
+bmem --home "$bmem_root" --json client register cursor --destination cursor-agent
+```
+
+将返回的 `client_id` 替换到下面两条命令。先运行第一条核对授权范围，再把返回的 `preview_id` 填入第二条确认。
+
+```sh
+bmem --home "$bmem_root" grant set --client CLIENT_ID --share-statements true --preview
+bmem --home "$bmem_root" grant set --client CLIENT_ID --share-statements true --confirm PREVIEW_ID
+```
+
+在 Cursor 的 `~/.cursor/mcp.json` 中将以下条目并入 `mcpServers`。将 `command` 改为本机 `command -v bmem` 输出的绝对路径，`--home` 后填写上述数据根的绝对路径，并替换 `CLIENT_ID`。其他 stdio 宿主同样填写这里的命令与参数。[Cursor MCP 配置文档](https://cursor.com/docs/mcp)
+
+```json
+{
+  "mcpServers": {
+    "bmem-v2": {
+      "type": "stdio",
+      "command": "/absolute/path/to/bmem",
+      "args": ["--home", "/absolute/path/to/vault", "mcp", "serve", "--client", "CLIENT_ID"]
+    }
+  }
+}
+```
+
+重新加载宿主的 MCP 配置后，`bmem-v2` 应列出 `search` 工具。它查询当前有效、标记为 `authorized_assistants` 的全局声明。凭据由本机桥接程序读取。新会话采集是数据来源页的独立授权。
+
 ## 集成检查
 
 ```sh

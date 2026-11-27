@@ -12,7 +12,7 @@
 .ledger-field { display: grid; gap: 6px; min-width: 9rem; }
 .ledger-input, .ledger-select {
   min-height: 36px; padding: 7px 10px; font: inherit; color: var(--text);
-  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--field-border); border-radius: 8px;
 }
 .ledger-filter-actions { display: flex; gap: 8px; }
 .ledger-table-scroll { overflow-x: auto; }

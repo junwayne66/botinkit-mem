@@ -1,0 +1,59 @@
+007 terminal recovery cleanup | macOS arm64 | isolated signing identities
+{
+  "bmem-0.3.0": {
+    "sha256": "070bc9e12f33372bd69938ec75e716d217fae0761145737d682ab85c3e6dfbbf",
+    "build": {
+      "authority_epoch": 2,
+      "build_id": "429cf68a3de8c56681c6dd5f5abf8781b54fa9329c955748f894d29df3128cfd",
+      "commit": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+      "official_update_root_sha256": null,
+      "settings_epoch": 0,
+      "target": "aarch64-apple-darwin",
+      "test_build": true,
+      "version": "0.3.0",
+      "web_build_id": "7534383d01626838642c26e27aa2638997813c39eb7295d272ea9c019f96d4b7"
+    }
+  },
+  "bmem-0.3.1": {
+    "sha256": "86e21a6c9fe311fbc250482c9f49391503f3a692796ca256d37bd11e48b4f74e",
+    "build": {
+      "authority_epoch": 2,
+      "build_id": "aec94110463145b0841b100b0e44df8add7caa304a2e226eb456f91b01dae66e",
+      "commit": "12ba926685005eb236045b0aaea5072ffe4c6cb5",
+      "official_update_root_sha256": null,
+      "settings_epoch": 0,
+      "target": "aarch64-apple-darwin",
+      "test_build": true,
+      "version": "0.3.1",
+      "web_build_id": "7534383d01626838642c26e27aa2638997813c39eb7295d272ea9c019f96d4b7"
+    }
+  }
+}
+
+test_u10_verify_recorded_original_fixture_run (__main__.FrozenReleaseRegression) ... skipped 'set BMEM_UPDATE_REGRESSION_JSON and BMEM_UPDATE_EVALUATION_BIN after rerun'
+test_u01_signed_fresh_install_check_and_own_instance (__main__.UpdateAcceptance) ... ok
+test_u02_adoption_reconnects_hosts_and_preserves_authority (__main__.UpdateAcceptance) ... ok
+test_u03_real_continuous_update_and_repeated_noop_while_stopped (__main__.UpdateAcceptance) ... ok
+test_u04_expired_tampered_unavailable_and_old_metadata (__main__.UpdateAcceptance) ... ok
+test_u05_concurrent_updaters_and_frozen_old_writer (__main__.UpdateAcceptance) ... ok
+test_u06_completed_snapshot_cleanup_preserves_unowned_paths_and_retries (__main__.UpdateAcceptance) ... ok
+test_u06_fault_before_commit_rolls_back_the_actual_binary_and_both_databases (__main__.UpdateAcceptance) ... ok
+test_u06_interrupted_process_can_resume_with_same_transaction (__main__.UpdateAcceptance) ... ok
+test_u07_compatible_program_rollback_preserves_later_writes_and_highest_version (__main__.UpdateAcceptance) ... ok
+test_u07_no_legacy_database_restore_after_opening_writes (__main__.UpdateAcceptance) ... ok
+test_u08_managed_update_sharing_violation_and_interrupted_swap_recovery (__main__.UpdateAcceptance) ... skipped 'requires Windows EXE handles and native updater'
+test_u08_native_stdio_holds_executable_until_it_closes (__main__.UpdateAcceptance) ... skipped 'requires Windows EXE handles and native updater'
+test_u09_incomplete_and_corrupt_draft_cannot_move_signed_channel (__main__.UpdateAcceptance) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 61.385s
+
+OK (skipped=3)
+
+Directed status, --check and cleanup retry after symbolic-link substitution
+test_u06_completed_snapshot_cleanup_preserves_unowned_paths_and_retries (__main__.UpdateAcceptance) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 6.031s
+
+OK

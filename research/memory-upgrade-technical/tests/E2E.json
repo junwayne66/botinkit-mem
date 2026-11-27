@@ -1,0 +1,92 @@
+[
+  {
+    "id": "E2E-01",
+    "title": "导入分散的排查记录，在另一款宿主从失败步骤继续",
+    "covers": ["cross_source_to_handoff","declarations_import","resumed_action","independent_outcome"],
+    "fixture": {
+      "project": "潮声",
+      "work_task": "T81",
+      "owner": "O",
+      "hosts": ["claude-code","codex"],
+      "grants": {"capture":["room","terminal"],"extract":["room","terminal"],"task_delivery":{"codex":["room","terminal"]},"shared_declarations":{"codex":["S"]}},
+      "declaration": {"id":"S","scope":"project:潮声","shareable":true,"raw":"潮声项目的示例用 Rust。"},
+      "pages": [{"source":"room","object":"M8","version":1,"role":"assistant","text":"准备重新解析。","task":"T81"},{"source":"terminal","object":"L4","version":1,"role":"tool","run":"r4","task":"T81","text":"parse: PASS; write: TIMEOUT; retry_handle: rq-58a"}],
+      "new_attempt": {"id":"a81-resume","host":"codex","task":"T81","prompt":"继续 T81，只复验失败的步骤。","tools":["retry_write(handle)"]},
+      "retry_tool": {"accept_handle_from":"terminal/L4@1 的 retry_handle 字段","success_effect":"仅在新调用传入正确句柄时写入本次 attempt 的 recovered.json，含 attempt、task、stage、handle、result；无效句柄不产出文件。"}
+    },
+    "steps": [
+      {"id":"import_job","action":"保存所有者的可共享约定 S，依 fixture 绑定授权。把 Claude Code 原会话的工具回执和讨论按两页导入；重投 terminal 页。确认新尝试的工件目录为空。","args":{}},
+      {"id":"resume","action":"关闭旧会话。为 Codex 启动独立空会话，按 new_attempt 提问，仅交付授权的约定与任务证据；保留最终模型输入和真实工具调用记录。提示和工具说明均不提供重试句柄。","args":{}},
+      {"id":"verify","action":"独立核验者先读旧运行 r4 的逐步结果，再从新尝试的工具事件、退出码及独立工件目录读取 recovered.json，核对 attempt、任务、阶段和句柄。只有当新调用成功并生成相符工件时记通过。","args":{}}
+    ],
+    "checks": [
+      {"at":"import_job","path":"/distinct_native_versions","op":"eq","value":2},
+      {"at":"resume","path":"/package_mode","op":"eq","value":"full"},
+      {"at":"resume","path":"/example_language","op":"eq","value":"Rust"},
+      {"at":"resume","path":"/actual_input_text","op":"contains","value":"write: TIMEOUT"},
+      {"at":"resume","path":"/actual_input_text","op":"contains","value":"retry_handle: rq-58a"},
+      {"at":"verify","path":"/parse","op":"eq","value":"passed"},
+      {"at":"verify","path":"/write","op":"eq","value":"failed"},
+      {"at":"verify","path":"/new_tool_stages","op":"eq","value":["write"]},
+      {"at":"verify","path":"/new_artifact","op":"eq","value":{"attempt":"a81-resume","task":"T81","stage":"write","handle":"rq-58a","result":"recovered"}},
+      {"at":"verify","path":"/new_independent_outcome","op":"eq","value":"passed"}
+    ]
+  },
+  {
+    "id": "E2E-02",
+    "title": "撤权后旧句柄、可见候选、方法与空会话立即一致",
+    "covers": ["governance_retrieval_method","end_to_end"],
+    "fixture": {
+      "readers": ["A","B"],
+      "project": "江石",
+      "work_task": "T9",
+      "roots": [{"id":"u","text":"夜泊-61：写入通过","role":"tool"},{"id":"v","text":"解析键已启用","role":"tool"}],
+      "all_roots_readable_by": ["A","B"],
+      "method": {"id":"m","requires_both":["u","v"],"text":"键启用时可用夜泊-61流程"},
+      "old_handles": {"A":"h(u)","B":"h(u)"}
+    },
+    "steps": [
+      {"id":"preview","action":"所有者以同一查询对 A/B 试算仅禁止 A 读 u；记录真实授权仍有效","args":{}},
+      {"id":"commit","action":"确认后立即用旧句柄重读，再做混合检索和方法查询；在 A 与 B 的新上下文捕获输入","args":{}},
+      {"id":"control","action":"获准者 B 从同一任务补读 u；A 定向查独立的 v","args":{}}
+    ],
+    "checks": [
+      {"at":"preview","path":"/A/real_access","op":"eq","value":true},
+      {"at":"commit","path":"/A/old_handle_readable","op":"eq","value":false},
+      {"at":"commit","path":"/A/actual_input","op":"excludes","value":"夜泊-61"},
+      {"at":"commit","path":"/A/active_methods","op":"excludes","value":"m"},
+      {"at":"commit","path":"/B/active_methods","op":"contains","value":"m"},
+      {"at":"control","path":"/B/root","op":"eq","value":"u"},
+      {"at":"control","path":"/A/root","op":"eq","value":"v"}
+    ]
+  },
+  {
+    "id": "E2E-03",
+    "title": "纠正经进程重启、索引重建和算法回退后仍有效",
+    "covers": ["correction_durability","unaffected_fact","end_to_end"],
+    "fixture": {
+      "owner": "O",
+      "project": "冬湖",
+      "initial": [{"id":"L1","text":"全局报告用英文。","dimension":"report.language"},{"id":"O1","text":"报告开头给结论。","dimension":"report.opening"}],
+      "correction": {"id":"L2","text":"更正，报告用中文。","supersedes":"L1"},
+      "scope": "global",
+      "active_strategy": "p2",
+      "last_strategy": "p1",
+      "grants": {"evaluation":false,"share":true}
+    },
+    "steps": [
+      {"id":"append","action":"从 Web 提交对 L1 的纠正，保存返回 ID，不据此判通过","args":{}},
+      {"id":"restart","action":"关闭并重开隔离库的服务，回退排序并重建派生索引，在 CLI 与新宿主查询当前投影","args":{}},
+      {"id":"history","action":"所有者从权威历史独立读取修订链、原始开头修订及评测用例数","args":{}}
+    ],
+    "checks": [
+      {"at":"restart","path":"/effective_language","op":"eq","value":"中文"},
+      {"at":"restart","path":"/model_input_current_refs","op":"excludes","value":"L1"},
+      {"at":"restart","path":"/model_input_current_refs","op":"contains","value":"L2"},
+      {"at":"restart","path":"/model_input_current_refs","op":"contains","value":"O1"},
+      {"at":"history","path":"/L2/supersedes","op":"eq","value":"L1"},
+      {"at":"history","path":"/O1/text","op":"eq","value":"报告开头给结论。"},
+      {"at":"history","path":"/eval_cases_created","op":"eq","value":0}
+    ]
+  }
+]

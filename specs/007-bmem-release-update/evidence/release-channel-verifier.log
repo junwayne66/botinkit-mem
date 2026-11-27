@@ -1,0 +1,55 @@
+007 release verifier evidence | 2026-11-27 | isolated signing + read-only remote probes
+Validation scope: six-target fixture, no production key use or public promotion.
+test_reads_entire_bodies_for_all_six_targets (__main__.GitHubReadback.test_reads_entire_bodies_for_all_six_targets) ... ok
+test_requires_exact_asset_entries_and_body_content (__main__.GitHubReadback.test_requires_exact_asset_entries_and_body_content) ... ok
+test_requires_immutable_release_and_exact_tag_commit (__main__.GitHubReadback.test_requires_immutable_release_and_exact_tag_commit) ... ok
+test_rejects_bad_signatures_and_expiry (__main__.SignedStaging.test_rejects_bad_signatures_and_expiry) ... ok
+test_rejects_tampered_catalogue_and_wrong_signed_catalogue (__main__.SignedStaging.test_rejects_tampered_catalogue_and_wrong_signed_catalogue) ... ok
+test_validates_actual_local_signatures_and_six_target_catalogue (__main__.SignedStaging.test_validates_actual_local_signatures_and_six_target_catalogue) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.273s
+
+OK
+
+Release catalogue U09 with previously pinned macOS arm64 test binaries and current catalogue verification code:
+test_u09_incomplete_and_corrupt_draft_cannot_move_signed_channel (__main__.UpdateAcceptance) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 54.545s
+
+OK
+
+Static workflow validation: actionlint 1.7.12 PASS for release-candidate.yml and windows-update-acceptance.yml.
+
+Native signature guard on Apple Silicon:
+macOS Developer ID does not match the expected signing team
+Ad-hoc signed fixture was rejected before a production record was emitted.
+
+Production channel prerequisites, read-only observations:
+local_valid_codesigning_identities=0
+github_actions_enabled=true
+github_workflows=0
+github_releases=0
+github_self_hosted_runners=0
+github_actions_variables=0
+github_actions_secrets=0
+github_release_environments=0
+github_pages_enabled=false
+stable_tuf_timestamp_http_status=404
+reviewed_0.2.0_source_commit_remote_http_status=422
+
+Versioned targets/snapshot and hash-prefixed signed catalogue check:
+test_validates_actual_local_signatures_and_six_target_catalogue (__main__.SignedStaging.test_validates_actual_local_signatures_and_six_target_catalogue) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.196s
+
+OK
+
+007 follow-up | 2026-11-27 | release verifier checks
+Seven tests passed, including assembling the candidate from six platform receipts before U09 public readback and rejecting a missing asset.
+A third-party notarized standalone Mach-O passed the Developer ID requirement and online notarization check. A different Team ID was rejected.
+Mac arm64 U09 test candidate: missing and corrupt draft assets were rejected and the signed test channel stayed unchanged. The valid test-signed update passed in 4.954 seconds.
+The official stable timestamp returned HTTP 404. The formal signing and public channel gates remain open.
+The production-profile executable without an embedded root refused installation in a fresh temporary home and left the intended binary path absent.

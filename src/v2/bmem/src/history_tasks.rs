@@ -40,7 +40,9 @@ use crate::error::{Error, Result};
 use crate::{ingestion, server::lock};
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -54,7 +56,7 @@ const ERRORS_KEPT: usize = 64;
 /// inside the same transaction.
 const EVENTS_PER_PAGE: usize = 100;
 
-const KINDS: &[&str] = &["dm", "group", "docs", "sessions"];
+const KINDS: &[&str] = &["dm", "group", "docs", "sessions", "archive"];
 const CONTENTS: &[&str] = &["messages", "all"];
 const DISCOVER: &str = "@discover";
 type DiscoveryPage = (Vec<(String, Option<Value>)>, Option<String>);
@@ -112,6 +114,23 @@ pub fn migrate(db: &Connection) -> Result<()> {
             source_id TEXT NOT NULL REFERENCES ing_sources(source_id),
             idem_key TEXT NOT NULL, kinds TEXT NOT NULL, jobs TEXT NOT NULL,
             PRIMARY KEY(source_id, idem_key)
+         );
+         CREATE TABLE IF NOT EXISTS history_job_pages (
+            page_seq INTEGER PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            target TEXT NOT NULL,
+            ingest_id TEXT NOT NULL UNIQUE REFERENCES ing_ingests(ingest_id),
+            FOREIGN KEY(task_id,target) REFERENCES history_task_items(task_id,target)
+         );
+         CREATE INDEX IF NOT EXISTS history_job_pages_order ON history_job_pages(task_id,page_seq);
+         CREATE TABLE IF NOT EXISTS history_archive_submissions (
+            task_id TEXT NOT NULL REFERENCES history_task_jobs(task_id),
+            idem_key TEXT NOT NULL, digest TEXT NOT NULL, receipt TEXT NOT NULL,
+            PRIMARY KEY(task_id,idem_key)
+         );
+         CREATE TABLE IF NOT EXISTS history_archive_relay (
+            event_id TEXT PRIMARY KEY REFERENCES ing_event_versions(event_id),
+            origin_event_id TEXT NOT NULL REFERENCES ing_event_versions(event_id)
          );",
     )?;
     Ok(())
@@ -152,6 +171,7 @@ fn compatible(source_type: &str, account: &str, kind: &str) -> bool {
     match source_type {
         "feishu" if account.starts_with("feishu-") => matches!(kind, "dm" | "group" | "docs"),
         "codex" | "claude-code" | "dsh" if account == "local" => kind == "sessions",
+        "archive" => kind == "archive",
         _ => false,
     }
 }
@@ -231,8 +251,10 @@ fn validate(db: &Connection, body: &Value) -> Result<Request> {
                 "时间窗口必须满足 from < to（区间为 [from, to)）",
             ));
         }
-        (None, None) if kind != "docs" => {
-            return Err(Error::invalid("只有 docs 任务可以省略 from/to 时间窗口"));
+        (None, None) if !matches!(kind.as_str(), "docs" | "archive") => {
+            return Err(Error::invalid(
+                "只有 docs 和 archive 任务可以省略 from/to 时间窗口",
+            ));
         }
         (Some(_), None) | (None, Some(_)) => {
             return Err(Error::invalid("from 与 to 必须同时提供或同时省略"));
@@ -364,7 +386,7 @@ pub fn create_all(db: &mut Connection, body: &Value, key: &str) -> Result<Value>
     for item in items {
         let kind = item
             .as_str()
-            .filter(|kind| compatible(&source_type, &account, kind))
+            .filter(|kind| *kind != "archive" && compatible(&source_type, &account, kind))
             .ok_or_else(|| Error::invalid("当前来源不支持该历史数据类别"))?;
         if !kinds.contains(&kind) {
             kinds.push(kind);
@@ -765,13 +787,12 @@ pub fn run_next(
                         return Ok(true);
                     }
                 };
-                for row in receipt["events"].as_array().into_iter().flatten() {
-                    match row["disposition"].as_str() {
-                        Some("accepted") => accepted += 1,
-                        Some("duplicate") => duplicates += 1,
-                        _ => {}
-                    }
+                if pick.source_type == "feishu" {
+                    crate::retrieval::record_feishu_kind(&tx, &receipt, &pick.kind)?;
                 }
+                let (new, existing) = link_page(&tx, &pick.task_id, &pick.target, &receipt)?;
+                accepted += new;
+                duplicates += existing;
             }
             let now = now_utc();
             save_checkpoint(&tx, &pick, next, accepted, duplicates, &now)?;
@@ -786,6 +807,287 @@ pub fn run_next(
             Ok(true)
         }
     }
+}
+
+fn link_page(tx: &Transaction<'_>, job: &str, target: &str, receipt: &Value) -> Result<(i64, i64)> {
+    tx.execute(
+        "INSERT INTO history_job_pages(task_id,target,ingest_id) VALUES(?1,?2,?3)",
+        params![job, target, receipt["ingest_id"].as_str()],
+    )?;
+    let (mut accepted, mut duplicates) = (0, 0);
+    for row in receipt["events"].as_array().into_iter().flatten() {
+        match row["disposition"].as_str() {
+            Some("accepted") => accepted += 1,
+            Some("duplicate") => duplicates += 1,
+            _ => {}
+        }
+    }
+    Ok((accepted, duplicates))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArchivePage {
+    target: String,
+    cursor: String,
+    next_cursor: String,
+    #[serde(default)]
+    complete: bool,
+    #[serde(default)]
+    events: Vec<Value>,
+    source_error: Option<String>,
+    #[serde(default)]
+    relays: Vec<ArchiveRelay>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArchiveRelay {
+    native_object: String,
+    native_version: String,
+    cites_source_id: String,
+    cites_object: String,
+    cites_version: String,
+    cites_field: String,
+}
+
+fn record_archive_relays(
+    db: &Connection,
+    source: &str,
+    receipt: &Value,
+    relays: Vec<ArchiveRelay>,
+) -> Result<()> {
+    for relay in relays {
+        let child: Option<(String,i64)> = db.query_row(
+            "SELECT e.event_id,e.rowid FROM ing_event_versions e JOIN json_each(?4,'$.events') accepted
+             ON e.event_id=json_extract(accepted.value,'$.event_id')
+             WHERE e.source_id=?1 AND e.native_object=?2 AND e.native_version=?3 AND e.active=1 AND e.actor_kind='assistant_message'",
+            params![source,relay.native_object,relay.native_version,receipt.to_string()],
+            |row|Ok((row.get(0)?,row.get(1)?)),
+        ).optional()?;
+        let Some((child, ordinal)) = child else {
+            continue;
+        };
+        let cited: Option<String> = db.query_row(
+            "SELECT e.event_id FROM ing_event_versions e JOIN ing_jobs j ON j.event_id=e.event_id
+             JOIN json_each(j.input,'$.inputs') span ON json_extract(span.value,'$.field')=?4
+             WHERE e.source_id=?1 AND e.native_object=?2 AND e.native_version=?3 AND e.active=1 AND e.rowid<?5",
+            params![relay.cites_source_id,relay.cites_object,relay.cites_version,relay.cites_field,ordinal],
+            |row|row.get(0),
+        ).optional()?;
+        if let Some(cited) = cited {
+            let prior: Option<String> = db
+                .query_row(
+                    "SELECT origin_event_id FROM history_archive_relay WHERE event_id=?1",
+                    [&child],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            match prior {
+                Some(prior) if prior != cited => {
+                    return Err(Error::conflict(
+                        "archive relay already has another verified origin",
+                    ));
+                }
+                Some(_) => {}
+                None => {
+                    db.execute(
+                        "INSERT INTO history_archive_relay VALUES(?1,?2)",
+                        params![child, cited],
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn control_extract(db: &mut Connection, id: &str, body: &Value) -> Result<Value> {
+    let tx = db.transaction()?;
+    let source: String = tx
+        .query_row(
+            "SELECT source_id FROM history_task_jobs WHERE task_id=?1 AND kind='archive'",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| Error::missing("archive job unavailable"))?;
+    let result = if let Some(paused) = body["paused"]
+        .as_bool()
+        .filter(|_| body.get("root_id").is_none())
+    {
+        if paused {
+            tx.execute(
+                "INSERT OR IGNORE INTO ing_extract_pauses VALUES(?1)",
+                [&source],
+            )?;
+        } else {
+            tx.execute(
+                "DELETE FROM ing_extract_pauses WHERE source_id=?1",
+                [&source],
+            )?;
+        }
+        json!({"paused":paused})
+    } else if let (Some(root), Some(deny)) = (body["root_id"].as_str(), body["deny"].as_bool()) {
+        if !tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ing_roots WHERE root_id=?1 AND source_id=?2)",
+            params![root, source],
+            |row| row.get::<_, bool>(0),
+        )? {
+            return Err(Error::missing("archive root unavailable"));
+        }
+        if deny {
+            tx.execute(
+                "INSERT OR IGNORE INTO ing_extract_denials VALUES(?1)",
+                [root],
+            )?;
+        } else {
+            tx.execute("DELETE FROM ing_extract_denials WHERE root_id=?1", [root])?;
+        }
+        json!({"root_id":root,"denied":deny})
+    } else {
+        return Err(Error::invalid("provide paused or a root_id and deny"));
+    };
+    tx.commit()?;
+    Ok(result)
+}
+
+/// Commit one page of a registered archive adapter's explicitly selected job.
+/// The receipt remains replayable after the target advances or completes.
+pub fn submit_page(
+    db: &mut Connection,
+    id: &str,
+    body: &Value,
+    key: &str,
+    profile: &str,
+) -> Result<Value> {
+    let page: ArchivePage = serde_json::from_value(body.clone())?;
+    if page.events.len() > EVENTS_PER_PAGE
+        || page.relays.len() > EVENTS_PER_PAGE
+        || page.cursor.len() > 4096
+        || page.next_cursor.len() > 4096
+        || page.next_cursor.is_empty()
+        || page.cursor == page.next_cursor
+        || page
+            .source_error
+            .as_ref()
+            .is_some_and(|error| error.is_empty() || error.len() > 1000 || !page.events.is_empty())
+    {
+        return Err(Error::invalid(
+            "invalid archive page, checkpoint or source error",
+        ));
+    }
+    let digest = format!("{:x}", Sha256::digest(canonical(body)));
+    let tx = db.transaction()?;
+    let prior: Option<(String, String)> = tx.query_row(
+        "SELECT digest,receipt FROM history_archive_submissions WHERE task_id=?1 AND idem_key=?2",
+        params![id,key], |row| Ok((row.get(0)?,row.get(1)?)),
+    ).optional()?;
+    if let Some((prior_digest, result)) = prior {
+        if prior_digest != digest {
+            return Err(Error::conflict(
+                "key_conflict: archive page key already has a different payload",
+            ));
+        }
+        return Ok(serde_json::from_str(&result)?);
+    }
+    let (source, from, to, checkpoint): (String, Option<String>, Option<String>, Option<String>) =
+        tx.query_row(
+            "SELECT j.source_id,j.from_at,j.to_at,i.cursor FROM history_task_jobs j
+         JOIN history_task_items i ON i.task_id=j.task_id
+         WHERE j.task_id=?1 AND j.kind='archive' AND j.state IN ('queued','running')
+           AND i.target=?2 AND i.state IN ('pending','running')",
+            params![id, page.target],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?
+        .ok_or_else(|| Error::missing("active archive target unavailable"))?;
+    let checkpoint: Option<String> = checkpoint
+        .map(|value| serde_json::from_str(&value))
+        .transpose()?;
+    if checkpoint.as_deref().unwrap_or("start") != page.cursor {
+        return Err(Error::conflict(
+            "cursor_mismatch: archive page does not continue the target",
+        ));
+    }
+    let now = now_utc();
+    tx.execute("UPDATE history_task_jobs SET state='running',started_at=coalesce(started_at,?2),updated_at=?2
+                WHERE task_id=?1", params![id,now])?;
+    let result = if let Some(source_error) = page.source_error {
+        fail_item(
+            &tx,
+            id,
+            &page.target,
+            &Error::new(502, "archive_source_unavailable", source_error),
+        )?;
+        json!({"checkpoint":page.cursor,"state":"failed"})
+    } else {
+        let events = if let Some((from, to)) = from.zip(to) {
+            let from = DateTime::parse_from_rfc3339(&from)
+                .map_err(|_| Error::internal("invalid archive job window"))?;
+            let to = DateTime::parse_from_rfc3339(&to)
+                .map_err(|_| Error::internal("invalid archive job window"))?;
+            page.events
+                .into_iter()
+                .map(|event| {
+                    let at = event["at"]
+                        .as_str()
+                        .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+                        .ok_or_else(|| {
+                            Error::invalid("a dated archive event requires RFC3339 at")
+                        })?;
+                    Ok((at, event))
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .filter(|(at, _)| &from <= at && at < &to)
+                .map(|(_, event)| event)
+                .collect::<Vec<_>>()
+        } else {
+            page.events
+        };
+        let (mut accepted, mut duplicates) = (0, 0);
+        let receipt = if events.is_empty() {
+            Value::Null
+        } else {
+            let source_cursor: String = tx.query_row(
+                "SELECT cursor FROM ing_sources WHERE source_id=?1",
+                [&source],
+                |row| row.get(0),
+            )?;
+            let intake_key = Uuid::new_v4().to_string();
+            let receipt = ingestion::accept_history_task(
+                &tx,
+                id,
+                &intake_key,
+                json!({
+                    "source_id":source,"cursor":source_cursor,"next_cursor":intake_key,"events":events,
+                }),
+                profile,
+            )?;
+            (accepted, duplicates) = link_page(&tx, id, &page.target, &receipt)?;
+            record_archive_relays(&tx, &source, &receipt, page.relays)?;
+            receipt
+        };
+        let state = if page.complete {
+            "completed"
+        } else {
+            "running"
+        };
+        tx.execute("UPDATE history_task_items SET state=?3,cursor=?4,accepted=accepted+?5,duplicates=duplicates+?6,updated_at=?7
+                    WHERE task_id=?1 AND target=?2",
+                    params![id,page.target,state,serde_json::to_string(&page.next_cursor)?,accepted,duplicates,now])?;
+        tx.execute("UPDATE history_task_jobs SET accepted=accepted+?2,duplicates=duplicates+?3 WHERE task_id=?1",
+                    params![id,accepted,duplicates])?;
+        settle(&tx, id, &now)?;
+        json!({"checkpoint":page.next_cursor,"state":state,"intake":receipt})
+    };
+    tx.execute(
+        "INSERT INTO history_archive_submissions VALUES(?1,?2,?3,?4)",
+        params![id, key, digest, serde_json::to_string(&result)?],
+    )?;
+    tx.commit()?;
+    Ok(result)
 }
 
 enum Page {
@@ -866,6 +1168,7 @@ fn select(db: &Connection) -> Result<Option<Pick>> {
          JOIN history_task_items i ON i.task_id = j.task_id
               AND i.state IN ('pending', 'running')
          WHERE j.state IN ('queued', 'running')
+           AND j.kind<>'archive'
            AND (j.targets='[]' OR g.active=1)
            AND EXISTS (SELECT 1 FROM ing_actors a
                        WHERE a.source_id = j.source_id AND a.actor = 'owner'
@@ -976,9 +1279,118 @@ fn settle(tx: &Transaction<'_>, task_id: &str, now: &str) -> Result<()> {
     Ok(())
 }
 
+fn lineage(db: &Connection, event_id: &str) -> Result<Value> {
+    let endpoint: Option<(String, String, String, Option<String>, i64)> = db.query_row(
+        "WITH RECURSIVE chain(event_id,depth) AS (
+           SELECT ?1,0 UNION ALL
+           SELECT relay.origin_event_id,chain.depth+1 FROM chain
+           JOIN history_archive_relay relay ON relay.event_id=chain.event_id
+           JOIN ing_event_versions e ON e.event_id=relay.origin_event_id AND e.active=1
+           WHERE chain.depth<64
+         )
+         SELECT e.event_id,e.native_object,e.actor_kind,
+                CASE WHEN e.actor_kind='tool_result' THEN json_extract(e.content,'$.checks.run_id') END,
+                chain.depth FROM chain JOIN ing_event_versions e ON e.event_id=chain.event_id AND e.active=1
+         ORDER BY chain.depth DESC LIMIT 1",
+        [event_id], |row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
+    ).optional()?;
+    let Some((origin, object, actor, run, depth)) = endpoint else {
+        return Ok(json!({"relation":"unavailable"}));
+    };
+    Ok(match (actor.as_str(), depth, run) {
+        ("user_message", 0, _) => {
+            json!({"relation":"source","origin_event_id":origin,"origin_object":object})
+        }
+        ("user_message", _, _) => {
+            json!({"relation":"reported","origin_event_id":origin,"origin_object":object})
+        }
+        ("tool_result", 0, Some(run)) => json!({"relation":"tool_run","run_id":run}),
+        _ => json!({"relation":"unknown"}),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Views and small helpers
 // ---------------------------------------------------------------------------
+
+pub fn results(
+    db: &Connection,
+    id: &str,
+    cursor: Option<&str>,
+    limit: Option<&str>,
+) -> Result<Value> {
+    let job = job_view(db, id)?;
+    let head: i64 = db.query_row(
+        "SELECT coalesce(max(page_seq),0) FROM history_job_pages WHERE task_id=?1",
+        [id],
+        |row| row.get(0),
+    )?;
+    let (watermark, offset) = match cursor {
+        None => (head, 0),
+        Some(cursor) => cursor
+            .split_once(':')
+            .and_then(|(head, offset)| {
+                Some((head.parse::<i64>().ok()?, offset.parse::<i64>().ok()?))
+            })
+            .filter(|(watermark, offset)| (0..=head).contains(watermark) && *offset >= 0)
+            .ok_or_else(|| Error::invalid("invalid history result cursor"))?,
+    };
+    let limit = match limit {
+        None => 40_i64,
+        Some(limit) => limit
+            .parse::<i64>()
+            .ok()
+            .filter(|n| (1..=100).contains(n))
+            .ok_or_else(|| Error::invalid("history result limit must be between 1 and 100"))?,
+    };
+    let mut query = db.prepare(
+        "SELECT p.target,p.page_seq,row.value,v.native_version,v.active,j.status,j.result,j.fail_reason,
+                EXISTS(SELECT 1 FROM ing_grants g WHERE g.source_id=i.source_id AND g.purpose='extract' AND g.active=1)
+                  AND NOT EXISTS(SELECT 1 FROM ing_extract_denials d WHERE d.root_id=v.root_id),
+                EXISTS(SELECT 1 FROM ing_extract_pauses pause WHERE pause.source_id=i.source_id)
+         FROM history_job_pages p JOIN history_task_items t ON t.task_id=p.task_id AND t.target=p.target
+         JOIN ing_ingests i ON i.ingest_id=p.ingest_id JOIN json_each(i.receipt,'$.events') row
+         LEFT JOIN ing_event_versions v ON v.event_id=json_extract(row.value,'$.event_id')
+         LEFT JOIN ing_jobs j ON j.event_id=v.event_id
+         WHERE p.task_id=?1 AND p.page_seq<=?2
+         ORDER BY t.ordinal,p.page_seq,CAST(row.key AS INTEGER) LIMIT ?3 OFFSET ?4",
+    )?;
+    let mut rows = Vec::new();
+    let mut records = query.query(params![id, watermark, limit + 1, offset])?;
+    while let Some(row) = records.next()? {
+        let receipt: Value = serde_json::from_str(&row.get::<_, String>(2)?)?;
+        let extracted = row
+            .get::<_, Option<String>>(6)?
+            .map(|value| serde_json::from_str::<Value>(&value))
+            .transpose()?
+            .unwrap_or(Value::Null);
+        let active = row.get::<_, Option<bool>>(4)?;
+        let granted = row.get::<_, bool>(8)?;
+        let provenance = if active == Some(true) && job["kind"] == "archive" {
+            lineage(db, receipt["event_id"].as_str().unwrap_or_default())?
+        } else {
+            Value::Null
+        };
+        rows.push(json!({
+            "target":row.get::<_,String>(0)?, "page_seq":row.get::<_,i64>(1)?,
+            "native_object":receipt["native_object"], "event_id":receipt["event_id"],
+            "native_version":row.get::<_,Option<String>>(3)?,
+            "capture":{"disposition":receipt["disposition"],"present":active == Some(true)},
+            "extract":{"state":row.get::<_,Option<String>>(5)?, "error":row.get::<_,Option<String>>(7)?, "paused":row.get::<_,bool>(9)?,
+                "eligibility":if active != Some(true) {"unavailable"} else if granted {"allowed"} else {"denied"}},
+            "candidate_counts":{"total":extracted["candidates_recorded"],"verified":extracted["observations_verified"]},
+            "decisions":extracted["decisions"], "provenance":provenance,
+        }));
+    }
+    let more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    Ok(json!({
+        "job":job, "watermark":watermark,"rows":rows,
+        "next_cursor":more.then(||format!("{watermark}:{}", offset + limit)),
+        "mapping_coverage":if head == 0 && (job["accepted"].as_i64().unwrap_or(0) > 0 ||
+            job["duplicates"].as_i64().unwrap_or(0) > 0) {"summary_only"} else {"mapped"},
+    }))
+}
 
 fn job_view(conn: &Connection, id: &str) -> Result<Value> {
     let mut job = conn

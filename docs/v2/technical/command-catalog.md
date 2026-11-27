@@ -75,6 +75,8 @@
 | `task list [--project <id>]`；`task handoff <task_id> [--route <ref>]` | `task.list`，`GET /tasks`；`task.handoff`，`GET /tasks/{id}/handoff` | U3「接手任务」。分别看合法候选、工件和目标、计划、已验证结果、未解问题与可补读出处 |
 | `client list`；`delivery list [--client <id>] [--attempt <id>]`；`delivery show <delivery_id>` | `client.list`，`GET /clients`；后两项 `delivery.read`，`GET /deliveries`（单条带 `delivery_id`） | U2「助手／投递详情」。并列当前应取版本、实际提供、宿主装入、可验证采用及独立任务结果，展示凭据不足的阶段 |
 
+`POST /v2/search` 支持可选的 `exclude` 字符串数组。来源可选 `feishu`、`codex`、`claude-code`、`dsh`，内容类型可选 `statement`、`user_message`、`assistant_message`、`tool_result`，飞书类别可选 `group`、`dm`、`docs`、`feishu_unclassified`。空数组保留默认检索范围。例如 `{"query":"设备","mode":"vector","exclude":["group","tool_result"]}` 会同时排除已标明类别的飞书群聊和所有工具回执。回退到关键词时沿用这些条件。
+
 所有者从程序或网页使用“接手／查看”触发的读取，不产生代替宿主的装入或采用证明。宿主与验证器专用动作通过各自的可信协议采集，管理台和 CLI 查看实际回执，不提供填写“已装入／任务通过”的生产操作。[宿主调用顺序](contracts.md)
 
 宿主安装清单引用两类程序入口。`bmem mcp serve --client <id>`（`host.mcp_stdio`）通过标准输入输出转送已绑定宿主的 MCP 请求；`bmem hook <host> --client <id>`（`host.hook`）读取该宿主适配版本声明支持的回调输入，调用事件、上下文或回执协议。客户端 ID 只用于定位绑定，身份由本机受控凭据建立。二者均登记为本地程序入口，在线动作沿用宿主授权、输出及重试契约。U4 的「接入助手」注册入口，U2 查看实际观测；可用回调以已验证的宿主版本为准。
@@ -99,7 +101,7 @@ bmem evidence expand h_run_2 --before 1 --after 1
 | `grant set --source <id> [--route <ref>] --purpose <purpose> --allow/--deny --preview`；同参以 `--confirm <preview_id>` 替换 `--preview` | `operation.preview`，`POST /operations/preview`；`grant.change`，`POST /operations`，均取 `kind=change_grant` | U4「修改用途 → 查看影响 → 确认」。新建或收窄展示到字段级的范围和各接收端变化；预览只绑定目标授权行与模型目的地，无关活动不使预览失效；extract/embed 授权无就绪路由时预览即返回 `409 model_not_ready`；确认绑定同一目标、策略版本与影响，`--confirm` 幂等键由 `preview_id` 派生，丢失回执可重试回放 |
 | `forget --root <root_id> --preview` 或 `forget --source <source_id> --preview`；同目标 `--confirm <preview_id>` | `operation.preview`；`governance.forget`，`POST /operations`，均取 `kind=forget` | U5「遗忘」。按明确范围受理，立即生效水位和各位置清理进度分别显示；预览绑定目标声明修订或来源自身游标与已接收页水位，无关活动不使预览失效，`--confirm` 幂等键同样由 `preview_id` 派生。原文引用不足时先查找／展开定位目标 |
 | `operation list [--kind <kind>]`；`operation show <id>`；`operation retry <id> --location <location>` | `operation.list`，`GET /operations`；`operation.show`，`GET /operations/{id}`；`operation.retry`，`POST /operations`，`kind=retry` | U5 或「运行状态 → 操作记录」。只重试该单据允许重试的失败位置，沿原号继续观测 |
-| `job list [--state <state>]`；`job show <job_id>`；`job retry <job_id>` | `job.list`，`GET /jobs`；`job.show`，`GET /jobs/{id}`；`job.retry`，`POST /jobs/{id}/retry` | 「运行状态 → 后台作业」，也可从 U3 的提炼记录进入。重试可重试的停候作业，重新核验输入版本、来源授权和实际目的地，返回相同作业的下一次尝试 |
+| `job list [--state <state>]`；`job show <job_id>`；`job retry <job_id>` | `job.list`，`GET /jobs`；`job.show`，`GET /jobs/{id}`；`job.retry`，`POST /jobs/{id}/retry` | 「运行状态 → 后台作业」，记忆库「查看全部提炼结果」会以 `GET /v2/jobs?has_candidates=true` 分页列出当前仍可查看、已产出候选的完成作业。重试可重试的停候作业，重新核验输入版本、来源授权和实际目的地，返回相同作业的下一次尝试 |
 | `index status`；`index rebuild <projection>` | `health.read`（投影水位）；`index.rebuild`，`POST /operations`，`kind=rebuild_index` | 「运行状态 → 索引」。输入 `lexical` 或已启用且就绪的 `vector`，返回重建输入水位和单据，校验后切换 |
 | `backup create [--only revocations]`；`export create --source <source_id>` | `backup.create`、`export.create`，`POST /operations`，分别取 `kind=backup`（完整包或独立撤回清单）、`kind=export`（授权范围） | U5「创建快照／另存撤回清单／导出数据」。产物先进入受管位置；按单据读回范围、截止点、清单及摘要 |
 | `operation download <id> --out <path>` | `operation.download`，`GET /operations/{id}/artifact` | U5「下载产物」。服务校验所属单据、完成状态、当前许可与可交付版本，按流发送；CLI 本地写文件，浏览器使用下载保存。过期受管包列出需重制原因 |

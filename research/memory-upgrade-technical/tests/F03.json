@@ -1,0 +1,284 @@
+[
+  {
+    "id": "F03-01",
+    "title": "选中对象和日期只在所有者确认后开始采集",
+    "covers": ["owner_preview_confirmation", "source_object_date_boundary"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "m1", "version_key": "v1", "text": "缓存按天清理。", "source": "chat", "day": "2026-11-20"}, {"native_object": "m2", "version_key": "v1", "text": "写入超时。", "source": "doc", "day": "2026-11-20"}, {"native_object": "m3", "version_key": "v1", "text": "九月旧约定。", "source": "chat", "day": "2026-09-01"}, {"native_object": "m4", "version_key": "v1", "text": "另一个房间。", "source": "other", "day": "2026-11-20"}]},
+    "steps": [
+      {"id": "preview", "action": "所有者预览聊天和文档的历史导入，再读取作业与受理账本", "args": {"targets": ["chat", "doc"], "from_day": "2026-11-20", "through_day": "2026-11-20"}},
+      {"id": "confirm", "action": "确认上步预览凭证，处理所有匹配页并查作业去向", "args": {"preview_from": "preview"}}
+    ],
+    "checks": [
+      {"at": "preview", "path": "/committed_page_count", "op": "eq", "value": 0},
+      {"at": "preview", "path": "/ingested_version_count", "op": "eq", "value": 0},
+      {"at": "confirm", "path": "/target_count", "op": "eq", "value": 2},
+      {"at": "confirm", "path": "/distinct_versions", "op": "eq", "value": 2},
+      {"at": "confirm", "path": "/native_objects", "op": "contains", "value": "m1"},
+      {"at": "confirm", "path": "/native_objects", "op": "contains", "value": "m2"},
+      {"at": "confirm", "path": "/native_objects", "op": "excludes", "value": "m3"},
+      {"at": "confirm", "path": "/native_objects", "op": "excludes", "value": "m4"}
+    ]
+  },
+  {
+    "id": "F03-02",
+    "title": "作业含空目标与失败目标时保留各自状态",
+    "covers": ["empty_target", "failed_target", "capture_vs_selection"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "log", "version_key": "v1", "text": "解析器退出。", "source": "logbook"}], "connector": {"logbook": "ok", "empty-doc": "empty_page", "broken-chat": "fail_before_first_page"}},
+    "steps": [
+      {"id": "import", "action": "所有者预览确认按来源选取三个目标，再让每个连接器读至末页或失败", "args": {"job": "J", "target_sources": ["logbook", "empty-doc", "broken-chat"]}},
+      {"id": "audit", "action": "用所有者身份分页读取导入作业去向，并通过同一测试服务的只读审计读取指定计数", "args": {"job": "J"}}
+    ],
+    "checks": [
+      {"at": "audit", "path": "/target_count", "op": "eq", "value": 3},
+      {"at": "audit", "path": "/distinct_versions", "op": "eq", "value": 1},
+      {"at": "audit", "path": "/targets/empty-doc/captured_versions", "op": "eq", "value": 0},
+      {"at": "audit", "path": "/targets/empty-doc/state", "op": "eq", "value": "completed"},
+      {"at": "audit", "path": "/targets/broken-chat/state", "op": "eq", "value": "failed"}
+    ]
+  },
+  {
+    "id": "F03-03",
+    "title": "同一提交页重试只推进一次游标",
+    "covers": ["same_page_retry", "atomic_checkpoint"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "msg", "version_key": "1", "text": "工具调用返回 E92。"}], "page": {"target": "journal", "page_seq": 1, "source_cursor": "c1", "members": ["msg"]}},
+    "steps": [
+      {"id": "first", "action": "导入作业 J 接受 fixture.page，模拟响应丢失后客户端重投同一请求；读取页和 checkpoint", "args": {"job": "J", "send_count": 2}},
+      {"id": "audit", "action": "用所有者身份分页读取导入作业去向，并通过同一测试服务的只读审计读取指定计数", "args": {"job": "J"}}
+    ],
+    "checks": [
+      {"at": "first", "path": "/checkpoint", "op": "eq", "value": "c1"},
+      {"at": "audit", "path": "/linked_page_count", "op": "eq", "value": 1},
+      {"at": "audit", "path": "/page_item_count", "op": "eq", "value": 1},
+      {"at": "audit", "path": "/distinct_versions", "op": "eq", "value": 1},
+      {"at": "audit", "path": "/extract_job_count", "op": "eq", "value": 1}
+    ]
+  },
+  {
+    "id": "F03-04",
+    "title": "独立作业重导同一原生版本显示重复",
+    "covers": ["cross_job_duplicate", "unique_extraction_job"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "msg", "version_key": "v1", "text": "这次只校验索引。"}]},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J1", "objects": ["msg"]}},
+      {"id": "again", "action": "用新的作业重新预览确认导入同一个原生版本", "args": {"job": "J2", "objects": ["msg"]}},
+      {"id": "audit", "action": "用所有者身份分页读取导入作业去向，并通过同一测试服务的只读审计读取指定计数", "args": {"job": "J2"}}
+    ],
+    "checks": [
+      {"at": "audit", "path": "/rows/0/capture/disposition", "op": "eq", "value": "duplicate"},
+      {"at": "audit", "path": "/store/distinct_versions", "op": "eq", "value": 1},
+      {"at": "audit", "path": "/store/extract_job_count", "op": "eq", "value": 1}
+    ]
+  },
+  {
+    "id": "F03-05",
+    "title": "首屏水位在新增页后保持稳定，刷新可见末页",
+    "covers": ["snapshot_pagination", "cursor_refresh", "stable_page_order"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "a", "version_key": "1", "text": "第一个目标原句"}, {"native_object": "b", "version_key": "1", "text": "第二个目标原句"}, {"native_object": "c", "version_key": "1", "text": "末页原句"}], "pages": [{"target": 1, "page_seq": 1, "members": ["a", "b"]}, {"target": 1, "page_seq": 2, "members": ["c"]}]},
+    "steps": [
+      {"id": "p1", "action": "向已确认的 J 提交第一页，再读作业首屏；保留 continuation", "args": {"job": "J", "submit_pages": [1], "limit": 1}},
+      {"id": "p2", "action": "提交第二页，然后凭首屏返回的 continuation 读至该水位末尾", "args": {"job": "J", "submit_pages": [2], "continuation_from": "p1", "limit": 10}},
+      {"id": "fresh", "action": "清除客户端 continuation，重新从首页列出作业全部行", "args": {"job": "J", "limit": 10}}
+    ],
+    "checks": [
+      {"at": "p1", "path": "/native_objects", "op": "eq", "value": ["a"]},
+      {"at": "p2", "path": "/native_objects", "op": "eq", "value": ["b"]},
+      {"at": "p2", "path": "/has_next", "op": "eq", "value": false},
+      {"at": "fresh", "path": "/native_objects", "op": "eq", "value": ["a", "b", "c"]}
+    ]
+  },
+  {
+    "id": "F03-06",
+    "title": "页提交中断后用同一游标重试不会跨过事件",
+    "covers": ["page_checkpoint_transaction", "recovery"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "frag", "version_key": "1", "text": "保留故障前最后一行。"}], "page": {"seq": 1, "input_cursor": "start", "next_cursor": "done", "members": ["frag"]}},
+    "steps": [
+      {"id": "crash", "action": "在页已受理但更新 checkpoint 前注入事务失败，关闭并重开测试库，读取账本", "args": {"job": "J", "failpoint": "after_accept_before_checkpoint"}},
+      {"id": "retry", "action": "关闭失败点，从恢复后的 checkpoint 重投同一页，读取账本", "args": {"job": "J"}}
+    ],
+    "checks": [
+      {"at": "crash", "path": "/linked_page_count", "op": "eq", "value": 0},
+      {"at": "crash", "path": "/distinct_versions", "op": "eq", "value": 0},
+      {"at": "crash", "path": "/checkpoint", "op": "eq", "value": "start"},
+      {"at": "retry", "path": "/linked_page_count", "op": "eq", "value": 1},
+      {"at": "retry", "path": "/distinct_versions", "op": "eq", "value": 1},
+      {"at": "retry", "path": "/checkpoint", "op": "eq", "value": "done"}
+    ]
+  },
+  {
+    "id": "F03-07",
+    "title": "暂停后收紧提炼授权，恢复仅处理仍获准的版本",
+    "covers": ["pause_resume", "separate_extraction_authority"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "open", "version_key": "1", "text": "计量单位使用克。"}, {"native_object": "closed", "version_key": "1", "text": "校验完成后归档。"}], "extract_grants": {"open": "allow", "closed": "allow"}},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J", "objects": ["open", "closed"]}},
+      {"id": "restrict", "action": "保持 worker 暂停，撤掉 closed 的提炼许可后按原生对象查去向", "args": {"root": "closed", "purpose": "extract"}},
+      {"id": "drain", "action": "启动测试 worker，等待本轮所有可执行作业完成", "args": {"source": "sandbox-journal"}},
+      {"id": "audit", "action": "用所有者身份分页读取导入作业去向，并通过同一测试服务的只读审计读取指定计数", "args": {"job": "J"}}
+    ],
+    "checks": [
+      {"at": "restrict", "path": "/by_object/open/extract/state", "op": "eq", "value": "pending"},
+      {"at": "restrict", "path": "/by_object/closed/extract/eligibility", "op": "eq", "value": "denied"},
+      {"at": "restrict", "path": "/by_object/closed/capture/present", "op": "eq", "value": true},
+      {"at": "audit", "path": "/by_object/open/extract/state", "op": "eq", "value": "done"},
+      {"at": "audit", "path": "/model_calls_by_root/closed", "op": "eq", "value": 0}
+    ]
+  },
+  {
+    "id": "F03-08",
+    "title": "提炼完成且零候选仍可查看已采集原句",
+    "covers": ["zero_candidate", "readable_source"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "ack", "version_key": "3", "text": "嗯，收到。"}], "test_extractor": {"response": {"candidates": []}}},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J", "objects": ["ack"]}},
+      {"id": "drain", "action": "启动测试 worker，等待本轮所有可执行作业完成", "args": {"source": "sandbox-journal"}},
+      {"id": "audit", "action": "用所有者身份分页读取导入作业去向，并通过同一测试服务的只读审计读取指定计数", "args": {"job": "J"}},
+      {"id": "open", "action": "以所有者身份展开该作业行的原文句柄", "args": {"row_from": "audit", "native_object": "ack"}}
+    ],
+    "checks": [
+      {"at": "audit", "path": "/rows/0/extract/state", "op": "eq", "value": "done"},
+      {"at": "audit", "path": "/rows/0/candidate_counts/total", "op": "eq", "value": 0},
+      {"at": "audit", "path": "/rows/0/decisions", "op": "eq", "value": []},
+      {"at": "open", "path": "/text", "op": "eq", "value": "嗯，收到。"}
+    ]
+  },
+  {
+    "id": "F03-09",
+    "title": "提炼报错的版本在重试后仍只采集一次",
+    "covers": ["extract_failed", "retry_without_recapture"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "notice", "version_key": "1", "text": "发布前运行冒烟检查。"}], "test_extractor": {"first_call_http": 503, "second_call_http": 200, "second_body": {"candidates": []}}},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J", "objects": ["notice"]}},
+      {"id": "fail", "action": "启动 worker，仅执行一次并在自动重试前读取作业去向", "args": {"attempts": 1}},
+      {"id": "retry", "action": "重试失败提炼作业一次并等候完成后重读结果", "args": {"job": "J"}}
+    ],
+    "checks": [
+      {"at": "fail", "path": "/rows/0/extract/state", "op": "eq", "value": "failed"},
+      {"at": "fail", "path": "/rows/0/capture/present", "op": "eq", "value": true},
+      {"at": "retry", "path": "/rows/0/extract/state", "op": "eq", "value": "done"},
+      {"at": "retry", "path": "/distinct_versions", "op": "eq", "value": 1},
+      {"at": "retry", "path": "/model_call_count", "op": "eq", "value": 2}
+    ]
+  },
+  {
+    "id": "F03-10",
+    "title": "同片段两个候选归并到同一核验观察",
+    "covers": ["candidate_adopt_merge", "counts_by_grain"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "m", "version_key": "v1", "text": "项目示例用 Rust。", "spans": {"s1": "项目示例用 Rust。"}}], "test_extractor": {"candidate_inputs": [{"proposal": "项目示例语言是 Rust", "quote": "项目示例用 Rust。", "span": "s1"}, {"proposal": "此项目代码示例使用 Rust", "quote": "项目示例用 Rust。", "span": "s1"}]}, "scope": {"m": "project-Q"}},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J", "objects": ["m"]}},
+      {"id": "drain", "action": "启动测试 worker，等待本轮所有可执行作业完成", "args": {"source": "sandbox-journal"}},
+      {"id": "audit", "action": "用所有者身份分页读取导入作业去向，并通过同一测试服务的只读审计读取指定计数", "args": {"job": "J"}}
+    ],
+    "checks": [
+      {"at": "audit", "path": "/distinct_versions", "op": "eq", "value": 1},
+      {"at": "audit", "path": "/rows/0/candidate_counts/total", "op": "eq", "value": 2},
+      {"at": "audit", "path": "/rows/0/decision_kinds", "op": "contains", "value": "adopted"},
+      {"at": "audit", "path": "/rows/0/decision_kinds", "op": "contains", "value": "merged"},
+      {"at": "audit", "path": "/unique_verified_observations", "op": "eq", "value": 1}
+    ]
+  },
+  {
+    "id": "F03-11",
+    "title": "待证的建议和没有原句的提议分别保留裁定",
+    "covers": ["candidate_pending", "candidate_rejected", "decision_reasons"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "m", "version_key": "1", "text": "也许以后改颜色。", "spans": {"s1": "也许以后改颜色。"}}], "test_extractor": {"candidate_inputs": [{"proposal": "以后改颜色", "quote": "也许以后改颜色。", "span": "s1"}, {"proposal": "单位必须是厘米", "quote": "单位必须是厘米", "span": "s2"}]}},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J", "objects": ["m"]}},
+      {"id": "drain", "action": "启动测试 worker，等待本轮所有可执行作业完成", "args": {"source": "sandbox-journal"}},
+      {"id": "audit", "action": "用所有者身份分页读取导入作业去向，并通过同一测试服务的只读审计读取指定计数", "args": {"job": "J"}}
+    ],
+    "checks": [
+      {"at": "audit", "path": "/rows/0/candidate_counts/total", "op": "eq", "value": 2},
+      {"at": "audit", "path": "/rows/0/decision_kinds", "op": "contains", "value": "pending"},
+      {"at": "audit", "path": "/rows/0/decision_kinds", "op": "contains", "value": "rejected"},
+      {"at": "audit", "path": "/rows/0/all_decisions_have_reasons", "op": "eq", "value": true},
+      {"at": "audit", "path": "/unique_verified_observations", "op": "eq", "value": 0}
+    ]
+  },
+  {
+    "id": "F03-12",
+    "title": "两个可证转述沿原文去重，独立运行回执单列",
+    "covers": ["explicit_provenance_chain", "independent_tool_receipt"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "origin", "version_key": "v1", "text": "青禾发布必须先检查索引。", "role": "owner", "spans": {"s1": "青禾发布必须先检查索引。"}}, {"native_object": "relay-A", "version_key": "v1", "text": "用户要求发布前检查索引。", "role": "assistant", "spans": {"s1": "用户要求发布前检查索引。"}, "quotes": {"object": "origin", "version": "v1", "span": "s1"}}, {"native_object": "relay-B", "version_key": "v1", "text": "上个助手说要先查索引。", "role": "assistant", "quotes": {"object": "relay-A", "version": "v1", "span": "s1"}}, {"native_object": "test", "version_key": "v1", "text": "check-index exit=0", "role": "tool", "run_id": "run-12", "tool_call_id": "check-12"}]},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J", "objects": ["origin", "relay-A", "relay-B", "test"]}},
+      {"id": "drain", "action": "启动测试 worker，等待本轮所有可执行作业完成", "args": {"source": "sandbox-journal"}},
+      {"id": "trace", "action": "从作业结果展开已获准来源关系，按根追溯转述并单列执行回执", "args": {"job": "J"}}
+    ],
+    "checks": [
+      {"at": "trace", "path": "/relay_root_map/relay-A", "op": "eq", "value": "origin"},
+      {"at": "trace", "path": "/relay_root_map/relay-B", "op": "eq", "value": "origin"},
+      {"at": "trace", "path": "/independent_declaration_roots", "op": "eq", "value": ["origin"]},
+      {"at": "trace", "path": "/independent_tool_runs", "op": "eq", "value": ["run-12"]}
+    ]
+  },
+  {
+    "id": "F03-13",
+    "title": "跨来源同文且没有版本引用时保留未确定关系",
+    "covers": ["unknown_provenance", "text_collision"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "alpha", "version_key": "2", "text": "生产改用队列 B。", "source": "doc"}, {"native_object": "beta", "version_key": "1", "text": "生产改用队列 B。", "source": "chat", "role": "assistant"}]},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J", "objects": ["alpha", "beta"]}},
+      {"id": "drain", "action": "启动测试 worker，等待本轮所有可执行作业完成", "args": {"source": "sandbox-journal"}},
+      {"id": "trace", "action": "查看两条同文记录之间的来源关系和转述的独立支持计数", "args": {"job": "J", "pair": ["alpha", "beta"]}}
+    ],
+    "checks": [
+      {"at": "trace", "path": "/relation", "op": "eq", "value": "unknown"},
+      {"at": "trace", "path": "/distinct_versions", "op": "eq", "value": 2},
+      {"at": "trace", "path": "/extra_independent_support_from_beta", "op": "eq", "value": 0}
+    ]
+  },
+  {
+    "id": "F03-14",
+    "title": "来源新增版本后掉线仍能回查本地获准旧版本",
+    "covers": ["versioned_source", "offline_local_copy", "coverage_gap"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "guide", "version_key": "r1", "text": "阈值 30 秒。"}, {"native_object": "guide", "version_key": "r2", "text": "阈值改为 45 秒。"}]},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J", "objects": ["guide"]}},
+      {"id": "offline", "action": "让源连接器断线，从作业结果分别展开两个本地已采集版本并读取同步状态", "args": {"source": "sandbox-journal", "object": "guide"}}
+    ],
+    "checks": [
+      {"at": "offline", "path": "/local_text_by_version/r1", "op": "eq", "value": "阈值 30 秒。"},
+      {"at": "offline", "path": "/local_text_by_version/r2", "op": "eq", "value": "阈值改为 45 秒。"},
+      {"at": "offline", "path": "/remote_head_verified", "op": "eq", "value": false}
+    ]
+  },
+  {
+    "id": "F03-15",
+    "title": "根撤回优先于迟到页及已在途的提炼结果",
+    "covers": ["late_page_after_tombstone", "late_worker_finish"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "gone", "version_key": "1", "text": "原始讨论。"}, {"native_object": "gone", "version_key": "2", "text": "较晚到达的增补。"}], "timeline": {"first_page": ["gone@1"], "delayed_page": ["gone@2"]}, "test_extractor": {"on_call": "block_until_release", "candidate_inputs": [{"proposal": "长期保留该讨论", "quote": "原始讨论。"}]}},
+    "steps": [
+      {"id": "begin", "action": "提交第一页，启动提炼并在模型已取得输入后阻塞完成回调", "args": {"job": "J", "page": "first_page"}},
+      {"id": "forget", "action": "所有者预览并确认遗忘 gone，然后提交仍在途的第二页", "args": {"root": "gone", "page": "delayed_page"}},
+      {"id": "finish", "action": "释放旧 worker 回调，重新查询 J、已交付候选和旧原文句柄", "args": {"job": "J", "root": "gone"}}
+    ],
+    "checks": [
+      {"at": "forget", "path": "/active_versions_for_root", "op": "eq", "value": 0},
+      {"at": "finish", "path": "/delivered_candidate_count", "op": "eq", "value": 0},
+      {"at": "finish", "path": "/old_handle_readable", "op": "eq", "value": false},
+      {"at": "finish", "path": "/tombstone_present", "op": "eq", "value": true}
+    ]
+  },
+  {
+    "id": "F03-16",
+    "title": "一次回填保持持续采集开关，老作业只给历史汇总",
+    "covers": ["backfill_preserves_capture", "legacy_summary_unknown"],
+    "fixture": {"owner": "owner-Q", "default_source": "sandbox-journal", "capture": "allow", "extract": "allow", "worker": "paused", "source_events": [{"native_object": "history", "version_key": "1", "text": "回填旧周报。"}, {"native_object": "next", "version_key": "1", "text": "新收到例行回执。"}], "continuous_capture": false, "enabled_control_source": "sandbox-journal-enabled", "legacy_job": {"id": "J-old", "target": "journal", "stored_summary_count": 3, "page_mapping_rows": []}},
+    "steps": [
+      {"id": "import", "action": "所有者预览并确认历史导入，按所列原生对象向测试连接器读取并提交", "args": {"job": "J", "objects": ["history"]}},
+      {"id": "next", "action": "历史回填完成后向持续连接器送入新事件，读取采集状态和作业版本", "args": {"object": "next", "job": "J"}},
+      {"id": "control", "action": "在独立源上从持续采集已开启的状态回填相同历史对象，作业结束后再推送新对象，并读取持续采集账本", "args": {"source": "sandbox-journal-enabled", "initial_continuous_capture": true, "backfill_native_object": "history", "push_native_object": "next"}},
+      {"id": "old", "action": "用所有者身份分页读取导入作业去向，并通过同一测试服务的只读审计读取指定计数", "args": {"job": "J-old"}}
+    ],
+    "checks": [
+      {"at": "next", "path": "/continuous_capture", "op": "eq", "value": false},
+      {"at": "next", "path": "/captured_native_objects", "op": "eq", "value": ["history"]},
+      {"at": "control", "path": "/continuous_capture", "op": "eq", "value": true},
+      {"at": "control", "path": "/captured_native_objects", "op": "contains", "value": "next"},
+      {"at": "old", "path": "/mapping_coverage", "op": "eq", "value": "summary_only"},
+      {"at": "old", "path": "/summary/stored_count", "op": "eq", "value": 3},
+      {"at": "old", "path": "/rows", "op": "eq", "value": []}
+    ]
+  }
+]

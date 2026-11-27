@@ -41,7 +41,11 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             PRIMARY KEY(actor, operation, key)
         );
         CREATE TABLE IF NOT EXISTS context_tasks (
-            id TEXT PRIMARY KEY, project TEXT, anchor TEXT NOT NULL, creator TEXT NOT NULL
+            id TEXT PRIMARY KEY, project TEXT, anchor TEXT NOT NULL, creator TEXT NOT NULL, title TEXT
+        );
+        CREATE TABLE IF NOT EXISTS context_task_closures (
+            task_id TEXT PRIMARY KEY REFERENCES context_tasks(id),
+            closed_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS context_task_access (
             task_id TEXT NOT NULL REFERENCES context_tasks(id),
@@ -69,6 +73,12 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             fingerprint TEXT NOT NULL, handles TEXT NOT NULL,
             effective_profile TEXT, estimated_tokens INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS context_evidence_manifests (
+            delivery_id TEXT PRIMARY KEY REFERENCES context_deliveries(id),
+            entries TEXT NOT NULL,
+            digest TEXT NOT NULL,
+            base_delivery TEXT REFERENCES context_deliveries(id)
+        );
         CREATE TABLE IF NOT EXISTS context_receipts (
             client_id TEXT NOT NULL REFERENCES context_clients(id), event_id TEXT NOT NULL,
             delivery_id TEXT NOT NULL REFERENCES context_deliveries(id), request_hash TEXT NOT NULL,
@@ -83,6 +93,14 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS context_outcome_attempt ON context_outcomes (attempt_id);",
     )?;
+    let has_task_title: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM pragma_table_info('context_tasks') WHERE name='title')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_task_title {
+        conn.execute_batch("ALTER TABLE context_tasks ADD COLUMN title TEXT")?;
+    }
     Ok(())
 }
 
@@ -374,36 +392,88 @@ pub fn create_task(
     let anchor = optional_text(&request, "anchor")?
         .or(optional_text(&request, "artifact_ref")?)
         .ok_or_else(|| Error::invalid("anchor is required"))?;
+    let title = optional_text(&request, "title")?;
     let actor = client.map_or("owner", |client| client.id.as_str());
-    let digest = request_hash(&json!({"project": project, "anchor": anchor}))?;
+    let mut intent = json!({"project": project, "anchor": anchor});
+    if let Some(title) = title {
+        intent["title"] = title.into();
+    }
+    let digest = request_hash(&intent)?;
     let tx = conn.transaction()?;
     if let Some(previous) = replay_intent(&tx, actor, "task.create", key, &digest)? {
         return Ok(previous);
     }
     let task_id = opaque_id("task");
     tx.execute(
-        "INSERT INTO context_tasks(id, project, anchor, creator) VALUES (?1, ?2, ?3, ?4)",
-        params![task_id, project, anchor, actor],
+        "INSERT INTO context_tasks(id, project, anchor, creator, title) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![task_id, project, anchor, actor, title],
     )?;
-    let result = json!({"task_id": task_id, "project": project, "anchor": anchor});
+    intent["task_id"] = task_id.into();
+    let result = intent;
     store_intent(&tx, actor, "task.create", key, &digest, &result)?;
     tx.commit()?;
     Ok(result)
 }
 
+pub fn close_task(conn: &Connection, task: &str) -> Result<Value> {
+    if !conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM context_tasks WHERE id=?1)",
+        [task],
+        |row| row.get::<_, bool>(0),
+    )? {
+        return Err(Error::missing("task unavailable"));
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO context_task_closures(task_id,closed_at) VALUES (?1,?2)",
+        params![task, crate::clock::now()?],
+    )?;
+    Ok(json!({"task_id":task,"state":"closed"}))
+}
+
 pub fn tasks(conn: &Connection) -> Result<Value> {
     let mut query =
-        conn.prepare("SELECT id, project, anchor FROM context_tasks ORDER BY rowid DESC")?;
+        conn.prepare("SELECT id, project, anchor, title FROM context_tasks ORDER BY rowid DESC")?;
     let items = query
         .query_map([], |row| {
-            Ok(json!({
+            let mut item = json!({
                 "task_id": row.get::<_, String>(0)?,
                 "project": row.get::<_, Option<String>>(1)?,
                 "anchor": row.get::<_, String>(2)?,
-            }))
+            });
+            if let Some(title) = row.get::<_, Option<String>>(3)? {
+                item["title"] = title.into();
+            }
+            Ok(item)
         })?
         .collect::<rusqlite::Result<Vec<Value>>>()?;
     Ok(json!({"tasks": items}))
+}
+
+pub fn task_candidates(conn: &Connection, client: &BoundClient, name: &str) -> Result<Value> {
+    if !client.capabilities.load_context {
+        return Err(Error::denied("client cannot select context tasks"));
+    }
+    if name.trim().is_empty() || name.len() > 512 {
+        return Err(Error::invalid(
+            "task name must be nonempty and at most 512 bytes",
+        ));
+    }
+    let mut query = conn.prepare(
+        "SELECT t.id,t.project,t.anchor,COALESCE(t.title,t.anchor)
+         FROM context_task_access a JOIN context_tasks t ON t.id=a.task_id
+         LEFT JOIN context_task_closures c ON c.task_id=t.id
+         WHERE a.client_id=?1 AND COALESCE(t.title,t.anchor)=?2 AND c.task_id IS NULL
+         ORDER BY t.project,t.anchor,t.id LIMIT 50",
+    )?;
+    let items = query
+        .query_map(params![client.id, name], |row| {
+            Ok(json!({
+                "task_id":row.get::<_,String>(0)?,"project":row.get::<_,Option<String>>(1)?,
+                "anchor":row.get::<_,String>(2)?,"title":row.get::<_,String>(3)?,
+            }))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(json!({"tasks":items,"requires_selection":!items.is_empty()}))
 }
 
 pub fn create_attempt(
@@ -493,11 +563,12 @@ fn visible_statements(
     conn: &Connection,
     client: &BoundClient,
     project: Option<&str>,
+    task: Option<&str>,
 ) -> Result<Vec<Value>> {
     if !shared_enabled(conn, client)? {
         return Ok(Vec::new());
     }
-    let current = authority::current(conn, project, None, None, true)?;
+    let current = authority::current_with_task(conn, project, None, None, true, task)?;
     let rows = current["statements"]
         .as_array()
         .ok_or_else(|| Error::internal("invalid authority projection"))?;
@@ -527,14 +598,15 @@ fn token_budget(budget: &Value, field: &str) -> Result<u64> {
         .ok_or_else(|| Error::invalid(format!("budget.{field} must be an integer within bounds")))
 }
 
-struct EvidencePackage {
+pub(crate) struct EvidencePackage {
     state: &'static str,
-    evidence: Vec<Value>,
+    pub(crate) evidence: Vec<Value>,
     observations: Vec<Value>,
     handles: Vec<String>,
     estimated_tokens: usize,
     effective_profile: Option<&'static str>,
     fallback_reason: Option<&'static str>,
+    window: Value,
 }
 
 impl EvidencePackage {
@@ -547,15 +619,57 @@ impl EvidencePackage {
             estimated_tokens: 0,
             effective_profile: None,
             fallback_reason: None,
+            window: Value::Null,
         }
     }
 
     fn fingerprint(&self) -> Result<String> {
-        request_hash(&json!({
+        let mut payload = json!({
             "state": self.state, "evidence": self.evidence, "observations": self.observations,
             "effective_profile": self.effective_profile, "fallback_reason": self.fallback_reason,
-        }))
+        });
+        if self.window.is_object() {
+            payload["window"] = self.window.clone();
+        }
+        request_hash(&payload)
     }
+
+    fn manifest(&self) -> Result<BTreeMap<String, String>> {
+        self.evidence
+            .iter()
+            .map(|item| {
+                let handle = text(item, "handle")?;
+                let observations: Vec<_> = self
+                    .observations
+                    .iter()
+                    .filter(|row| row["handle"] == handle)
+                    .collect();
+                Ok((
+                    handle.to_owned(),
+                    request_hash(&json!([item, observations]))?,
+                ))
+            })
+            .collect()
+    }
+}
+
+fn evidence_manifest(db: &Connection, delivery: &str) -> Result<Option<BTreeMap<String, String>>> {
+    let result: Option<String> = db
+        .query_row(
+            "SELECT entries FROM context_evidence_manifests WHERE delivery_id=?1",
+            [delivery],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(result
+        .map(|encoded| serde_json::from_str(&encoded))
+        .transpose()?)
+}
+
+struct EvidenceSelection<'a> {
+    query: Option<(&'a str, Option<&'a str>)>,
+    window: Option<(usize, usize)>,
+    frozen: Option<(&'a str, bool)>,
 }
 
 fn task_package(
@@ -564,20 +678,101 @@ fn task_package(
     task_id: Option<&str>,
     profile: &str,
     budget: usize,
+    EvidenceSelection {
+        query,
+        window,
+        frozen,
+    }: EvidenceSelection<'_>,
 ) -> Result<EvidencePackage> {
     if budget == 0 {
         return Ok(EvidencePackage::empty("budget_zero"));
     }
     let Some(task_id) = task_id else {
+        if frozen.is_some() {
+            return Err(Error::invalid(
+                "a frozen evidence seed set requires a bound task",
+            ));
+        }
         return Ok(EvidencePackage::empty("evidence_unavailable"));
     };
-    let authorized = match retrieval::for_client(db, task_id, &client.id) {
+    let result = if let Some((seed_set, neighbor)) = frozen {
+        Ok(crate::evidence_snapshot::replay(
+            db, seed_set, &client.id, task_id, neighbor,
+        )?)
+    } else {
+        match query {
+            Some((text, skip)) => match window {
+                Some((seeds, slots)) => retrieval::evidence_window(
+                    db,
+                    task_id,
+                    Some(&client.id),
+                    text,
+                    skip,
+                    seeds,
+                    slots,
+                ),
+                None => retrieval::matching_for_client(db, task_id, &client.id, text, skip),
+            },
+            None => retrieval::for_client(db, task_id, &client.id),
+        }
+    };
+    let authorized = match result {
         Ok(package) => package,
         Err(error) if error.status == 404 => {
             return Ok(EvidencePackage::empty("evidence_unavailable"));
         }
         Err(error) => return Err(error),
     };
+    let mut fitted = fit_evidence(
+        &authorized,
+        task_id,
+        profile,
+        EvidenceBudget::TransportBytes(budget),
+    )?;
+    fitted.window = authorized["window"].clone();
+    if fitted.window.get("evidence_bytes_utf8").is_some() {
+        fitted.window["evidence_bytes_utf8"] = json!(
+            fitted
+                .evidence
+                .iter()
+                .filter_map(|item| item["text"].as_str())
+                .map(str::len)
+                .sum::<usize>()
+        );
+    }
+    if fitted.window.is_object() && fitted.state == "budget_truncated" {
+        fitted.window["evidence_gap"] = json!(true);
+        if let Some(expanded) = fitted.window["expanded_refs"].as_array_mut() {
+            expanded.retain(|reference| {
+                reference.as_str().is_some_and(|reference| {
+                    fitted.handles.iter().any(|handle| handle == reference)
+                })
+            });
+        }
+    }
+    Ok(fitted)
+}
+
+pub(crate) enum EvidenceBudget {
+    TransportBytes(usize),
+    ExcerptTokens(usize),
+}
+
+impl EvidenceBudget {
+    fn cost(&self, item: &Value, content: &str, separator: bool) -> Result<usize> {
+        match self {
+            Self::TransportBytes(_) => Ok(serde_json::to_vec(item)?.len() + usize::from(separator)),
+            Self::ExcerptTokens(_) => Ok(content.chars().count() + usize::from(separator)),
+        }
+    }
+}
+
+pub(crate) fn fit_evidence(
+    authorized: &Value,
+    task_id: &str,
+    profile: &str,
+    budget: EvidenceBudget,
+) -> Result<EvidencePackage> {
     let items = authorized["evidence"]
         .as_array()
         .ok_or_else(|| Error::internal("invalid task evidence projection"))?;
@@ -592,11 +787,26 @@ fn task_package(
         }
     }
 
-    // Budget estimates include both encoded arrays. Keep source text intact, and
-    // include derivations only for source versions actually served in this package.
+    // Transport retains its encoded cap. Read-only comparison budgets the rendered
+    // source and observation content, whose cost is independent of opaque IDs.
     let mut package = EvidencePackage::empty("provided");
-    let mut used = r#"{"evidence":[],"observations":[]}"#.len();
-    for event in items {
+    let (limit, mut used) = match budget {
+        EvidenceBudget::TransportBytes(limit) => {
+            (limit, r#"{"evidence":[],"observations":[]}"#.len())
+        }
+        EvidenceBudget::ExcerptTokens(limit) => (limit, 0),
+    };
+    let mut chosen = Vec::new();
+    let latest_check = items
+        .iter()
+        .rposition(|item| item["actor_kind"] == "tool_result");
+    let priority = latest_check.into_iter().chain(
+        (0..items.len())
+            .rev()
+            .filter(|index| Some(*index) != latest_check),
+    );
+    for index in priority {
+        let event = &items[index];
         let event_id = text(event, "event_id")?;
         let handle = text(event, "handle")?;
         let actor = text(event, "actor_kind")?;
@@ -607,13 +817,17 @@ fn task_package(
             "event_id": event_id, "handle": handle, "actor_kind": actor,
             "text": original, "at": event["at"].as_str(), "task_id": task_id,
         });
-        let cost = serde_json::to_vec(&item)?.len() + usize::from(!package.evidence.is_empty());
-        if used + cost > budget {
+        let cost = budget.cost(&item, original, !chosen.is_empty())?;
+        if used + cost > limit {
             package.state = "budget_truncated";
-            break;
+            continue;
         }
         used += cost;
-        package.handles.push(handle.to_owned());
+        chosen.push((index, item));
+    }
+    chosen.sort_by_key(|(index, _)| *index);
+    for (_, item) in chosen {
+        package.handles.push(text(&item, "handle")?.to_owned());
         package.evidence.push(item);
     }
     for event in &package.evidence {
@@ -640,9 +854,12 @@ fn task_package(
                 "event_id": event_id, "field": field, "value": value, "span_id": row["span_id"].as_str(),
                 "actor_kind": role, "handle": event["handle"],
             });
-            let cost =
-                serde_json::to_vec(&item)?.len() + usize::from(!package.observations.is_empty());
-            if used + cost > budget {
+            let cost = budget.cost(
+                &item,
+                &format!("{field}:{value}"),
+                !package.observations.is_empty(),
+            )?;
+            if used + cost > limit {
                 package.state = "budget_truncated";
                 break;
             }
@@ -669,7 +886,7 @@ fn enforce_append_only_session(
     client_id: &str,
     session_id: &str,
     statements: &[Value],
-    evidence: &[Value],
+    task_id: Option<&str>,
 ) -> Result<()> {
     let desired: BTreeSet<_> = statements
         .iter()
@@ -694,25 +911,21 @@ fn enforce_append_only_session(
             ));
         }
     }
-    let handles: BTreeSet<_> = evidence
-        .iter()
-        .filter_map(|row| row["handle"].as_str())
-        .collect();
     let mut query=db.prepare("SELECT e.handles FROM context_delivery_evidence e JOIN context_deliveries d ON e.delivery_id=d.id
         WHERE d.client_id=?1 AND d.session=?2")?;
     for row in query.query_map(params![client_id, session_id], |row| {
         row.get::<_, String>(0)
     })? {
         let supplied: Vec<String> = serde_json::from_str(&row?)?;
-        if supplied
-            .iter()
-            .any(|handle| !handles.contains(handle.as_str()))
-        {
-            return Err(Error::new(
-                409,
-                "fresh_session_required",
-                "previously supplied task evidence is no longer authorized; start a fresh session",
-            ));
+        for handle in supplied {
+            if task_id.is_none() || !retrieval::client_can_expand(db, &handle, client_id, task_id)?
+            {
+                return Err(Error::new(
+                    409,
+                    "fresh_session_required",
+                    "previously supplied task evidence is no longer authorized; start a fresh session",
+                ));
+            }
         }
     }
     Ok(())
@@ -752,11 +965,44 @@ pub fn load(
     }
     let statement_tokens = token_budget(&request["budget"], "statement_tokens")?;
     let evidence_tokens = token_budget(&request["budget"], "evidence_tokens")?;
+    let evidence_query = optional_text(&request, "evidence_query")?;
+    let evidence_window = request
+        .get("evidence_window")
+        .map(|window| {
+            let parse = |name: &str| {
+                window[name]
+                    .as_u64()
+                    .filter(|limit| (1..=50).contains(limit))
+                    .map(|n| n as usize)
+                    .ok_or_else(|| Error::invalid(format!("evidence_window.{name} must be 1..50")))
+            };
+            Ok::<_, Error>((parse("candidate_limit")?, parse("evidence_slots")?))
+        })
+        .transpose()?;
+    let frozen = request
+        .get("frozen_evidence")
+        .map(|frozen| {
+            let seed_set = text(frozen, "seed_set")?;
+            let neighbor = frozen["neighbor"]
+                .as_bool()
+                .ok_or_else(|| Error::invalid("frozen_evidence.neighbor must be boolean"))?;
+            Ok::<_, Error>((seed_set, neighbor))
+        })
+        .transpose()?;
+    if frozen.is_some() && (evidence_query.is_some() || evidence_window.is_some()) {
+        return Err(Error::invalid(
+            "a frozen evidence seed set cannot be reranked",
+        ));
+    }
+    let skip_event = optional_text(&request, "evidence_skip_event_id")?;
+    let retained_delivery = optional_text(&request, "retained_delivery_id")?;
+    let retained_digest = optional_text(&request, "retained_manifest_digest")?;
     let digest = key.map(|_| request_hash(&request)).transpose()?;
     let tx = conn.transaction()?;
     let project = bound_project(&tx, client, task, attempt, session, epoch)?;
     let policy = policy_version(&tx)?;
-    let statements = visible_statements(&tx, client, project.as_deref())?;
+    let strategy = crate::optimization::serving(&tx, &client.id, project.as_deref())?;
+    let statements = visible_statements(&tx, client, project.as_deref(), task)?;
     let all_revisions: Vec<&Value> = statements
         .iter()
         .map(|statement| &statement["revision_id"])
@@ -765,7 +1011,7 @@ pub fn load(
         "snapshot_{}",
         request_hash(&json!({
             "client": client.id, "route": client.route_ref, "project": project, "task": task,
-            "policy": policy, "revisions": all_revisions,
+            "policy": policy, "strategy": strategy.version, "revisions": all_revisions,
         }))?
     );
     let required_budget = if statements.is_empty() {
@@ -773,24 +1019,52 @@ pub fn load(
     } else {
         serde_json::to_vec(&statements)?.len()
     };
-    let evidence = task_package(&tx, client, task, profile, evidence_tokens as usize)?;
+    let evidence = task_package(
+        &tx,
+        client,
+        task,
+        profile,
+        (evidence_tokens as usize).min(strategy.evidence_token_cap.unwrap_or(usize::MAX)),
+        EvidenceSelection {
+            query: evidence_query.map(|query| (query, skip_event)),
+            window: evidence_window,
+            frozen,
+        },
+    )?;
     if append_only {
-        enforce_append_only_session(&tx, &client.id, session, &statements, &evidence.evidence)?;
+        enforce_append_only_session(&tx, &client.id, session, &statements, task)?;
     }
     let fingerprint = evidence.fingerprint()?;
+    let manifest = evidence.manifest()?;
+    let manifest_digest = format!("sha256:{}", hash(serde_json::to_vec(&manifest)?));
     // UTF-8 byte length is a conservative estimate when the host tokenizer is unavailable.
-    let respond = |delivery_id: &str, package_id: &str, mode: &str| {
+    let respond = |delivery_id: &str,
+                   package_id: &str,
+                   mode: &str,
+                   base: Option<(&str, &BTreeMap<String, String>)>| {
+        let included = |item: &&Value| {
+            base.is_none_or(|(_, entries)| {
+                item["handle"]
+                    .as_str()
+                    .is_some_and(|handle| !entries.contains_key(handle))
+            })
+        };
         let mut response = json!({
             "delivery_id": delivery_id,
             "delivery_state": "provided",
             "policy_version": policy,
+            "strategy_version": strategy.version,
             "snapshot_id": snapshot,
             "snapshot_mode": mode,
             "statements": if mode == "replace" { statements.as_slice() } else { &[] },
             "estimated_statement_tokens": if mode == "replace" { required_budget } else { 0 },
             "package_id": package_id,
-            "evidence": evidence.evidence,
-            "observations": evidence.observations,
+            "package_mode": if base.is_some() {"delta"} else {"full"},
+            "base_delivery_id": base.map(|(id, _)| id),
+            "evidence_manifest_digest": manifest_digest,
+            "evidence_manifest": manifest,
+            "evidence": evidence.evidence.iter().filter(included).collect::<Vec<_>>(),
+            "observations": evidence.observations.iter().filter(included).collect::<Vec<_>>(),
             "package_state": evidence.state,
             "estimated_evidence_tokens": evidence.estimated_tokens,
             "requested_profile": profile,
@@ -798,6 +1072,9 @@ pub fn load(
             "fallback_reason": evidence.fallback_reason,
             "template_version": evidence.effective_profile.map(|_| "literal-v1"),
         });
+        if evidence.window.is_object() {
+            response["window"] = evidence.window.clone();
+        }
         if mode == "deferred" {
             response["reason"] = json!("statement_budget");
             response["required_statement_tokens"] = json!(required_budget);
@@ -807,8 +1084,9 @@ pub fn load(
     if let Some(key) = key {
         let previous = tx
             .query_row(
-                "SELECT d.id, d.package, d.snapshot, d.mode, d.request_hash, e.fingerprint
+                "SELECT d.id, d.package, d.snapshot, d.mode, d.request_hash, e.fingerprint,m.base_delivery
              FROM context_deliveries d LEFT JOIN context_delivery_evidence e ON e.delivery_id=d.id
+             LEFT JOIN context_evidence_manifests m ON m.delivery_id=d.id
              WHERE d.client_id=?1 AND d.request_key=?2",
                 params![client.id, key],
                 |row| {
@@ -819,11 +1097,13 @@ pub fn load(
                         row.get::<_, String>(3)?,
                         row.get::<_, String>(4)?,
                         row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
                     ))
                 },
             )
             .optional()?;
-        if let Some((id, package, old_snapshot, mode, old_digest, old_fingerprint)) = previous {
+        if let Some((id, package, old_snapshot, mode, old_digest, old_fingerprint, base)) = previous
+        {
             if digest.as_deref() != Some(&old_digest) {
                 return Err(Error::new(
                     409,
@@ -840,7 +1120,17 @@ pub fn load(
             {
                 return Err(Error::conflict("revision_changed"));
             }
-            return Ok(respond(&id, &package, &mode));
+            let prior = base
+                .as_deref()
+                .map(|id| evidence_manifest(&tx, id))
+                .transpose()?
+                .flatten();
+            return Ok(respond(
+                &id,
+                &package,
+                &mode,
+                base.as_deref().zip(prior.as_ref()),
+            ));
         }
     }
     let known_loaded: bool = if known == Some(snapshot.as_str()) {
@@ -865,6 +1155,34 @@ pub fn load(
     };
     let id = opaque_id("delivery");
     let package = opaque_id("package");
+    let base = if let (Some(base), Some(expected), Some(task)) =
+        (retained_delivery, retained_digest, task)
+    {
+        let confirmed: bool = tx.query_row(
+            "SELECT COALESCE((
+              SELECT json_extract(r.result,'$.evidence_complete')
+              FROM context_deliveries d JOIN context_evidence_manifests m ON m.delivery_id=d.id
+              JOIN context_receipts r ON r.delivery_id=d.id AND r.client_id=d.client_id AND r.kind='loaded'
+              WHERE d.id=?1 AND d.client_id=?2 AND d.session=?3 AND d.epoch=?4 AND d.route=?5
+                AND d.task_id=?6 AND m.digest=?7
+              ORDER BY r.rowid DESC LIMIT 1), 0) = 1",
+            params![base,client.id,session,epoch,client.route_ref,task,expected], |row| row.get(0),
+        )?;
+        if confirmed {
+            evidence_manifest(&tx, base)?
+                .filter(|entries| {
+                    !entries.is_empty()
+                        && entries
+                            .iter()
+                            .all(|(key, value)| manifest.get(key) == Some(value))
+                })
+                .map(|entries| (base, entries))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let provided = if mode == "replace" {
         all_revisions
     } else {
@@ -888,8 +1206,17 @@ pub fn load(
         params![id, fingerprint, serde_json::to_string(&evidence.handles)?, evidence.effective_profile,
             evidence.estimated_tokens as i64],
     )?;
+    tx.execute(
+        "INSERT INTO context_evidence_manifests(delivery_id,entries,digest,base_delivery) VALUES(?1,?2,?3,?4)",
+        params![id, serde_json::to_string(&manifest)?, manifest_digest, base.as_ref().map(|(id,_)| id)],
+    )?;
     tx.commit()?;
-    Ok(respond(&id, &package, mode))
+    Ok(respond(
+        &id,
+        &package,
+        mode,
+        base.as_ref().map(|(id, entries)| (*id, entries)),
+    ))
 }
 
 fn revision_ids(request: &Value) -> Result<BTreeSet<String>> {
@@ -955,6 +1282,76 @@ fn delivery_for_receipt(conn: &Connection, id: &str, client_id: &str) -> Result<
     })
 }
 
+pub fn handoff_summary(conn: &Connection, client: &BoundClient, id: &str) -> Result<Value> {
+    let delivery = delivery_for_receipt(conn, id, &client.id)?;
+    let task = delivery
+        .task
+        .as_deref()
+        .filter(|_| delivery.route == client.route_ref)
+        .ok_or_else(|| Error::missing("task delivery unavailable"))?;
+    if !task_access(conn, task, &client.id)? {
+        return Err(Error::missing("task delivery unavailable"));
+    }
+    let mut plans = Vec::new();
+    let mut result_evidence_refs = Vec::new();
+    let mut complete = true;
+    for handle in delivery.evidence_handles {
+        if !retrieval::client_can_expand(conn, &handle, &client.id, Some(task))? {
+            complete = false;
+            continue;
+        }
+        let evidence = retrieval::expand(conn, &handle)?;
+        if evidence["actor_kind"] == "tool_result" {
+            result_evidence_refs.push(handle);
+        } else if conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM authority_observations WHERE event_id=?1 AND role='plan')",
+            [text(&evidence, "event_id")?],
+            |row| row.get::<_, bool>(0),
+        )? {
+            plans.push(text(&evidence, "text")?.to_owned());
+        }
+    }
+    let result: Option<String> = if complete {
+        conn.query_row(
+            "SELECT json_extract(result,'$.status') FROM context_outcomes
+             WHERE attempt_id=?1 AND EXISTS(SELECT 1 FROM json_each(result,'$.delivery_ids') WHERE value=?2)
+             ORDER BY rowid DESC LIMIT 1",
+            params![delivery.attempt, id], |row| row.get(0),
+        ).optional()?
+    } else {
+        None
+    };
+    let previous: Option<String> = conn
+        .query_row(
+            "SELECT COALESCE(e.handles,'[]') FROM context_deliveries d
+         LEFT JOIN context_delivery_evidence e ON e.delivery_id=d.id
+         WHERE d.client_id=?1 AND d.route=?2 AND d.task_id=?3
+           AND d.rowid<(SELECT rowid FROM context_deliveries WHERE id=?4)
+           AND (SELECT json_extract(result,'$.evidence_complete') FROM context_receipts
+                WHERE kind='loaded' AND delivery_id=d.id ORDER BY rowid DESC LIMIT 1)=1
+         ORDER BY d.rowid DESC LIMIT 1",
+            params![client.id, client.route_ref, task, id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let mut retained = false;
+    if let Some(handles) = previous {
+        let handles: Vec<String> = serde_json::from_str(&handles)?;
+        retained = !handles.is_empty();
+        for handle in handles {
+            if !retrieval::client_can_expand(conn, &handle, &client.id, Some(task))? {
+                retained = false;
+                break;
+            }
+        }
+    }
+    Ok(
+        json!({"delivery_id":id,"plan_text":plans.join("\n"),"result_evidence_refs":result_evidence_refs,
+        "execution_result":result.as_deref().unwrap_or("unknown"),
+        "previous_handoff":if retained {"observed"} else {"unknown"}}),
+    )
+}
+
 pub fn receipt(
     conn: &mut Connection,
     client: &BoundClient,
@@ -972,22 +1369,84 @@ pub fn receipt(
     let observed = revision_ids(&request)?;
     let reason = optional_text(&request, "missing_reason")?;
     let evidence = optional_text(&request, "evidence_ref")?;
+    let evidence_refs: Option<BTreeSet<String>> = request
+        .get("loaded_evidence_refs")
+        .map(|value| {
+            serde_json::from_value(value.clone())
+                .map_err(|_| Error::invalid("loaded_evidence_refs must be a list of handles"))
+        })
+        .transpose()?;
+    let used_evidence: Option<BTreeSet<String>> = request
+        .get("used_evidence_refs")
+        .map(|value| {
+            serde_json::from_value(value.clone())
+                .map_err(|_| Error::invalid("used_evidence_refs must be a list of handles"))
+        })
+        .transpose()?;
+    let artifact_check = request
+        .get("artifact_check_ref")
+        .map(crate::tool_receipt::ArtifactCheckRef::parse)
+        .transpose()?;
+    let loaded_digest = optional_text(&request, "loaded_manifest_digest")?;
+    if (evidence_refs.is_some() || loaded_digest.is_some()) && kind != "loaded" {
+        return Err(Error::invalid(
+            "evidence manifest is only accepted on loaded observations",
+        ));
+    }
+    if used_evidence
+        .as_ref()
+        .is_some_and(|refs| refs.is_empty() || kind != "used")
+    {
+        return Err(Error::invalid(
+            "used_evidence_refs requires a nonempty used observation",
+        ));
+    }
+    if let Some(reference) = &artifact_check
+        && (kind != "used"
+            || evidence.is_none()
+            || !used_evidence
+                .as_ref()
+                .is_some_and(|handles| handles.contains(&reference.handle)))
+    {
+        return Err(Error::invalid(
+            "artifact_check_ref requires used evidence and an artifact reference",
+        ));
+    }
+    if artifact_check.is_some() && evidence.is_some_and(|path| authority::redact(path) != path) {
+        return Err(Error::invalid(
+            "artifact reference would expose credential text",
+        ));
+    }
     match kind {
         "loaded" if client.capabilities.observe_loaded => {}
         "used" if client.capabilities.observe_used => {}
         "loaded" | "used" => return Err(Error::denied("client cannot report this observation")),
         _ => return Err(Error::invalid("invalid observation kind")),
     }
-    if kind == "used" && (observed.is_empty() || evidence.is_none()) {
+    if kind == "used"
+        && ((observed.is_empty() && used_evidence.is_none())
+            || (!observed.is_empty() && evidence.is_none()))
+    {
         return Err(Error::invalid(
             "used requires revision_ids and evidence_ref",
         ));
     }
-    let digest = request_hash(&json!({
+    let mut observation_request = json!({
         "delivery_id": id, "event_id": event_id, "kind": kind, "context_epoch": epoch,
         "snapshot_id": snapshot, "package_id": package, "route_ref": route,
         "revision_ids": observed, "model_call_ref": call, "missing_reason": reason, "evidence_ref": evidence,
-    }))?;
+    });
+    if evidence_refs.is_some() || loaded_digest.is_some() {
+        observation_request["loaded_evidence_refs"] = json!(evidence_refs);
+        observation_request["loaded_manifest_digest"] = json!(loaded_digest);
+    }
+    if let Some(refs) = &used_evidence {
+        observation_request["used_evidence_refs"] = json!(refs);
+    }
+    if let Some(reference) = &artifact_check {
+        observation_request["artifact_check_ref"] = json!(reference);
+    }
+    let digest = request_hash(&observation_request)?;
     let tx = conn.transaction()?;
     let delivery = delivery_for_receipt(&tx, id, &client.id)?;
     if delivery.route != route
@@ -1014,24 +1473,33 @@ pub fn receipt(
         .as_deref()
         .filter(|_| !delivery.evidence_handles.is_empty())
     {
-        let authorized = retrieval::for_client(&tx, task_id, &client.id)?;
-        let handles: BTreeSet<_> = authorized["evidence"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|row| row["handle"].as_str())
-            .collect();
-        if delivery
-            .evidence_handles
-            .iter()
-            .any(|handle| !handles.contains(handle.as_str()))
+        for handle in &delivery.evidence_handles {
+            if !retrieval::client_can_expand(&tx, handle, &client.id, Some(task_id))? {
+                return Err(Error::conflict(
+                    "some provided evidence is no longer available",
+                ));
+            }
+        }
+    }
+    if let Some(reference) = &artifact_check {
+        if !delivery.evidence_handles.contains(&reference.handle) {
+            return Err(Error::conflict("artifact check is outside this delivery"));
+        }
+        let item = retrieval::expand(&tx, &reference.handle)?;
+        let fields = item["text"]
+            .as_str()
+            .and_then(|content| serde_json::from_str::<Value>(content).ok());
+        if item["actor_kind"] != "tool_result"
+            || !fields.as_ref().is_some_and(|checks| {
+                crate::tool_receipt::valid_marker_check(&checks[&reference.field])
+            })
         {
             return Err(Error::conflict(
-                "some provided evidence is no longer available",
+                "artifact check is unavailable in this evidence version",
             ));
         }
     }
-    let available = visible_statements(&tx, client, project.as_deref())?;
+    let available = visible_statements(&tx, client, project.as_deref(), delivery.task.as_deref())?;
     let active: BTreeSet<_> = available
         .iter()
         .filter_map(|v| v["revision_id"].as_str())
@@ -1039,7 +1507,10 @@ pub fn receipt(
     if !observed.iter().all(|id| active.contains(id.as_str())) {
         return Err(Error::missing("revision unavailable"));
     }
-    if delivery.mode != "replace" || !observed.is_subset(&delivery.provided) {
+    if (delivery.mode != "replace"
+        && (!observed.is_empty() || evidence_refs.is_none() && used_evidence.is_none()))
+        || !observed.is_subset(&delivery.provided)
+    {
         return Err(Error::conflict(
             "observation includes revisions outside the provided snapshot",
         ));
@@ -1061,10 +1532,33 @@ pub fn receipt(
         }
         return Ok(serde_json::from_str(&result)?);
     }
-    let complete = kind == "loaded" && observed == delivery.provided;
-    if kind == "loaded" && !complete && reason.is_none() {
+    let complete = kind == "loaded" && delivery.mode == "replace" && observed == delivery.provided;
+    if kind == "loaded" && delivery.mode == "replace" && !complete && reason.is_none() {
         return Err(Error::invalid("partial loading requires missing_reason"));
     }
+    let evidence_complete = if let Some(refs) = &evidence_refs {
+        let delivered: BTreeSet<_> = delivery.evidence_handles.iter().cloned().collect();
+        if !refs.is_subset(&delivered) {
+            return Err(Error::conflict(
+                "observation includes evidence outside the provided manifest",
+            ));
+        }
+        let expected: Option<String> = tx
+            .query_row(
+                "SELECT digest FROM context_evidence_manifests WHERE delivery_id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Some(
+            !delivered.is_empty()
+                && *refs == delivered
+                && expected.as_deref().is_some()
+                && loaded_digest == expected.as_deref(),
+        )
+    } else {
+        None
+    };
     if kind == "used" {
         let mut query = tx.prepare(
             "SELECT result FROM context_receipts
@@ -1074,7 +1568,16 @@ pub fn receipt(
         let mut verified = false;
         for row in rows {
             let value: Value = serde_json::from_str(&row?)?;
-            if observed.is_subset(&revision_ids(&value)?) {
+            let evidence_observed = used_evidence.as_ref().is_none_or(|used| {
+                value["loaded_evidence_refs"]
+                    .as_array()
+                    .is_some_and(|loaded| {
+                        used.iter()
+                            .all(|handle| loaded.iter().any(|entry| entry == handle))
+                    })
+            });
+            let matching_check = artifact_check.is_none() || value["evidence_complete"] == true;
+            if observed.is_subset(&revision_ids(&value)?) && evidence_observed && matching_check {
                 verified = true;
                 break;
             }
@@ -1083,10 +1586,20 @@ pub fn receipt(
             return Err(Error::conflict("no matching loaded observation"));
         }
     }
-    let result = json!({
+    let mut result = json!({
         "delivery_id": id, "event_id": event_id, "kind": kind, "revision_ids": observed,
         "complete": complete, "missing_reason": reason, "model_call_ref": call, "evidence_ref": evidence,
     });
+    if let Some(evidence_complete) = evidence_complete {
+        result["evidence_complete"] = json!(evidence_complete);
+        result["loaded_evidence_refs"] = json!(evidence_refs);
+    }
+    if let Some(refs) = used_evidence {
+        result["used_evidence_refs"] = json!(refs);
+    }
+    if let Some(reference) = artifact_check {
+        result["artifact_check_ref"] = json!(reference);
+    }
     tx.execute(
         "INSERT INTO context_receipts(client_id, event_id, delivery_id, request_hash, kind, result, complete, model_call)
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",

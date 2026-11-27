@@ -5,6 +5,8 @@
   --atlas-ink: #e4f1f7;
   --atlas-cyan: #60e6db;
   color: var(--atlas-ink);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   color-scheme: dark;
   font: 14px/1.5 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -74,9 +76,11 @@
   color: #a3b9c9; font: 10px/1.4 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .06em;
   pointer-events: none;
 }
+/* 工具条与画布共用第一行网格：宽屏叠在画布右下角，窄屏移到画布下方，不再遮住节点。 */
+.atlas-stage, .atlas-tools { grid-area: 1 / 1; }
 .atlas-tools {
-  position: absolute; display: flex; align-items: center; bottom: 12px; right: 12px;
-  padding: 3px; border: 1px solid #34495d; border-radius: 7px; background: #0b1726ed;
+  position: relative; z-index: 1; display: flex; align-items: center; align-self: end; justify-self: end;
+  margin: 12px; padding: 3px; border: 1px solid #34495d; border-radius: 7px; background: #0b1726ed;
 }
 .atlas-control {
   width: 31px; height: 30px; display: grid; place-items: center; padding: 0;
@@ -126,7 +130,7 @@
 .atlas-controls { display: grid; grid-template-columns: repeat(2,minmax(0, 1fr)); gap: 12px; padding: 2px 0 10px; }
 .atlas-field { display: grid; min-width: 0; gap: 4px; font-size: 12px; color: var(--atlas-quiet); }
 .atlas-field select {
-  width: 100%; max-width: 100%; height: 38px; border: 1px solid #354b5d; border-radius: 5px;
+  width: 100%; max-width: 100%; height: 38px; border: 1px solid var(--field-border); border-radius: 5px;
   padding: 0 8px; color: var(--atlas-ink); background: #101e2c; font: inherit; font-size: 13px;
 }
 .atlas-inspector {
@@ -145,7 +149,7 @@
   .atlas-stage { height: 300px; }
   .atlas-controls { grid-template-columns: 1fr; }
   .atlas-note { left: 11px; top: 7px; }
-  .atlas-tools { right: 8px; bottom: 8px; }
+  .atlas-tools { grid-area: auto; margin: 8px 0 0; }
   .atlas-meter { bottom: 13px; left: 12px; }
 }
 @media (pointer: coarse) {
