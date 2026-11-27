@@ -45,6 +45,7 @@ jobs:
           persist-credentials: false
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         id: cargo-cache
+        continue-on-error: true
         with:
           path: ${{ runner.temp }}/bmem-u08-target
           key: bmem-u08-rust-1.100.0-${{ matrix.target }}-${{ hashFiles('src/v2/bmem/Cargo.lock', 'legacy-source/src/v2/bmem/Cargo.lock') }}
@@ -87,16 +88,13 @@ jobs:
           "BMEM_UPDATE_TEST_BIN=$(Join-Path $folder '0.3.0.exe')" >> $env:GITHUB_ENV
           "BMEM_UPDATE_NEXT_BIN=$(Join-Path $folder '0.3.1.exe')" >> $env:GITHUB_ENV
           "BMEM_UPDATE_TEST_OPENSSL=$((Get-Command openssl.exe -CommandType Application | Select-Object -First 1).Source)" >> $env:GITHUB_ENV
-      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
-        if: steps.cargo-cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ runner.temp }}/bmem-u08-target
-          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
       - name: Exercise the actual Windows executable lock and updater helper
+        timeout-minutes: 6
         shell: pwsh
         run: ./scripts/release/windows-acceptance.ps1 -Scenario U08 -EvidenceDirectory windows-u08-evidence
       - name: Exercise Task Scheduler takeover and preserve the stopped state
         if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
+        timeout-minutes: 4
         shell: pwsh
         env:
           BMEM_UPDATE_ISOLATED_TASK_SCHEDULER: '1'
@@ -107,3 +105,9 @@ jobs:
           name: bmem-isolated-windows-${{ matrix.target }}
           path: windows-u08-evidence/*
           if-no-files-found: ignore
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: ${{ !cancelled() && steps.fixture.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/bmem-u08-target
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}

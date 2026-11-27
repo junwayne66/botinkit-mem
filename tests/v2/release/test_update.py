@@ -72,9 +72,20 @@ class UpdateAcceptance(unittest.TestCase):
                 *(["--home", str(self.root)] if root else []), *args]
 
     def call(self, *args, binary=None, root=True, extra_env=None, timeout=120):
+        command = self.argv(*args, binary=binary, root=root)
+        env = {**self.env, **(extra_env or {})}
+        if os.name == "nt":
+            # A detached Windows descendant can retain the CLI's inheritable pipe handles.
+            # File redirection lets us read the direct process's receipt as soon as it exits.
+            with (tempfile.TemporaryFile(mode="w+", encoding="utf-8", dir=self.work) as stdout,
+                  tempfile.TemporaryFile(mode="w+", encoding="utf-8", dir=self.work) as stderr):
+                result = subprocess.run(command, cwd=self.work, env=env, stdin=subprocess.DEVNULL,
+                                        stdout=stdout, stderr=stderr, timeout=timeout)
+                stdout.seek(0)
+                stderr.seek(0)
+                return subprocess.CompletedProcess(command, result.returncode, stdout.read(), stderr.read())
         return subprocess.run(
-            self.argv(*args, binary=binary, root=root), cwd=self.work,
-            env={**self.env, **(extra_env or {})}, stdin=subprocess.DEVNULL,
+            command, cwd=self.work, env=env, stdin=subprocess.DEVNULL,
             capture_output=True, text=True, encoding="utf-8", timeout=timeout,
         )
 
