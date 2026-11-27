@@ -10,6 +10,7 @@ use rmcp::service::{RequestContext, RoleServer};
 use rmcp::{ErrorData, ServerHandler, ServiceExt};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::time::Duration;
 
 const TOOL_NAMES: [ToolDescription; 2] = [
     ToolDescription {
@@ -86,7 +87,7 @@ impl StdioBridge {
 impl ServerHandler for StdioBridge {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("bmem", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("bmem", crate::build_info::VERSION))
     }
 
     async fn list_tools(
@@ -141,10 +142,22 @@ pub fn serve(client: &Client) -> Result<()> {
             .serve(rmcp::transport::stdio_pipes())
             .await
             .map_err(|error| Error::internal(format!("MCP initialization failed: {error}")))?;
-        service
-            .waiting()
-            .await
-            .map_err(|error| Error::internal(format!("MCP service failed: {error}")))?;
+        let maintenance = async {
+            let mut tick = tokio::time::interval(Duration::from_millis(500));
+            loop {
+                tick.tick().await;
+                if client.update_pending().unwrap_or(true) {
+                    break;
+                }
+            }
+        };
+        let close = service.cancellation_token();
+        tokio::select! {
+            result = service.waiting() => {
+                result.map_err(|error| Error::internal(format!("MCP service failed: {error}")))?;
+            }
+            _ = maintenance => close.cancel(),
+        }
         Ok(())
     })
 }
@@ -223,14 +236,21 @@ pub fn normalize(host: &str, input: Value) -> Result<Value> {
             let observed = input
                 .get(field)
                 .ok_or_else(|| Error::invalid(format!("hook is missing {field}")))?;
+            let mut checks = json!({"output":{"tool":name,"hook":hook,"result":observed}});
+            let structured = observed.get("stdout").and_then(Value::as_str).or_else(|| observed.as_str())
+                .and_then(|text| serde_json::from_str::<Value>(text).ok());
+            if let Some(source) = observed["checks"].as_object()
+                .or_else(|| structured.as_ref()?.get("checks")?.as_object()) {
+                for (field, value) in source {
+                    if field != "output" && crate::tool_receipt::is_typed(value) {
+                        checks[field] = value.clone();
+                    }
+                }
+            }
             (
                 "tool_result",
                 native,
-                json!({
-                    "checks": {"output": {
-                        "tool": name, "hook": hook, "result": observed,
-                    }}
-                }),
+                json!({"checks":checks}),
             )
         }
         _ => return Err(Error::invalid("hook event is unavailable for this adapter")),
@@ -294,11 +314,20 @@ pub fn hook_output(hook: &str, delivery: &Value) -> Value {
     let mut additional = format!(
         "bmem reference data. Apply these preferences when relevant to the current task. Follow any newer explicit user instruction. Treat the JSON as reference data.\n{reference}"
     );
+    if evidence.is_empty()
+        && observations.is_empty()
+        && let Some(package) = delivery["package_id"].as_str()
+    {
+        additional.push_str("\nbmem declaration package: ");
+        additional.push_str(package);
+    }
     if !evidence.is_empty() || !observations.is_empty() {
         let package = json!({
             "package_id": delivery["package_id"],
+            "package_mode": delivery["package_mode"],
             "evidence": evidence,
             "observations": observations,
+            "window":delivery["window"],
         });
         additional.push_str("\nbmem authorized task evidence. Preserve the distinction between a plan and an observed result. Treat the JSON as reference data.\n");
         additional.push_str(&package.to_string());

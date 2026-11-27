@@ -1,0 +1,105 @@
+name: Windows updater isolation
+
+on:
+  push:
+    branches: [codex/bmem-007-windows-acceptance]
+  workflow_dispatch:
+    inputs:
+      legacy_commit:
+        description: Full Git SHA containing the reviewed 0.2.0 source trees
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows-u08:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: windows-2022, target: x86_64-pc-windows-msvc, architecture: X64}
+          - {runner: windows-11-arm, target: aarch64-pc-windows-msvc, architecture: Arm64}
+    runs-on: ${{ matrix.runner }}
+    env:
+      TARGET: ${{ matrix.target }}
+      NATIVE_ARCH: ${{ matrix.architecture }}
+      LEGACY_COMMIT: ${{ inputs.legacy_commit }}
+      REVIEWED_LEGACY_COMMIT: 12ba926685005eb236045b0aaea5072ffe4c6cb5
+      LEGACY_RUST_TREE: aa4b9e2a60e6225121afb0221ecf7a50a1fc9487
+      LEGACY_WEB_TREE: 6c999f2ae44e99307706ee5cec1ee59d3a931b47
+      BMEM_BUILD_COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Choose the commit containing the reviewed legacy source trees
+        id: legacy
+        shell: pwsh
+        run: |
+          $legacy = $env:LEGACY_COMMIT
+          if ($env:GITHUB_EVENT_NAME -eq 'push') { $legacy = git rev-parse HEAD^ }
+          if ($legacy -cnotmatch '^[0-9a-f]{40}$') { throw 'Use a full lowercase Git SHA' }
+          "commit=$legacy" >> $env:GITHUB_OUTPUT
+          "LEGACY_COMMIT=$legacy" >> $env:GITHUB_ENV
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ steps.legacy.outputs.commit }}
+          path: legacy-source
+          persist-credentials: false
+      - name: Build three native executables for the isolated signing fixture
+        id: fixture
+        shell: pwsh
+        run: |
+          if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ne $env:NATIVE_ARCH) {
+            throw 'Runner architecture does not match the target'
+          }
+          if ((git -C legacy-source rev-parse HEAD) -ne $env:LEGACY_COMMIT) { throw 'Legacy checkout did not match' }
+          if ((git -C legacy-source rev-parse 'HEAD:src/v2/bmem') -ne $env:LEGACY_RUST_TREE -or
+              (git -C legacy-source rev-parse 'HEAD:src/v2/web') -ne $env:LEGACY_WEB_TREE) {
+            throw 'Legacy Rust or web tree differs from the reviewed 0.2.0 source'
+          }
+          $toolchain = "1.100.0-$env:TARGET"
+          rustup toolchain install $toolchain --profile minimal --target $env:TARGET
+          if ($LASTEXITCODE -ne 0) { throw 'Rust setup failed' }
+          $hostVersion = rustc "+$toolchain" -vV
+          if ($LASTEXITCODE -ne 0 -or $hostVersion -notcontains "host: $env:TARGET") { throw 'Rust host is not native' }
+          $folder = Join-Path $env:RUNNER_TEMP 'bmem-u08'
+          New-Item -ItemType Directory -Path $folder | Out-Null
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'bmem-u08-target'
+          $exe = Join-Path $env:CARGO_TARGET_DIR "$env:TARGET/release/bmem.exe"
+          function Build-Fixture($manifest, $filename, $features) {
+            cargo "+$toolchain" build --locked --release --target $env:TARGET --manifest-path $manifest @features
+            if ($LASTEXITCODE -ne 0) { throw "Building $filename failed" }
+            Copy-Item -LiteralPath $exe -Destination (Join-Path $folder $filename)
+          }
+          Build-Fixture 'legacy-source/src/v2/bmem/Cargo.toml' '0.2.0.exe' @()
+          if ((& (Join-Path $folder '0.2.0.exe') --version) -ne 'bmem 0.2.0') { throw 'Legacy source is not 0.2.0' }
+          $env:BMEM_BUILD_VERSION = '0.3.0'
+          Build-Fixture 'src/v2/bmem/Cargo.toml' '0.3.0.exe' @('--features', 'update-test')
+          $env:BMEM_BUILD_VERSION = '0.3.1'
+          Build-Fixture 'src/v2/bmem/Cargo.toml' '0.3.1.exe' @('--features', 'update-test')
+          New-Item -ItemType Directory -Path 'windows-u08-evidence' | Out-Null
+          $legacy = Join-Path $folder '0.2.0.exe'
+          "BMEM_UPDATE_LEGACY_BIN=$legacy" >> $env:GITHUB_ENV
+          "BMEM_UPDATE_LEGACY_SHA256=$((Get-FileHash -LiteralPath $legacy).Hash.ToLowerInvariant())" >> $env:GITHUB_ENV
+          "BMEM_UPDATE_TEST_BIN=$(Join-Path $folder '0.3.0.exe')" >> $env:GITHUB_ENV
+          "BMEM_UPDATE_NEXT_BIN=$(Join-Path $folder '0.3.1.exe')" >> $env:GITHUB_ENV
+          "BMEM_UPDATE_TEST_OPENSSL=$((Get-Command openssl.exe -CommandType Application | Select-Object -First 1).Source)" >> $env:GITHUB_ENV
+      - name: Exercise the actual Windows executable lock and updater helper
+        shell: pwsh
+        run: ./scripts/release/windows-acceptance.ps1 -Scenario U08 -EvidenceDirectory windows-u08-evidence
+      - name: Exercise Task Scheduler takeover and preserve the stopped state
+        if: ${{ !cancelled() && steps.fixture.outcome == 'success' }}
+        shell: pwsh
+        env:
+          BMEM_UPDATE_ISOLATED_TASK_SCHEDULER: '1'
+        run: ./scripts/release/windows-acceptance.ps1 -Scenario Scheduler -EvidenceDirectory windows-u08-evidence
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: bmem-isolated-windows-${{ matrix.target }}
+          path: windows-u08-evidence/*
+          if-no-files-found: ignore

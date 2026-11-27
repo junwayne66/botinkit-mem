@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use crate::{
-    archive, authority, context, data_management, history, history_tasks, ingestion, integrations,
+    archive, authority, context, data_management, governance, history, history_tasks, ingestion, integrations,
     platform, providers, retrieval, settings::Settings, vector,
 };
 use axum::body::{Body, to_bytes};
@@ -17,6 +17,10 @@ use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
 use tokio::sync::{Notify, watch};
 use uuid::Uuid;
+
+#[path = "update_storage.rs"]
+mod update_storage;
+pub use update_storage::{migrate_update, restore_update, snapshot_update};
 
 struct App {
     instance: platform::Instance,
@@ -38,8 +42,14 @@ pub(crate) fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
 }
 
 pub fn database(instance: &platform::Instance) -> Result<Connection> {
+    platform::ensure_not_updating(instance)?;
+    initialize_database(instance)
+}
+
+fn initialize_database(instance: &platform::Instance) -> Result<Connection> {
     let mut db = Connection::open(instance.root.join("data/bmem.sqlite3"))?;
     db.busy_timeout(Duration::from_secs(5))?;
+    crate::storage_epoch::prepare_writer(&db)?;
     let wal: String = db.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
     if !wal.eq_ignore_ascii_case("wal") {
         return Err(Error::conflict(
@@ -56,8 +66,15 @@ pub fn database(instance: &platform::Instance) -> Result<Connection> {
     data_management::migrate(&db)?;
     history_tasks::migrate(&db)?;
     retrieval::migrate(&mut db)?;
+    crate::evidence_snapshot::migrate(&db)?;
+    crate::derived::migrate(&db)?;
+    crate::methods::migrate(&db)?;
+    crate::optimization::migrate(&db)?;
+    crate::community::migrate(&db)?;
     vector::migrate(&db)?;
+    governance::migrate(&db)?;
     crate::analytics::migrate(&mut db)?;
+    crate::storage_epoch::install(&mut db)?;
     Ok(db)
 }
 
@@ -77,17 +94,11 @@ pub async fn serve(instance: platform::Instance) -> Result<()> {
     // a daemon that starts during one must retry rather than die; a real owner
     // still gets the conflict once the budget expires.
     let _service_lock = platform::lock_service_for_daemon(&instance, Duration::from_secs(2))?;
-    let preferred = platform::registered_endpoint(&instance).map_or(0, |addr| addr.port());
-    let listener = match tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, preferred)).await {
-        Err(err) if preferred != 0 && err.kind() == std::io::ErrorKind::AddrInUse => {
-            tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?
-        }
-        result => result?,
-    };
-    let address = listener.local_addr()?;
-    platform::publish(&instance, address)?;
     let db = database(&instance)?;
     let settings = Settings::open(&instance.root)?;
+    let listener = bind_listener(&instance).await?;
+    let address = listener.local_addr()?;
+    platform::publish(&instance, address)?;
     let (stop, mut stop_wait) = watch::channel(false);
     let state = Arc::new(App {
         instance,
@@ -106,7 +117,7 @@ pub async fn serve(instance: platform::Instance) -> Result<()> {
         tokio::spawn(run_jobs(state.clone(), run_one)),
         tokio::spawn(run_jobs(state.clone(), run_vector)),
         tokio::spawn(run_history(state.clone(), |app, profile| {
-            history::scan_next(&app.database, profile, &|| *app.stop.borrow())
+            history::scan_next(&app.database, profile, &|| !may_claim(app))
         })),
         tokio::spawn(run_history(state.clone(), scan_history_task)),
         tokio::spawn(run_feishu_checks(state.clone())),
@@ -127,6 +138,101 @@ pub async fn serve(instance: platform::Instance) -> Result<()> {
     }
     result?;
     Ok(())
+}
+
+async fn bind_listener(instance: &platform::Instance) -> Result<tokio::net::TcpListener> {
+    let preferred = platform::registered_endpoint(instance).map_or(0, |addr| addr.port());
+    let listener = match tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, preferred)).await {
+        Err(err) if preferred != 0 && err.kind() == std::io::ErrorKind::AddrInUse => {
+            tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?
+        }
+        result => result?,
+    };
+    Ok(listener)
+}
+
+struct UpdateProbe {
+    instance: platform::Instance,
+    address: SocketAddr,
+    health: Value,
+    stop: watch::Sender<bool>,
+}
+
+pub async fn serve_for_update(instance: platform::Instance, operation: &str) -> Result<()> {
+    let _service_lock = platform::lock_service_for_daemon(&instance, Duration::from_secs(2))?;
+    if platform::update_barrier(&instance)?.as_deref() != Some(operation) {
+        return Err(Error::conflict("the update probe does not own this operation"));
+    }
+    let mut health = update_storage::validate_update(&instance)?;
+    let listener = bind_listener(&instance).await?;
+    let address = listener.local_addr()?;
+    health["state"] = json!("maintenance");
+    health["endpoint"] = json!(format!("http://{address}"));
+    platform::publish(&instance, address)?;
+    let (stop, mut wait) = watch::channel(false);
+    let state = Arc::new(UpdateProbe { instance, address, health, stop });
+    let probe = axum::Router::new().fallback(update_probe).with_state(state);
+    axum::serve(listener, probe)
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                _ = shutdown_signal() => {},
+                _ = wait.wait_for(|stop| *stop) => {}
+            }
+        })
+        .await?;
+    Ok(())
+}
+
+async fn update_probe(
+    State(probe): State<Arc<UpdateProbe>>,
+    request: axum::extract::Request,
+) -> Response<Body> {
+    let identity = probe.instance.id.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<Response<Body>> {
+        let (parts, _) = request.into_parts();
+        let headers = &parts.headers;
+        if header(headers, "host") != Some(&probe.address.to_string())
+            || header(headers, "x-bmem-instance") != Some(&probe.instance.id)
+        {
+            return Err(Error::denied("update probe instance does not match"));
+        }
+        let token = header(headers, "authorization")
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .ok_or_else(|| Error::denied("update probe requires local authentication"))?;
+        if parts.method == "GET" && parts.uri.path() == "/v2/update/binding" {
+            let db = Connection::open_with_flags(
+                probe.instance.root.join("data/bmem.sqlite3"),
+                OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+            )?;
+            context::bind(&db, token)?;
+            return Ok(axum::Json(json!({
+                "instance_id": probe.instance.id, "build_id": crate::build_info::ID,
+                "state": "bound",
+            })).into_response());
+        }
+        if !bool::from(token.as_bytes().ct_eq(probe.instance.owner_token.as_bytes())) {
+            return Err(Error::denied("only the local owner can inspect the update"));
+        }
+        match (parts.method.as_str(), parts.uri.path()) {
+            ("GET", "/v2/health" | "/v2/update/health") => {
+                Ok(axum::Json(probe.health.clone()).into_response())
+            }
+            ("GET", "/") => {
+                let (mime, body) = asset("/").ok_or_else(|| Error::internal("workbench is absent"))?;
+                Ok(([(axum::http::header::CONTENT_TYPE, mime)], body).into_response())
+            }
+            ("POST", "/v2/service/stop") => {
+                probe.stop.send_replace(true);
+                Ok((StatusCode::ACCEPTED, axum::Json(json!({
+                    "state": "stopping", "instance_id": probe.instance.id,
+                }))).into_response())
+            }
+            _ => Err(platform::maintenance_error()),
+        }
+    })
+    .await
+    .unwrap_or_else(|_| Err(Error::internal("update probe processing failed")));
+    decorate_instance(&identity, result.unwrap_or_else(error_response))
 }
 
 async fn shutdown_signal() {
@@ -267,10 +373,20 @@ pub fn web_build() -> &'static str {
     })
 }
 
-fn decorate(app: &App, mut response: Response<Body>) -> Response<Body> {
+fn decorate(app: &App, response: Response<Body>) -> Response<Body> {
+    decorate_instance(&app.instance.id, response)
+}
+
+fn decorate_instance(instance: &str, mut response: Response<Body>) -> Response<Body> {
     let headers = response.headers_mut();
-    if let Ok(value) = app.instance.id.parse() {
+    if let Ok(value) = instance.parse() {
         headers.insert("x-bmem-instance", value);
+    }
+    if let Ok(value) = crate::build_info::ID.parse() {
+        headers.insert("x-bmem-build", value);
+    }
+    if let Ok(value) = crate::build_info::WEB_ID.parse() {
+        headers.insert("x-bmem-web-build", value);
     }
     headers.insert("cache-control", "no-store".parse().unwrap());
     headers.insert("x-content-type-options", "nosniff".parse().unwrap());
@@ -299,11 +415,15 @@ fn response(app: &App, result: Result<(u16, Value)>) -> Response<Body> {
 }
 
 fn error_response(err: Error) -> Response<Body> {
-    (
+    let mut response = (
         StatusCode::from_u16(err.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
         axum::Json(err.value()),
     )
-        .into_response()
+        .into_response();
+    if err.code == "update_in_progress" {
+        response.headers_mut().insert("retry-after", "2".parse().unwrap());
+    }
+    response
 }
 
 fn session(app: &App, code: &str) -> Result<Response<Body>> {
@@ -439,6 +559,9 @@ fn dispatch(
     bytes: &[u8],
 ) -> Result<(u16, Value)> {
     let identity = authenticate(app, headers, method)?;
+    if !matches!((method, path), ("GET", "/v2/health") | ("POST", "/v2/service/stop")) {
+        platform::ensure_not_updating(&app.instance)?;
+    }
     let body = if bytes.is_empty() {
         json!({})
     } else {
@@ -466,7 +589,11 @@ fn dispatch(
             (
                 200,
                 json!({"state":"running","endpoint":format!("http://{}",app.address),"instance_id":app.instance.id,
-                "version":env!("CARGO_PKG_VERSION"),"profile":settings["profile"],"vector_search":settings["vector_search"],
+                "version":crate::build_info::VERSION,"build_id":crate::build_info::ID,
+                "build_target":crate::build_info::TARGET,"web_build":crate::build_info::WEB_ID,
+                "web_build_id":crate::build_info::WEB_ID,"web_assets_sha256":web_build(),
+                "authority_epoch":crate::storage_epoch::WRITE_EPOCH,
+                "profile":settings["profile"],"vector_search":settings["vector_search"],
                 "activity":settings["activity"],"database":"ready","service":"ready","capabilities":{"lexical":"ready"}}),
             )
         }
@@ -518,6 +645,10 @@ fn dispatch(
             let value = probe(app, model_id, purpose)?;
             (200, value)
         }
+        ("PUT", ["v2", "project-timezone"]) => {
+            identity.owner()?;
+            (200, authority::set_project_timezone(&*lock(&app.database)?, body)?)
+        }
         ("POST", ["v2", "statements"]) => {
             identity.owner()?;
             (
@@ -529,14 +660,19 @@ fn dispatch(
             identity.owner()?;
             (
                 200,
-                authority::current(
+                authority::current_with_task(
                     &read_snapshot(app)?,
                     query(qs, "project").as_deref(),
                     query(qs, "valid_at").as_deref(),
                     query(qs, "known_at").as_deref(),
                     false,
+                    query(qs, "task_id").as_deref(),
                 )?,
             )
+        }
+        ("GET", ["v2", "statements", id]) => {
+            identity.owner()?;
+            (200, authority::statement_detail(&read_snapshot(app)?, id)?)
         }
         ("GET", ["v2", "facts", id, "history"]) => {
             identity.owner()?;
@@ -594,9 +730,64 @@ fn dispatch(
             200,
             context::receipt(&mut *lock(&app.database)?, identity.bound()?, id, body)?,
         ),
+        ("GET", ["v2", "deliveries", id, "handoff-summary"]) => (
+            200,
+            context::handoff_summary(&read_snapshot(app)?, identity.bound()?, id)?,
+        ),
         ("GET", ["v2", "tasks"]) => {
+            let db = read_snapshot(app)?;
+            if let Some(client) = identity.optional_bound() {
+                let name = query(qs, "name").ok_or_else(|| Error::invalid("task name is required"))?;
+                (200, context::task_candidates(&db, client, &name)?)
+            } else {
+                (200, context::tasks(&db)?)
+            }
+        }
+        ("POST", ["v2", "methods", action]) if matches!(*action, "query" | "evidence" | "handoff") => (
+            200,
+            crate::methods::read(&read_snapshot(app)?, identity.optional_bound(), action, &body)?,
+        ),
+        ("POST", ["v2", "methods", action]) => {
             identity.owner()?;
-            (200, context::tasks(&read_snapshot(app)?)?)
+            (200, crate::methods::write(&mut *lock(&app.database)?, action, &body, key(headers)?)?)
+        }
+        ("POST", ["v2", "optimization", action]) => {
+            identity.owner()?;
+            (200, crate::optimization::handle(&mut *lock(&app.database)?, action, body, header(headers, "idempotency-key"))?)
+        }
+        ("POST", ["v2", "community", "slice"]) => (
+            200, crate::community::slice(&read_snapshot(app)?, identity.optional_bound(), &body)?,
+        ),
+        ("POST", ["v2", "community", "graph"]) => (
+            200, crate::community::view_graph(&read_snapshot(app)?, identity.optional_bound(), &body)?,
+        ),
+        ("POST", ["v2", "community", "embed-inputs"]) => {
+            identity.owner()?;
+            let source = body["source_id"].as_str().ok_or_else(||Error::invalid("source_id is required"))?;
+            (200, vector::shadow_inputs(&read_snapshot(app)?,source)?)
+        }
+        ("POST", ["v2", "community", action @ ("embed-stage" | "embed-activate")]) => {
+            identity.owner()?;
+            let model_id = body["model_id"].as_str().ok_or_else(||Error::invalid("model_id is required"))?;
+            let namespace = {
+                let settings = lock(&app.settings)?;
+                let model = settings.model(model_id)?;
+                if !model.local_endpoint() || !matches!(model.protocol.as_str(),"ollama"|"openai_embeddings") {
+                    return Err(Error::denied("staged embedding requires a configured loopback embedding model"));
+                }
+                route_fingerprint(&model,settings.model_credential(&model)?.as_deref(),"embed")
+            };
+            if *action == "embed-stage" {
+                (200,vector::shadow_commit(&mut *lock(&app.database)?,&namespace,&body)?)
+            } else {
+                let active = model_route(app,"embed")?;
+                (200,vector::shadow_activate(&mut *lock(&app.database)?,&namespace,
+                    active.as_ref().map(|(_,_,namespace)|namespace.as_str()),&body)?)
+            }
+        }
+        ("POST", ["v2", "community", action]) => {
+            identity.owner()?;
+            (200, crate::community::invoke(&mut *lock(&app.database)?, action, &body)?)
         }
         ("POST", ["v2", "tasks"]) => (
             201,
@@ -621,20 +812,44 @@ fn dispatch(
             200,
             context::outcome(&mut *lock(&app.database)?, identity.bound()?, id, body)?,
         ),
+        ("POST", ["v2", "tasks", id, "close"]) => {
+            identity.owner()?;
+            (200, context::close_task(&*lock(&app.database)?, id)?)
+        }
         ("GET", ["v2", "tasks", id, "handoff"]) => {
             let db = read_snapshot(app)?;
-            let data = if let Some(client) = identity.optional_bound() {
+            let as_of = query(qs, "as_of");
+            let mut data = if let Some(client) = identity.optional_bound() {
                 if !context::task_access(&db, id, &client.id)? {
                     return Err(Error::missing("task is unavailable"));
                 }
-                retrieval::for_client(&db, id, &client.id)?
+                if let Some(as_of) = as_of.as_deref() {
+                    retrieval::historical_handoff(&db, id, Some(&client.id), as_of)?
+                } else {
+                    retrieval::for_client(&db, id, &client.id)?
+                }
+            } else if let Some(as_of) = as_of.as_deref() {
+                retrieval::historical_handoff(&db, id, None, as_of)?
             } else {
                 retrieval::handoff(&db, id)?
             };
+            let derived = crate::derived::visible(&db, identity.optional_bound(), id)?;
+            if !derived.is_empty() {
+                data["derived"] = json!(derived);
+            }
             (200, data)
+        }
+        ("POST", ["v2", "derived", action]) if matches!(*action, "list" | "get") => (
+            200,
+            crate::derived::read(&read_snapshot(app)?, identity.optional_bound(), action, &body)?,
+        ),
+        ("POST", ["v2", "derived", action]) => {
+            identity.owner()?;
+            (200, crate::derived::write(&mut *lock(&app.database)?, action, &body, key(headers)?)?)
         }
         ("POST", ["v2", "search"]) => {
             let query = required(&body, "query")?;
+            let exclude = retrieval::SearchExclusions::parse(body.get("exclude"))?;
             if let Some(client) = identity.optional_bound() {
                 let db = read_snapshot(app)?;
                 if body["route_ref"]
@@ -648,13 +863,70 @@ fn dispatch(
                         "shared statements are not granted to this client",
                     ));
                 }
-                (200, retrieval::search_shared(&db, query)?)
+                (200, retrieval::search_shared(&db, query, &exclude)?)
             } else {
-                (
-                    200,
-                    owner_search(app, query, body["task_id"].as_str(), body["mode"].as_str())?,
-                )
+                let mut result = owner_search(
+                        app,
+                        query,
+                        body["task_id"].as_str(),
+                        body["mode"].as_str(),
+                        &exclude,
+                        body.get("candidate_limit"),
+                        body.get("query_timeout_ms"),
+                    )?;
+                if body["expand_same_run"]==true {
+                    let task=required(&body,"task_id")?;
+                    let slots=body["evidence_slots"].as_u64().filter(|n|(1..=50).contains(n)).unwrap_or(3) as usize;
+                    result["evidence_window"]=retrieval::evidence_window(&read_snapshot(app)?,task,None,query,None,1,slots)?;
+                }
+                (200,result)
             }
+        }
+        ("POST", ["v2", "search", "rebuild"]) => {
+            identity.owner()?;
+            (200, retrieval::rebuild_lexical(&mut *lock(&app.database)?)?)
+        }
+        ("POST", ["v2", "evidence", "tool-link"]) => {
+            identity.owner()?;
+            (200, retrieval::record_tool_link(&*lock(&app.database)?, &body)?)
+        }
+        ("POST", ["v2", "evidence", "seeds"]) => {
+            use crate::evidence_snapshot::{self, Mode, Selection};
+            let reader = identity.bound()?;
+            let selection: Selection = serde_json::from_value(body)?;
+            selection.validate()?;
+            if !context::task_access(&read_snapshot(app)?, &selection.task_id, &reader.id)? {
+                return Err(Error::missing("task is unavailable"));
+            }
+            let embedding = if matches!(selection.mode, Mode::Lexical) {
+                None
+            } else if let Some((model, credential, route)) = model_route(app, "embed")? {
+                match vector::embed_with_timeout(&model.protocol, &model.endpoint, &model.model_id,
+                    credential.as_deref(), &selection.query, Duration::from_secs(45)) {
+                    Ok(values) if model_route(app,"embed")?.is_some_and(|(_,_,current)|current==route) => Some((route,values)),
+                    Ok(_) => return Err(Error::conflict("embedding model changed during selection")),
+                    Err(_) if matches!(selection.mode,Mode::Union) => None,
+                    Err(error) => return Err(error),
+                }
+            } else if matches!(selection.mode,Mode::Union) {
+                None
+            } else {
+                return Err(Error::missing("embedding model is unavailable"));
+            };
+            let read = read_snapshot(app)?;
+            (201, evidence_snapshot::freeze(&read, &mut *lock(&app.database)?, &reader.id, selection,
+                embedding.as_ref().map(|(route, values)| (route.as_str(), values.as_slice())))?)
+        }
+        ("POST", ["v2", "evidence", "window"]) => {
+            let read=read_snapshot(app)?;
+            let task=required(&body,"task_id")?;
+            let client=identity.optional_bound().map(|client|client.id.as_str());
+            if let Some(client)=client && !context::task_access(&read,task,client)? {
+                return Err(Error::missing("task is unavailable"));
+            }
+            let limit=body["candidate_limit"].as_u64().filter(|n|(1..=50).contains(n)).unwrap_or(1) as usize;
+            let slots=body["evidence_slots"].as_u64().filter(|n|(1..=50).contains(n)).unwrap_or(3) as usize;
+            (200,retrieval::evidence_window(&read,task,client,required(&body,"query")?,None,limit,slots)?)
         }
         ("POST", ["v2", "evidence", "expand"]) => {
             let db = read_snapshot(app)?;
@@ -662,7 +934,7 @@ fn dispatch(
             let data = if let Some(client) = identity.optional_bound() {
                 retrieval::expand_for_client(&db, handle, &client.id)?
             } else {
-                retrieval::expand(&db, handle)?
+                retrieval::expand_for_owner(&db, handle)?
             };
             (200, data)
         }
@@ -771,6 +1043,36 @@ fn dispatch(
         ("GET", ["v2", "history", "jobs"]) => {
             identity.owner()?;
             (200, history_tasks::list(&read_snapshot(app)?)?)
+        }
+        ("GET", ["v2", "history", "jobs", id, "results"]) => {
+            identity.owner()?;
+            (
+                200,
+                history_tasks::results(
+                    &read_snapshot(app)?,
+                    id,
+                    query(qs, "cursor").as_deref(),
+                    query(qs, "limit").as_deref(),
+                )?,
+            )
+        }
+        ("POST", ["v2", "history", "jobs", id, "pages"]) => {
+            identity.owner()?;
+            let profile = lock(&app.settings)?.get()["profile"]
+                .as_str()
+                .unwrap_or("balanced")
+                .to_owned();
+            let result = history_tasks::submit_page(
+                &mut *lock(&app.database)?, id, &body, key(headers)?, &profile,
+            )?;
+            app.jobs.notify_waiters();
+            (200, result)
+        }
+        ("POST", ["v2", "history", "jobs", id, "extract-controls"]) => {
+            identity.owner()?;
+            let result = history_tasks::control_extract(&mut *lock(&app.database)?, id, &body)?;
+            app.jobs.notify_waiters();
+            (200, result)
         }
         ("POST", ["v2", "history", "jobs"]) => {
             identity.owner()?;
@@ -890,6 +1192,7 @@ fn dispatch(
                     query(qs, "limit").as_deref().unwrap_or("40"),
                     query(qs, "before").as_deref(),
                     query(qs, "status").as_deref(),
+                    query(qs, "has_candidates").as_deref(),
                 )?,
             )
         }
@@ -976,6 +1279,26 @@ fn dispatch(
                 });
             }
             (202, result)
+        }
+        ("POST", ["v2", "governance", "discussion-root"]) => {
+            identity.owner()?;
+            (200, retrieval::attach_discussion_root(&*lock(&app.database)?, &body)?)
+        }
+        ("POST", ["v2", "backups", id, "preview", "search"]) => {
+            identity.owner()?;
+            (200, archive::search_preview(&read_snapshot(app)?, &app.instance.root, &app.instance.id, id, &body)?)
+        }
+        ("POST", ["v2", "governance", "external-copy"]) => {
+            identity.owner()?;
+            (200, governance::record_external_copy(&*lock(&app.database)?, &body)?)
+        }
+        ("GET", ["v2", "governance", "roots", root, "receipt"]) => {
+            identity.owner()?;
+            (200, governance::receipt(&read_snapshot(app)?, root)?)
+        }
+        ("POST", ["v2", "governance", "roots", root, "cleanup"]) => {
+            identity.owner()?;
+            (200, governance::retry_vector_cleanup(&mut *lock(&app.database)?, root)?)
         }
         ("GET", ["v2", "operations"]) => {
             identity.owner()?;
@@ -1102,9 +1425,14 @@ fn probe(app: &App, id: &str, purpose: &str) -> Result<Value> {
 
 async fn run_jobs(state: Arc<App>, work: fn(&App) -> Result<bool>) {
     let mut stop = state.stop.subscribe();
-    loop {
+    while !*stop.borrow() {
         let run = state.clone();
-        let worked = tokio::task::spawn_blocking(move || work(&run))
+        let worked = tokio::task::spawn_blocking(move || {
+            if !may_claim(&run) {
+                return Ok(false);
+            }
+            work(&run)
+        })
             .await
             .ok()
             .and_then(std::result::Result::ok)
@@ -1120,6 +1448,10 @@ async fn run_jobs(state: Arc<App>, work: fn(&App) -> Result<bool>) {
             }
         }
     }
+}
+
+fn may_claim(app: &App) -> bool {
+    !*app.stop.borrow() && platform::ensure_not_updating(&app.instance).is_ok()
 }
 
 fn history_source(db: &Connection, id: &str) -> Result<(String, String)> {
@@ -1158,8 +1490,11 @@ async fn run_feishu_checks(app: Arc<App>) {
 }
 
 fn verify_feishu_registrations(app: &App) -> Result<()> {
+    if !may_claim(app) {
+        return Ok(());
+    }
     let state = integrations::feishu_status(&read_snapshot(app)?)?;
-    let stop = || *app.stop.borrow();
+    let stop = || !may_claim(app);
     for row in state["accounts"].as_array().into_iter().flatten() {
         if stop() {
             break;
@@ -1186,7 +1521,7 @@ fn verify_feishu_registrations(app: &App) -> Result<()> {
 }
 
 fn scan_history_task(app: &App, profile: &str) -> Result<bool> {
-    let stop = || *app.stop.borrow();
+    let stop = || !may_claim(app);
     history_tasks::run_next(
         &app.database,
         profile,
@@ -1219,9 +1554,12 @@ fn scan_history_task(app: &App, profile: &str) -> Result<bool> {
 
 async fn run_history(state: Arc<App>, scan: fn(&App, &str) -> Result<bool>) {
     let mut stop = state.stop.subscribe();
-    loop {
+    while !*stop.borrow() {
         let run = state.clone();
         let worked = tokio::task::spawn_blocking(move || -> Result<bool> {
+            if !may_claim(&run) {
+                return Ok(false);
+            }
             let profile = lock(&run.settings)?.get()["profile"]
                 .as_str()
                 .unwrap_or("balanced")
@@ -1287,6 +1625,11 @@ fn model_route(app: &App, purpose: &str) -> Result<Option<ModelRoute>> {
     let model = settings.bound_model(purpose);
     let Some(model) = model else { return Ok(None) };
     let credential = settings.model_credential(&model)?;
+    let fingerprint = route_fingerprint(&model,credential.as_deref(),purpose);
+    Ok(Some((model, credential, fingerprint)))
+}
+
+fn route_fingerprint(model:&crate::settings::Model,credential:Option<&str>,purpose:&str)->String {
     let credential_fingerprint = credential
         .as_ref()
         .map(|value| format!("{:x}", Sha256::digest(value)));
@@ -1298,64 +1641,144 @@ fn model_route(app: &App, purpose: &str) -> Result<Option<ModelRoute>> {
         model.model_id,
         credential_fingerprint
     ]);
-    let fingerprint = format!("{:x}", Sha256::digest(identity.to_string()));
-    Ok(Some((model, credential, fingerprint)))
+    format!("{:x}", Sha256::digest(identity.to_string()))
 }
 
 fn run_vector(app: &App) -> Result<bool> {
     let Some((model, credential, route)) = model_route(app, "embed")? else {
         return Ok(false);
     };
-    let job = vector::pending(&read_snapshot(app)?, &route)?;
-    let Some(job) = job else { return Ok(false) };
-    let value = vector::embed(
-        &model.protocol,
-        &model.endpoint,
-        &model.model_id,
-        credential.as_deref(),
-        &job.text,
-    )?;
-    let current = model_route(app, "embed")?.map(|(_, _, id)| id);
-    if current.as_deref() == Some(&route) {
-        vector::commit(&*lock(&app.database)?, &job, &route, &value)?;
+    let mut progressed = false;
+    // One ready event per authorized source per pass keeps large historical
+    // imports from starving newer sources.
+    for source in vector::sources(&read_snapshot(app)?, &route)? {
+        if !may_claim(app) {
+            break;
+        }
+        let Some(job) = vector::pending(&read_snapshot(app)?, &route, &source)? else {
+            continue;
+        };
+        let value = vector::embed_document(&job.text, |chunk| {
+            if !may_claim(app)
+                || model_route(app, "embed")?.is_none_or(|(_, _, id)| id != route)
+                || !vector::still_pending(&read_snapshot(app)?, &job, &route)?
+            {
+                return Err(Error::conflict(
+                    "embedding job changed before the next slice",
+                ));
+            }
+            vector::embed(
+                &model.protocol,
+                &model.endpoint,
+                &model.model_id,
+                credential.as_deref(),
+                chunk,
+            )
+        });
+        if !may_claim(app) || model_route(app, "embed")?.is_none_or(|(_, _, id)| id != route) {
+            break;
+        }
+        let db = lock(&app.database)?;
+        let result = value.and_then(|value| vector::commit(&db, &job, &route, &value));
+        match result {
+            Ok(()) => progressed = true,
+            Err(error) => vector::defer(&db, &job, &route, &error.code)?,
+        }
     }
-    Ok(true)
+    Ok(progressed)
 }
 
-fn owner_search(app: &App, query: &str, task: Option<&str>, mode: Option<&str>) -> Result<Value> {
+fn owner_search(
+    app: &App,
+    query: &str,
+    task: Option<&str>,
+    mode: Option<&str>,
+    exclude: &retrieval::SearchExclusions,
+    candidate_limit: Option<&Value>,
+    timeout: Option<&Value>,
+) -> Result<Value> {
+    let timeout = timeout.map(|timeout| timeout.as_u64().filter(|n| (1..=5000).contains(n))
+        .map(Duration::from_millis).ok_or_else(|| Error::invalid("query_timeout_ms must be between 1 and 5000")))
+        .transpose()?;
+    if mode == Some("hybrid") {
+        let limit = match candidate_limit {
+            None => 50,
+            Some(limit) => limit
+                .as_u64()
+                .filter(|value| (1..=50).contains(value))
+                .ok_or_else(|| Error::invalid("candidate_limit must be between 1 and 50"))?
+                as usize,
+        };
+        let (semantic, fallback) = match vector_search(app, query, task, exclude, timeout) {
+            Ok(Some(results)) => (results, None),
+            Ok(None) => (Vec::new(), Some("vector_not_ready")),
+            Err(error) => (Vec::new(), Some(vector_fallback(&error))),
+        };
+        let mut result =
+            retrieval::hybrid_owner(&read_snapshot(app)?, query, task, exclude, &semantic, limit)?;
+        if let Some(reason) = fallback {
+            result["fallback_reason"] = json!(reason);
+        }
+        result["vector_status"] = json!(match fallback {
+            None => "used", Some("vector_query_timeout") => "timeout", Some(_) => "unavailable",
+        });
+        return Ok(result);
+    }
     let failure = match mode {
-        Some("vector") => match vector_search(app, query, task) {
-            Ok(Some(results)) if !results.is_empty() => {
+        Some("vector") => match vector_search(app, query, task, exclude, timeout) {
+            Ok(Some(results)) => {
                 return Ok(json!({"results":results,"retrieval":"vector"}));
             }
-            Ok(_) => Some("vector_not_ready"),
-            Err(error) => Some(if error.status == 503 {
-                "vector_provider_unavailable"
-            } else {
-                "vector_unavailable"
-            }),
+            Ok(None) => Some("vector_not_ready"),
+            Err(error) => Some(vector_fallback(&error)),
         },
         None | Some("lexical") => None,
-        _ => return Err(Error::invalid("search mode must be lexical or vector")),
+        _ => {
+            return Err(Error::invalid(
+                "search mode must be lexical, vector or hybrid",
+            ));
+        }
     };
-    let mut output = retrieval::search_owner(&read_snapshot(app)?, query, task)?;
+    let mut output = retrieval::search_owner(&read_snapshot(app)?, query, task, exclude)?;
     if let Some(reason) = failure {
         output["fallback_reason"] = json!(reason);
     }
     Ok(output)
 }
 
-fn vector_search(app: &App, query: &str, task: Option<&str>) -> Result<Option<Vec<Value>>> {
+fn vector_fallback(error: &Error) -> &'static str {
+    match error.code.as_str() {
+        "vector_provider_unavailable" => "vector_provider_unavailable",
+        "vector_scan_timeout" => "vector_scan_timeout",
+        "vector_query_timeout" => "vector_query_timeout",
+        _ => "vector_unavailable",
+    }
+}
+
+fn vector_search(
+    app: &App,
+    query: &str,
+    task: Option<&str>,
+    exclude: &retrieval::SearchExclusions,
+    timeout: Option<Duration>,
+) -> Result<Option<Vec<Value>>> {
     let Some((model, credential, route)) = model_route(app, "embed")? else {
         return Ok(None);
     };
-    let q = vector::embed(
+    let q = vector::embed_with_timeout(
         &model.protocol,
         &model.endpoint,
         &model.model_id,
         credential.as_deref(),
         query,
-    )?;
+        timeout.unwrap_or(Duration::from_secs(45)),
+    )
+    .map_err(|mut error| {
+        if error.status == 503 && error.code != "vector_query_timeout" {
+            error.code = "vector_provider_unavailable".into();
+        }
+        error
+    })?;
     if model_route(app, "embed")?
         .as_ref()
         .map(|(_, _, current)| current)
@@ -1363,10 +1786,16 @@ fn vector_search(app: &App, query: &str, task: Option<&str>) -> Result<Option<Ve
     {
         return Ok(None);
     }
-    Ok(Some(vector::search(
-        &read_snapshot(app)?,
-        &route,
-        &q,
-        task,
-    )?))
+    let db = read_snapshot(app)?;
+    let results = vector::search(&db, &route, &q, task, exclude)?;
+    if results.is_empty()
+        && !db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM vector_projection WHERE route=?1)",
+            [&route],
+            |row| row.get::<_, bool>(0),
+        )?
+    {
+        return Ok(None);
+    }
+    Ok(Some(results))
 }

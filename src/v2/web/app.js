@@ -97,7 +97,7 @@ const API_TIMEOUT_MS = 30000;
 const API_LONG_TIMEOUT_MS = 120000;
 function apiTimeoutFor(method, path, opts) {
   if (opts.timeoutMs != null) return opts.timeoutMs;
-  if (/^\/v2\/models\/[^/]+\/test$/.test(path)) return API_LONG_TIMEOUT_MS;
+  if (/^\/v2\/models\/[^/]+\/test$/.test(path)) return 190000;
   const kind = opts.body && opts.body.kind;
   if (kind === 'backup' || kind === 'restore_preview') return API_LONG_TIMEOUT_MS;
   if (method === 'GET' && !path.startsWith('/v2/history/options?')) return API_READ_TIMEOUT_MS;
@@ -617,11 +617,13 @@ function hideSessionBanner() {
 //  当前声明 + 追加
 // =========================================================
 let libraryProject = '';
+let libraryValidAt = '';
 let libraryRequest = 0;
 const libraryTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' });
 
 function loadLibraryScope() {
   libraryProject = $('#library-scope').value === 'project' ? $('#library-project').value.trim() : '';
+  libraryValidAt = $('#library-valid-at').value.trim();
   return loadStatements();
 }
 
@@ -637,12 +639,31 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('#library-scope').addEventListener('change', () => {
     const project = $('#library-scope').value === 'project';
-    $('#library-project-field').hidden = $('#library-apply').hidden = !project;
+    $('#library-project-field').hidden = !project;
     $('#library-project').required = project;
     if (project) $('#library-project').focus();
     loadLibraryScope();
   });
 });
+
+let proposalsRequest = 0;
+async function loadLibrary() {
+  const request = ++proposalsRequest;
+  const host = $('#library-proposals');
+  const [, res] = await Promise.all([loadStatements(), api('GET', '/v2/jobs?has_candidates=true&limit=4')]);
+  if (request !== proposalsRequest || currentView !== 'statements') return;
+  const jobs = res.data?.jobs;
+  if (!res.ok || !Array.isArray(jobs)) {
+    host.replaceChildren(emptyMsg(res.ok ? '提炼结果读取失败。' : errorHeadline(res)));
+  } else if (!jobs.length) {
+    host.replaceChildren(emptyMsg('还没有可查看的提炼候选。可以在「后台作业」查看处理进度。'));
+  } else {
+    reconcileList(host, jobs, job => job.job_id, job => el('article', { class: 'library-job' }, [
+      el('strong', { text: job.source_label + ' · ' + (jobKinds[job.actor_kind] || job.actor_kind) }),
+      jobCandidateDetails(job)
+    ]));
+  }
+}
 
 async function loadStatements() {
   const request = ++libraryRequest;
@@ -655,10 +676,10 @@ async function loadStatements() {
     return;
   }
   setLoading(result, '正在读取当前事实…');
-  const res = await api(
-    'GET',
-    '/v2/statements' + (libraryProject ? '?project=' + encodeURIComponent(libraryProject) : '')
-  );
+  const query = new URLSearchParams();
+  if (libraryProject) query.set('project', libraryProject);
+  if (libraryValidAt) query.set('valid_at', libraryValidAt);
+  const res = await api('GET', '/v2/statements' + (query.size ? '?' + query : ''));
   if (request !== libraryRequest) return;
   seq.textContent = '';
   const items = res.ok && res.data && Array.isArray(res.data.statements) ? res.data.statements : null;
@@ -672,7 +693,9 @@ async function loadStatements() {
   setText(seq, '修订序列 ' + res.data.change_seq);
   setText(
     result,
-    libraryProject
+    libraryValidAt
+      ? (libraryProject || '全局') + ' · ' + libraryValidAt + ' · ' + items.length + ' 项适用事实'
+      : libraryProject
       ? libraryProject + ' · ' + items.length + ' 项适用事实，含沿用的全局声明'
       : '全局 · ' + items.length + ' 项当前事实'
   );
@@ -684,7 +707,7 @@ async function loadStatements() {
 }
 
 function statementRow(item) {
-  const titles = { 'report.language': '报告语言', 'report.opening': '报告开头' };
+  const titles = { 'report.language': '报告语言', 'report.opening': '报告开头', 'code_example.language': '代码示例语言' };
   const labels = {
     'report.language': { zh: '中文', en: '英文' },
     'report.opening': { actions: '先列行动项', conclusion: '先写结论' }
@@ -698,9 +721,21 @@ function statementRow(item) {
       el('dt', { text: '事实标识' }),
       el('dd', { text: item.fact_id }),
       el('dt', { text: '修订标识' }),
-      el('dd', { text: item.revision_id }),
+      el('dd', { text: item.revision_id, 'data-field': 'revision-id' }),
       el('dt', { text: '生效时间' }),
-      el('dd', { text: libraryTime.format(new Date(item.valid_from)) })
+      el('dd', { text: item.valid_from }),
+      ...(item.valid_until ? [
+        el('dt', { text: '有效至（不含）' }),
+        el('dd', { text: item.valid_until }),
+      ] : []),
+      ...(item.timezone ? [
+        el('dt', { text: '解析时区' }),
+        el('dd', { text: item.timezone }),
+      ] : []),
+      ...(item.clause ? [
+        el('dt', { text: '对应分句' }),
+        el('dd', { text: item.clause }),
+      ] : [])
     ])
   ]);
   return el('article', { class: 'library-fact' }, [
@@ -1044,7 +1079,8 @@ async function loadJobPage(pages, message = '', quiet = false) {
   const status = $('#jobs-filter').value;
   const result = $('#jobs-result');
   const query = new URLSearchParams({ limit: '40' });
-  if (status) query.set('status', status);
+  if (status === 'candidates') query.set('has_candidates', 'true');
+  else if (status) query.set('status', status);
   if (pages.at(-1)) query.set('before', pages.at(-1));
   if (!quiet) {
     setLoading(result, '正在读取作业…');
@@ -1140,11 +1176,15 @@ function jobRow(job) {
   if (job.fail_reason) {
     const reasons = {
       temporarily_unavailable: '提炼服务暂时不可用',
+      model_timeout: '提炼模型响应超时',
+      model_unreachable: '无法连接到提炼模型',
+      model_incomplete: '提炼模型未返回完整候选',
+      model_invalid_output: '提炼模型返回的候选或原文引用无效',
       invalid_input: '提炼输入或模型响应未通过校验',
       model_route_changed: '处理期间模型配置已更改'
     };
     row.appendChild(
-      el('p', { class: 'job-failure' }, [reasons[job.fail_reason] || '提炼失败', el('code', { text: job.fail_reason })])
+      el('p', { class: 'job-failure' }, [reasons[job.fail_reason] || (/^model_http_\d{3}$/.test(job.fail_reason) ? '提炼服务返回 HTTP ' + job.fail_reason.slice(-3) : '提炼失败'), el('code', { text: job.fail_reason })])
     );
   }
   row.appendChild(actions);
@@ -1483,7 +1523,7 @@ function switchView(name) {
       .catch((error) => showFeatureError(host, error));
   } else {
     const load = {
-      statements: loadStatements,
+      statements: loadLibrary,
       history: loadHistory,
       tasks: loadTasks,
       jobs: loadJobs,
@@ -1534,7 +1574,11 @@ function bindNav() {
     navigate('statements');
   };
   const actions = {
-    'reload-statements': loadStatements,
+    'reload-statements': loadLibrary,
+    'show-candidates': () => {
+      $('#jobs-filter').value = 'candidates';
+      navigate('jobs');
+    },
     'reload-history': loadHistory,
     'reload-config': () => (window.MemorySettings ? window.MemorySettings.refresh() : switchView('settings')),
     'reload-tasks': loadTasks,

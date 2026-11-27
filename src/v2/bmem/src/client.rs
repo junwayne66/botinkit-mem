@@ -3,6 +3,7 @@ use crate::platform::{self, Instance};
 use reqwest::Method;
 use serde_json::Value;
 use std::io::Read;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -12,6 +13,7 @@ pub struct Client {
     http: reqwest::blocking::Client,
     base: String,
     instance_id: String,
+    root: PathBuf,
     token: String,
 }
 
@@ -31,12 +33,17 @@ impl Client {
                 .map_err(|_| Error::internal("could not create HTTP client"))?,
             base: format!("http://{address}"),
             instance_id: instance.id.clone(),
+            root: instance.root.clone(),
             token,
         })
     }
 
     pub fn owner(instance: &Instance) -> Result<Self> {
         Self::bound(instance, instance.owner_token.clone())
+    }
+
+    pub fn update_pending(&self) -> Result<bool> {
+        Ok(platform::read_update_barrier(&self.root, &self.instance_id)?.is_some())
     }
 
     pub fn request(
@@ -53,6 +60,12 @@ impl Client {
             .request(method, format!("{}{path}", self.base))
             .bearer_auth(&self.token)
             .header("X-Bmem-Instance", &self.instance_id);
+        if path.starts_with("/v2/models/") && path.ends_with("/test") {
+            request = request.timeout(crate::providers::EXTRACT_TIMEOUT + Duration::from_secs(10));
+        }
+        if matches!(path, "/v2/service/stop" | "/v2/update/health") {
+            request = request.timeout(Duration::from_secs(5));
+        }
         if let Some(body) = body {
             request = request.json(body);
         }
@@ -102,7 +115,26 @@ pub fn running(instance: &Instance) -> Result<Client> {
     Ok(client)
 }
 
+/// Request shutdown from either a managed daemon or the 0.2.0 daemon. The
+/// caller still needs to acquire the service lock after this request.
+pub fn drain_for_update(instance: &Instance) -> Result<bool> {
+    match platform::lock_service(instance) {
+        Ok(_) => Ok(false),
+        Err(error) if error.status == 409 => {
+            let response = Client::owner(instance)?.request(
+                "POST", "/v2/service/stop", Some(&serde_json::json!({})), None,
+            )?;
+            if response["state"] != "stopping" {
+                return Err(Error::conflict("the daemon did not accept the update shutdown"));
+            }
+            Ok(true)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 pub fn start(instance: &Instance) -> Result<Client> {
+    platform::ensure_not_updating(instance)?;
     if let Ok(client) = running(instance) {
         return Ok(client);
     }
@@ -135,6 +167,7 @@ pub fn start(instance: &Instance) -> Result<Client> {
     let mut child = command.spawn()?;
     let deadline = Instant::now() + Duration::from_secs(7);
     loop {
+        platform::ensure_not_updating(instance)?;
         if let Ok(client) = running(instance) {
             return Ok(client);
         }

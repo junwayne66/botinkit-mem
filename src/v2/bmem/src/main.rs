@@ -1,11 +1,17 @@
 mod analytics;
 mod archive;
 mod authority;
+mod build_info;
 mod client;
+mod clock;
+mod community;
 mod context;
 mod data_management;
+mod derived;
 mod error;
+mod evidence_snapshot;
 mod feishu;
+mod governance;
 mod history;
 mod history_feishu;
 mod history_hosts;
@@ -13,11 +19,16 @@ mod history_tasks;
 mod host;
 mod ingestion;
 mod integrations;
+mod methods;
+mod optimization;
 mod platform;
 mod providers;
 mod retrieval;
 mod server;
 mod settings;
+mod storage_epoch;
+mod tool_receipt;
+mod update;
 mod vector;
 
 use clap::{Args, Parser, Subcommand};
@@ -33,7 +44,7 @@ use uuid::Uuid;
 #[derive(Parser)]
 #[command(
     name = "bmem",
-    version,
+    version = build_info::VERSION,
     about = "Botinkit Memory · Local personal memory service"
 )]
 struct Cli {
@@ -47,6 +58,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    BuildInfo,
+    Install {
+        #[arg(long)]
+        binary: PathBuf,
+        #[arg(long)]
+        adopt: bool,
+    },
+    Update(update::Options),
     Init {
         #[arg(long)]
         non_interactive: bool,
@@ -94,6 +113,10 @@ enum Command {
         #[arg(long)]
         corrects_attempt: Option<String>,
         #[arg(long)]
+        timezone: Option<String>,
+        #[arg(long)]
+        task: Option<String>,
+        #[arg(long)]
         idempotency_key: Option<String>,
     },
     Statement {
@@ -104,7 +127,7 @@ enum Command {
         query: String,
         #[arg(long)]
         task: Option<String>,
-        #[arg(long, value_parser = ["lexical","vector"], default_value = "lexical")]
+        #[arg(long, value_parser = ["lexical","vector","hybrid"], default_value = "lexical")]
         mode: String,
     },
     Evidence {
@@ -136,10 +159,12 @@ enum Command {
         command: Restore,
     },
     Forget {
-        #[arg(long, conflicts_with = "statement")]
+        #[arg(long, conflicts_with_all = ["statement", "root_id"])]
         source: Option<String>,
-        #[arg(long, conflicts_with = "source")]
+        #[arg(long, conflicts_with_all = ["source", "root_id"])]
         statement: Option<String>,
+        #[arg(long = "root", conflicts_with_all = ["source", "statement"])]
+        root_id: Option<String>,
         #[arg(long, conflicts_with = "confirm")]
         preview: bool,
         #[arg(long)]
@@ -161,6 +186,14 @@ enum Command {
         source: Option<String>,
         #[arg(long)]
         task: Option<String>,
+        #[arg(long, requires = "task", value_parser=clap::value_parser!(u16).range(1..=50))]
+        evidence_slots: Option<u16>,
+        #[arg(long, requires = "evidence_slots", value_parser=clap::value_parser!(u16).range(1..=50))]
+        candidate_limit: Option<u16>,
+        #[arg(long, requires = "task", conflicts_with = "evidence_slots")]
+        evidence_seed_set: Option<String>,
+        #[arg(long, requires = "evidence_seed_set")]
+        evidence_no_neighbor: bool,
     },
 }
 
@@ -170,6 +203,10 @@ enum Service {
     Start,
     Stop,
     Status,
+    #[command(hide = true)]
+    UpdateMigrate { operation: String },
+    #[command(hide = true)]
+    UpdateProbe { operation: String },
 }
 #[derive(Subcommand)]
 enum Inspection {
@@ -386,6 +423,11 @@ enum Statement {
         valid_at: Option<String>,
         #[arg(long)]
         known_at: Option<String>,
+        #[arg(long)]
+        task: Option<String>,
+    },
+    Show {
+        id: String,
     },
     History {
         fact_id: String,
@@ -406,6 +448,9 @@ enum Task {
     Handoff {
         id: String,
     },
+    Close {
+        id: String,
+    },
 }
 #[derive(Subcommand)]
 enum Mcp {
@@ -424,10 +469,21 @@ enum Restore {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let mut arguments = std::env::args_os();
+    let executable = arguments.next().unwrap_or_default();
+    let arguments: Vec<_> = arguments.collect();
+    let cli = if Path::new(&executable).file_stem().is_some_and(|name| name == "bmem-installer")
+        && !arguments.iter().any(|arg| arg == "update" || arg == "build-info")
+    {
+        Cli::parse_from([executable, "install".into()].into_iter().chain(arguments))
+    } else {
+        Cli::parse_from(std::iter::once(executable).chain(arguments))
+    };
     let machine = cli.json;
+    let installation = matches!(&cli.command, Some(Command::Install { .. } | Command::Update(_)));
     match run(cli) {
         Ok(Some(value)) => {
+            let exit = if installation { update::exit_code(&value) } else { 0 };
             let output = if machine {
                 serde_json::to_string(&value)
             } else {
@@ -438,7 +494,7 @@ fn main() -> ExitCode {
                     if writeln!(io::stdout().lock(), "{text}").is_err() {
                         ExitCode::FAILURE
                     } else {
-                        ExitCode::SUCCESS
+                        ExitCode::from(exit)
                     }
                 }
                 Err(_) => ExitCode::FAILURE,
@@ -451,13 +507,16 @@ fn main() -> ExitCode {
             } else {
                 eprintln!("bmem: {error}");
             }
-            ExitCode::FAILURE
+            if installation { ExitCode::from(update::error_exit(&error)) } else { ExitCode::FAILURE }
         }
     }
 }
 
 fn run(cli: Cli) -> Result<Option<Value>> {
     match cli.command {
+        Some(Command::BuildInfo) => Ok(Some(build_info::report())),
+        Some(Command::Install { binary, adopt }) => Ok(Some(update::install(cli.home.as_deref(), &binary, adopt)?)),
+        Some(Command::Update(options)) => Ok(Some(update::update(cli.home.as_deref(), options)?)),
         None
         | Some(Command::Status)
         | Some(Command::Service {
@@ -466,6 +525,9 @@ fn run(cli: Cli) -> Result<Option<Value>> {
         Some(Command::Doctor) => {
             let mut value = platform::diagnostics(cli.home.as_deref());
             value["service"] = status(cli.home.as_deref());
+            if let Ok(instance) = platform::resolve(cli.home.as_deref()) {
+                value["update"] = update::summary(&instance).unwrap_or_else(|error| error.value());
+            }
             Ok(Some(value))
         }
         Some(Command::Init { non_interactive }) => {
@@ -494,6 +556,18 @@ fn run(cli: Cli) -> Result<Option<Value>> {
                 .enable_all()
                 .build()?
                 .block_on(server::serve(instance))?;
+            Ok(None)
+        }
+        Some(Command::Service { command: Service::UpdateMigrate { operation } }) => {
+            let instance = platform::resolve(cli.home.as_deref())?;
+            update::verify_operation(&instance, &operation)?;
+            Ok(Some(server::migrate_update(&instance)?))
+        }
+        Some(Command::Service { command: Service::UpdateProbe { operation } }) => {
+            let instance = platform::resolve(cli.home.as_deref())?;
+            update::verify_operation(&instance, &operation)?;
+            tokio::runtime::Builder::new_multi_thread().enable_all().build()?
+                .block_on(server::serve_for_update(instance, &operation))?;
             Ok(None)
         }
         Some(Command::Service {
@@ -587,6 +661,8 @@ fn run(cli: Cli) -> Result<Option<Value>> {
                     share,
                     corrects,
                     corrects_attempt,
+                    timezone,
+                    task,
                     idempotency_key,
                 } => {
                     let mut payload =
@@ -600,6 +676,12 @@ fn run(cli: Cli) -> Result<Option<Value>> {
                     if let Some(attempt) = corrects_attempt {
                         payload["corrects_attempt_id"] = json!(attempt);
                     }
+                    if let Some(timezone) = timezone {
+                        payload["timezone"] = json!(timezone);
+                    }
+                    if let Some(task) = task {
+                        payload["task_id"] = json!(task);
+                    }
                     post(
                         &client,
                         "/v2/statements",
@@ -612,12 +694,14 @@ fn run(cli: Cli) -> Result<Option<Value>> {
                         project,
                         valid_at,
                         known_at,
+                        task,
                     } => {
                         let mut query = url::form_urlencoded::Serializer::new(String::new());
                         for (key, val) in [
                             ("project", project),
                             ("valid_at", valid_at),
                             ("known_at", known_at),
+                            ("task_id", task),
                         ] {
                             if let Some(val) = val {
                                 query.append_pair(key, &val);
@@ -627,6 +711,9 @@ fn run(cli: Cli) -> Result<Option<Value>> {
                     }
                     Statement::History { fact_id } => {
                         get(&client, &format!("/v2/facts/{}/history", segment(&fact_id)))?
+                    }
+                    Statement::Show { id } => {
+                        get(&client, &format!("/v2/statements/{}", segment(&id)))?
                     }
                 },
                 Command::Search { query, task, mode } => post(
@@ -655,6 +742,12 @@ fn run(cli: Cli) -> Result<Option<Value>> {
                     Task::Handoff { id } => {
                         get(&client, &format!("/v2/tasks/{}/handoff", segment(&id)))?
                     }
+                    Task::Close { id } => post(
+                        &client,
+                        &format!("/v2/tasks/{}/close", segment(&id)),
+                        &json!({}),
+                        None,
+                    )?,
                 },
                 Command::Delivery { command } => {
                     inspect(&client, "deliveries", "deliveries", "delivery_id", command)?
@@ -709,6 +802,7 @@ fn run(cli: Cli) -> Result<Option<Value>> {
                 Command::Forget {
                     source,
                     statement,
+                    root_id,
                     preview,
                     confirm,
                 } => {
@@ -716,8 +810,10 @@ fn run(cli: Cli) -> Result<Option<Value>> {
                         json!({"kind":"forget","target":{"source_id":source_id}})
                     } else if let Some(statement_id) = statement {
                         json!({"kind":"forget","target":{"statement_id":statement_id}})
+                    } else if let Some(root_id) = root_id {
+                        json!({"kind":"forget","target":{"root_id":root_id}})
                     } else {
-                        return Err(Error::invalid("provide --source or --statement"));
+                        return Err(Error::invalid("provide --source, --statement, or --root"));
                     };
                     operation(&client, payload, preview, confirm)?
                 }
@@ -1074,7 +1170,14 @@ fn host_command(command: Command, instance: &platform::Instance) -> Result<Optio
             client,
             source,
             task,
-        } => (client, Some((host, source, task))),
+            evidence_slots,
+            candidate_limit,
+            evidence_seed_set,
+            evidence_no_neighbor,
+        } => (
+            client,
+            Some((host, source, task, evidence_slots, candidate_limit, evidence_seed_set, evidence_no_neighbor)),
+        ),
         _ => unreachable!(),
     };
     if !id
@@ -1092,7 +1195,7 @@ fn host_command(command: Command, instance: &platform::Instance) -> Result<Optio
         .or_else(|| record["client_token"].as_str())
         .ok_or_else(|| Error::denied("local client credential not registered"))?;
     let client = Client::bound(instance, token.to_owned())?;
-    let Some((host_name, source, task)) = hook else {
+    let Some((host_name, source, task, evidence_slots, candidate_limit, evidence_seed_set, evidence_no_neighbor)) = hook else {
         host::serve(&client)?;
         return Ok(None);
     };
@@ -1113,6 +1216,7 @@ fn host_command(command: Command, instance: &platform::Instance) -> Result<Optio
     let session_id = normalized["session_id"]
         .as_str()
         .ok_or_else(|| Error::invalid("missing native session ID"))?;
+    let mut current_event = None;
     if let Some(source_id) = source {
         let mut events = normalized["events"].as_array().cloned().unwrap_or_default();
         if !events.is_empty() {
@@ -1141,21 +1245,26 @@ fn host_command(command: Command, instance: &platform::Instance) -> Result<Optio
                 &json!({"source_id":source_id,"events":events}),
                 Some(&key),
             );
-            if let Err(error) = accepted {
-                if event == "UserPromptSubmit"
-                    && task.is_some()
-                    && matches!(error.status, 403 | 404)
-                {
-                    return Ok(Some(
-                        json!({"decision":"block","reason":"bmem task capture is no longer authorized; start a clean session"}),
-                    ));
+            match accepted {
+                Ok(receipt) => {
+                    current_event = receipt["events"][0]["event_id"].as_str().map(str::to_owned)
                 }
-                if task.is_some()
-                    || !error
-                        .message
-                        .starts_with("action_denied: capture is not enabled")
-                {
-                    return Err(error);
+                Err(error) => {
+                    if event == "UserPromptSubmit"
+                        && task.is_some()
+                        && matches!(error.status, 403 | 404)
+                    {
+                        return Ok(Some(
+                            json!({"decision":"block","reason":"bmem task capture is no longer authorized; start a clean session"}),
+                        ));
+                    }
+                    if task.is_some()
+                        || !error
+                            .message
+                            .starts_with("action_denied: capture is not enabled")
+                    {
+                        return Err(error);
+                    }
                 }
             }
         }
@@ -1185,7 +1294,26 @@ fn host_command(command: Command, instance: &platform::Instance) -> Result<Optio
             };
             context["task_id"] = json!(task);
             context["attempt_id"] = attempt["attempt_id"].clone();
-            context["budget"]["evidence_tokens"] = json!(4096);
+            if event == "UserPromptSubmit" {
+                context["budget"]["evidence_tokens"] = json!(4096);
+                if let Some(seed_set) = &evidence_seed_set {
+                    context["frozen_evidence"] = json!({"seed_set":seed_set,"neighbor":!evidence_no_neighbor});
+                } else if let Some(slots) = evidence_slots {
+                    context["evidence_window"] = json!({"candidate_limit":candidate_limit.unwrap_or(1),"evidence_slots":slots});
+                }
+                if let Some(prompt) = normalized["events"][0]["text"].as_str().filter(|text| {
+                    let text = text.trim();
+                    evidence_seed_set.is_none() && (evidence_slots.is_some()
+                        || text.ends_with(['?', '？'])
+                        || text.starts_with("查找")
+                        || text.starts_with("搜索"))
+                }) {
+                    context["evidence_query"] = json!(prompt.chars().take(128).collect::<String>());
+                    if let Some(current_event) = current_event {
+                        context["evidence_skip_event_id"] = json!(current_event);
+                    }
+                }
+            }
         }
         let delivery = match post(&client, "/v2/context/load", &context, None) {
             Ok(delivery) => delivery,

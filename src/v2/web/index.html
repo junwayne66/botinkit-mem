@@ -284,7 +284,7 @@
           <div class="view__head">
             <div>
               <h1 id="h-statements">记忆库</h1>
-              <p class="view-desc">按适用范围查看当前事实，核对原话和修订历史。</p>
+              <p class="view-desc">查看本人声明，以及从会话和工具回执中提炼的候选记忆。</p>
             </div>
             <div class="head-actions">
               <button class="btn" type="button" data-action="reload-statements">
@@ -299,7 +299,7 @@
             <section class="panel library-column" aria-labelledby="library-current">
               <div class="panel-head">
                 <h3 id="library-current">
-                  <svg class="ico" aria-hidden="true"><use href="#i-memory" /></svg>当前事实
+                  <svg class="ico" aria-hidden="true"><use href="#i-memory" /></svg>本人声明中的当前事实
                 </h3>
                 <span id="stmt-seq" class="seq"></span>
               </div>
@@ -321,7 +321,17 @@
                     placeholder="输入项目标识"
                   />
                 </div>
-                <button id="library-apply" type="submit" class="btn" hidden>查看</button>
+                <div class="field">
+                  <label for="library-valid-at">指定生效时间（可选）</label>
+                  <input
+                    id="library-valid-at"
+                    type="text"
+                    maxlength="40"
+                    autocomplete="off"
+                    placeholder="2026-11-27T15:59:59Z"
+                  />
+                </div>
+                <button id="library-apply" type="submit" class="btn">查看</button>
               </form>
               <div id="stmt-result" class="library-result" role="status"></div>
               <div id="stmt-list" class="library-facts"></div>
@@ -375,6 +385,13 @@
               </form>
             </section>
           </div>
+          <section class="panel library-column" aria-labelledby="library-extracted">
+            <div class="panel-head">
+              <h3 id="library-extracted">自动提炼候选</h3>
+              <button class="btn btn--sm" type="button" data-action="show-candidates">查看全部提炼结果</button>
+            </div>
+            <div id="library-proposals" class="library-jobs"></div>
+          </section>
         </section>
 
         <!-- 历史 -->
@@ -625,6 +642,7 @@
                   <option value="running">运行中</option>
                   <option value="failed">失败</option>
                   <option value="done">已完成</option>
+                  <option value="candidates">有提炼候选</option>
                   <option value="cancelled">已取消</option>
                 </select></label
               >

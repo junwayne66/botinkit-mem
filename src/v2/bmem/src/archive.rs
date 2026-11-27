@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use rusqlite::backup::Backup;
 use rusqlite::types::ValueRef;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -40,6 +40,7 @@ pub fn backup(db: &Connection, root: &Path, instance_id: &str) -> Result<Value> 
         &data,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )?;
+    crate::storage_epoch::prepare_writer(&copy)?;
     {
         let transfer = Backup::new(db, &mut copy)?;
         transfer.run_to_completion(128, Duration::from_millis(5), None)?;
@@ -48,6 +49,12 @@ pub fn backup(db: &Connection, root: &Path, instance_id: &str) -> Result<Value> 
     if !journal.eq_ignore_ascii_case("delete") {
         return Err(Error::internal("backup could not be made self-contained"));
     }
+    copy.execute_batch(
+        "PRAGMA secure_delete=ON;
+         DELETE FROM vector_projection WHERE event_id IN (SELECT event_id FROM ing_event_versions WHERE active=0);
+         DELETE FROM vector_work WHERE event_id IN (SELECT event_id FROM ing_event_versions WHERE active=0);
+         DELETE FROM vector_shadow_rows WHERE event_id IN (SELECT event_id FROM ing_event_versions WHERE active=0);",
+    )?;
     let rebind_clients = unbind(&copy)?;
     verify_db(&copy)?;
     let revocation_cut = cut(&copy)?;
@@ -60,7 +67,9 @@ pub fn backup(db: &Connection, root: &Path, instance_id: &str) -> Result<Value> 
         format: FORMAT,
         backup_id: backup_id.clone(),
         instance_id: instance_id.to_owned(),
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: chrono::DateTime::parse_from_rfc3339(&crate::clock::now()?)
+            .map_err(|_| Error::internal("archive clock did not return RFC3339"))?
+            .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true),
         db_sha256,
         db_size,
         revocation_cut,
@@ -98,6 +107,100 @@ pub fn preview(db: &Connection, root: &Path, instance_id: &str, request: Value) 
         .get("backup_id")
         .and_then(Value::as_str)
         .ok_or_else(|| Error::invalid("backup_id is required"))?;
+    let (manifest, snapshot) = verified_snapshot(root, id)?;
+    check_objects(root)?;
+    let current = db.unchecked_transaction()?;
+    let current_cut = cut(&current)?;
+    let current_seq = change_seq(&current)?;
+    let same_instance = manifest.instance_id == instance_id;
+    let mut applied_tombstones = Vec::new();
+    if same_instance {
+        let mut live =
+            current.prepare("SELECT root_id FROM ing_root_revocations ORDER BY root_id")?;
+        let mut archived = snapshot.prepare(
+            "SELECT EXISTS(SELECT 1 FROM ing_event_versions WHERE root_id=?1 AND active=1)",
+        )?;
+        for row in live.query_map([], |r| r.get::<_, String>(0))? {
+            let root_id = row?;
+            if archived.query_row([&root_id], |r| r.get::<_, bool>(0))? {
+                applied_tombstones.push(root_id);
+            }
+        }
+    }
+    current.commit()?;
+    let blocked = if !same_instance {
+        Some("independent_revocation_watermark_required")
+    } else if current_cut != manifest.revocation_cut {
+        Some("authority_state_changed_requires_revocation_replay")
+    } else {
+        None
+    };
+    Ok(json!({
+        "backup_id": id, "state": if blocked.is_none() { "verified" } else { "blocked" },
+        "reason": blocked, "integrity": "verified", "can_apply": false, "activated": false,
+        "later_revocations": if same_instance { "local_authority" } else { "unknown" },
+        "restore_mode": "preview_only", "sha256": manifest.db_sha256, "revocation_cut": manifest.revocation_cut,
+        "active_revocation_cut": current_cut, "active_change_seq": current_seq, "provable_until": manifest.created_at,
+        "rebind_clients": manifest.rebind_clients, "objects": 0, "change_seq": manifest.change_seq,
+        "input_watermark": manifest.change_seq, "applied_tombstones": applied_tombstones,
+        "preview_search_available": same_instance,
+    }))
+}
+
+pub fn search_preview(
+    live: &Connection,
+    root: &Path,
+    instance_id: &str,
+    backup_id: &str,
+    request: &Value,
+) -> Result<Value> {
+    let query = request["query"]
+        .as_str()
+        .filter(|query| !query.trim().is_empty() && query.len() <= 4096)
+        .ok_or_else(|| Error::invalid("preview query must be nonempty and at most 4096 bytes"))?;
+    let (manifest, archive) = verified_snapshot(root, backup_id)?;
+    if manifest.instance_id != instance_id {
+        return Err(Error::denied(
+            "preview search requires the originating authority",
+        ));
+    }
+    let expression = crate::retrieval::fts_expression(query);
+    let mut results = Vec::new();
+    if !expression.is_empty() {
+        let mut hits = archive.prepare(
+            "SELECT e.event_id,e.root_id,e.native_version,r.handle
+            FROM recall_fts JOIN recall_events r ON r.handle=recall_fts.handle
+            JOIN ing_event_versions e ON e.event_id=r.event_id
+            WHERE recall_fts MATCH ?1 AND e.active=1 ORDER BY rank,e.event_id",
+        )?;
+        let mut authorized = live.prepare("SELECT EXISTS(SELECT 1 FROM ing_event_versions e
+            WHERE e.event_id=?1 AND e.root_id=?2 AND e.active=1
+              AND NOT EXISTS(SELECT 1 FROM ing_root_revocations t WHERE t.root_id=e.root_id)
+              AND NOT EXISTS(SELECT 1 FROM governance_owner_read_denials d WHERE d.root_id=e.root_id))")?;
+        let mut rows = hits.query([&expression])?;
+        // The archive is an immutable source of matches. A version is returned
+        // only if its current authority still admits that exact event and root.
+        while let Some(row) = rows.next()? {
+            let event = row.get::<_, String>(0)?;
+            let root = row.get::<_, String>(1)?;
+            if !authorized.query_row(params![event, root], |r| r.get::<_, bool>(0))? {
+                continue;
+            }
+            let handle = row.get::<_, String>(3)?;
+            let item = crate::retrieval::expand(&archive, &handle)?;
+            results.push(json!({"event_id":event,"root_id":root,
+                "version":row.get::<_,Option<String>>(2)?,"text":item["text"]}));
+            if results.len() == 30 {
+                break;
+            }
+        }
+    }
+    Ok(
+        json!({"backup_id":backup_id,"input_watermark":manifest.change_seq,"results":results,"activated":false}),
+    )
+}
+
+fn verified_snapshot(root: &Path, id: &str) -> Result<(Manifest, Connection)> {
     if !valid_id(id) {
         return Err(Error::invalid("invalid backup_id"));
     }
@@ -150,26 +253,7 @@ pub fn preview(db: &Connection, root: &Path, instance_id: &str, request: Value) 
         return Err(integrity_error("archive state does not match its manifest"));
     }
     verify_unbound(&snapshot, &manifest.rebind_clients)?;
-    check_objects(root)?;
-    // Use the same conservative comparison after any mutation affecting the authoritative state.
-    let current = db.unchecked_transaction()?;
-    let current_cut = cut(&current)?;
-    let current_seq = change_seq(&current)?;
-    current.commit()?;
-    let blocked = if manifest.instance_id != instance_id {
-        Some("independent_revocation_watermark_required")
-    } else if current_cut != manifest.revocation_cut {
-        Some("authority_state_changed_requires_revocation_replay")
-    } else {
-        None
-    };
-    Ok(json!({
-        "backup_id": id, "state": if blocked.is_none() { "verified" } else { "blocked" },
-        "reason": blocked, "integrity": "verified", "can_apply": false,
-        "restore_mode": "preview_only", "sha256": sha256, "revocation_cut": manifest.revocation_cut,
-        "active_revocation_cut": current_cut, "active_change_seq": current_seq, "provable_until": manifest.created_at,
-        "rebind_clients": manifest.rebind_clients, "objects": 0, "change_seq": manifest.change_seq,
-    }))
+    Ok((manifest, snapshot))
 }
 
 fn valid_id(id: &str) -> bool {
@@ -371,12 +455,21 @@ fn cut(db: &Connection) -> Result<String> {
             name.as_str(),
             "governance_operations"
                 | "governance_previews"
+                | "governance_comparison_snapshots"
+                | "governance_vector_cleanup_jobs"
+                | "governance_vector_cleanup_attempts"
+                | "governance_external_copies"
                 | "context_intents"
                 | "context_deliveries"
                 | "context_delivery_evidence"
+                | "context_evidence_manifests"
                 | "context_receipts"
                 | "context_outcomes"
+                | "recall_seed_sets"
                 | "vector_projection"
+                | "vector_work"
+                | "vector_shadow_batches"
+                | "vector_shadow_rows"
         ) {
             continue;
         }

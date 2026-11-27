@@ -129,27 +129,38 @@ pub fn read_page(host: &str, path: &Path, offset: u64, max_events: usize) -> Res
     let mut events = Vec::with_capacity(max_events);
     let mut eof = false;
     let start = cursor;
+    // Codex embeds images in the same JSON line as their accompanying prompt.
+    let record_limit = if matches!(adapter, Host::Codex) {
+        MAX_PAGE_BYTES
+    } else {
+        MAX_RECORD_BYTES
+    };
     for _ in 0..MAX_PAGE_RECORDS {
         if cursor - start >= MAX_PAGE_BYTES || events.len() == max_events {
             break;
         }
         line.clear();
+        let available = record_limit.min(MAX_PAGE_BYTES - (cursor - start));
         let count = reader
             .by_ref()
-            .take(MAX_RECORD_BYTES)
+            .take(available)
             .read_until(b'\n', &mut line)? as u64;
         if count == 0 {
             eof = true;
             break;
         }
         let complete = line.last() == Some(&b'\n');
-        if !complete && count < MAX_RECORD_BYTES {
+        if !complete && count < available {
             eof = true;
             break;
+        }
+        if !complete && available < record_limit && !discarding {
+            break; // Read this record from its start with a fresh page budget.
         }
         if complete
             && !discarding
             && let Ok(record) = serde_json::from_slice::<Value>(&line)
+            && (count <= MAX_RECORD_BYTES || codex_image_prompt(&record))
             && let Some(event) = event_for(adapter, host, &prefix, cursor, &record, fallback_time)
         {
             events.push(event);
@@ -162,6 +173,16 @@ pub fn read_page(host: &str, path: &Path, offset: u64, max_events: usize) -> Res
         events,
         eof,
     })
+}
+
+fn codex_image_prompt(record: &Value) -> bool {
+    let payload = &record["payload"];
+    record["type"] == "response_item"
+        && payload["type"] == "message"
+        && payload["role"] == "user"
+        && payload["content"]
+            .as_array()
+            .is_some_and(|parts| parts.iter().any(|part| part["type"] == "input_image"))
 }
 
 fn transcript_io(error: io::Error) -> Error {
@@ -278,6 +299,13 @@ fn event_for(
         "actor_kind": kind,
         "at": timestamp(record, fallback_time),
     });
+    if matches!(adapter, Host::Claude)
+        && kind == "user_message"
+        && first_string(record, &["promptId", "prompt_id"]).is_some()
+        && let Some(uuid) = first_string(record, &["uuid"])
+    {
+        event["transcript_message_id"] = json!(uuid);
+    }
     let field = if kind == "tool_result" {
         "checks"
     } else {
@@ -386,11 +414,53 @@ fn claude_event(record: &Value, fallback: &str) -> Option<(&'static str, String,
         _ => return None,
     };
     let native = first_string(record, &["promptId", "prompt_id", "uuid"]).unwrap_or(fallback);
-    Some((
-        kind,
-        native.to_owned(),
-        json!(visible_text(content, false, MAX_TEXT_BYTES)?),
-    ))
+    let text = visible_text(content, false, MAX_TEXT_BYTES)?;
+    let text = if role == "user" {
+        if record["origin"]["kind"] == "task-notification" {
+            return None;
+        }
+        claude_prompt_text(&text)
+    } else {
+        &text
+    };
+    (!text.is_empty()).then(|| (kind, native.to_owned(), json!(text)))
+}
+
+/// Claude attaches IDE context to real prompts and also emits standalone UI
+/// notices in the user role. Only the text following those notices is a prompt.
+pub(crate) fn claude_prompt_text(mut text: &str) -> &str {
+    loop {
+        text = text.trim();
+        let Some((open, close)) = [
+            ("<ide_opened_file>", "</ide_opened_file>"),
+            ("<local-command-stdout>", "</local-command-stdout>"),
+            ("<local-command-stderr>", "</local-command-stderr>"),
+            ("<task-notification>", "</task-notification>"),
+        ]
+        .into_iter()
+        .find(|(open, _)| text.starts_with(open)) else {
+            return match text {
+                "[Request interrupted by user]" | "[Request interrupted by user for tool use]" => {
+                    ""
+                }
+                prompt => prompt,
+            };
+        };
+        text = text[open.len()..]
+            .split_once(close)
+            .map_or("", |(_, after)| after);
+    }
+}
+
+pub(crate) fn matches_claude_prompt(previous: &str, incoming: &str) -> bool {
+    let previous = claude_prompt_text(previous);
+    previous == incoming
+        || incoming
+            .strip_suffix("\n[bmem truncated]")
+            .is_some_and(|prefix| previous.starts_with(prefix))
+        || previous
+            .strip_suffix("\n[bmem truncated]")
+            .is_some_and(|prefix| incoming.starts_with(prefix))
 }
 
 fn dsh_event(record: &Value) -> Option<(&'static str, String, Value)> {

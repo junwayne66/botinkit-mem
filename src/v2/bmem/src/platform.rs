@@ -137,7 +137,7 @@ fn canonical_candidate(path: &Path) -> Result<PathBuf> {
     }
 }
 
-fn private_directory(path: &Path) -> Result<()> {
+pub(crate) fn private_directory(path: &Path) -> Result<()> {
     if path.exists() {
         return verify_private_directory(path);
     }
@@ -209,7 +209,7 @@ fn open_lock(path: &Path) -> Result<File> {
     Ok(options.open(path)?)
 }
 
-fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>> {
+pub(crate) fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -223,7 +223,7 @@ fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>> {
     })
 }
 
-fn save<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+pub(crate) fn save<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     let dir = path
         .parent()
         .ok_or_else(|| Error::internal("metadata has no parent directory"))?;
@@ -531,6 +531,63 @@ pub fn lock_service(instance: &Instance) -> Result<File> {
         }
         Err(error) => Err(error.into()),
     }
+}
+
+#[derive(Deserialize, Serialize)]
+struct UpdateBarrier {
+    instance_id: String,
+    operation: String,
+}
+
+fn barrier_file(root: &Path) -> PathBuf {
+    root.join("run/update-barrier.json")
+}
+
+pub fn read_update_barrier(root: &Path, instance_id: &str) -> Result<Option<String>> {
+    match read::<UpdateBarrier>(&barrier_file(root))? {
+        Some(marker) if marker.instance_id == instance_id => Ok(Some(marker.operation)),
+        Some(_) => Err(Error::conflict("update barrier does not belong to this instance")),
+        None => Ok(None),
+    }
+}
+
+pub fn update_barrier(instance: &Instance) -> Result<Option<String>> {
+    read_update_barrier(&instance.root, &instance.id)
+}
+
+pub fn set_update_barrier(instance: &Instance, operation: &str) -> Result<()> {
+    match update_barrier(instance)?.as_deref() {
+        Some(current) if current == operation => return Ok(()),
+        Some(_) => return Err(Error::conflict("another update has reserved this instance")),
+        None => {}
+    }
+    save(&barrier_file(&instance.root), &UpdateBarrier {
+        instance_id: instance.id.clone(),
+        operation: operation.to_owned(),
+    })
+}
+
+pub fn clear_update_barrier(instance: &Instance, operation: &str) -> Result<()> {
+    match update_barrier(instance)?.as_deref() {
+        Some(current) if current == operation => {}
+        Some(_) => return Err(Error::conflict("another update has reserved this instance")),
+        None => return Ok(()),
+    }
+    fs::remove_file(barrier_file(&instance.root))?;
+    #[cfg(unix)]
+    File::open(instance.root.join("run"))?.sync_all()?;
+    Ok(())
+}
+
+pub fn maintenance_error() -> Error {
+    Error::new(503, "update_in_progress", "bmem is updating; retry after the update finishes")
+}
+
+pub fn ensure_not_updating(instance: &Instance) -> Result<()> {
+    if update_barrier(instance)?.is_some() {
+        return Err(maintenance_error());
+    }
+    Ok(())
 }
 
 /// Daemon-side lock acquisition with a bounded retry.

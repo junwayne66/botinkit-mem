@@ -60,6 +60,14 @@ pub fn migrate(db: &Connection) -> Result<()> {
             FOREIGN KEY(source_id,chat_id) REFERENCES history_feishu_chats(source_id,chat_id)
          );",
     )?;
+    let has_kind: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('history_feishu_chats') WHERE name='kind')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_kind {
+        db.execute_batch("ALTER TABLE history_feishu_chats ADD COLUMN kind TEXT")?;
+    }
     Ok(())
 }
 
@@ -185,7 +193,13 @@ fn active(db: &Transaction<'_>, source_id: &str) -> Result<bool> {
     )?)
 }
 
-fn accept(db: &Transaction<'_>, source_id: &str, events: Vec<Value>, profile: &str) -> Result<()> {
+fn accept(
+    db: &Transaction<'_>,
+    source_id: &str,
+    events: Vec<Value>,
+    profile: &str,
+    feishu_kind: Option<&str>,
+) -> Result<()> {
     if events.is_empty() {
         return Ok(());
     }
@@ -197,6 +211,9 @@ fn accept(db: &Transaction<'_>, source_id: &str, events: Vec<Value>, profile: &s
     let key = Uuid::new_v4().to_string();
     let page = json!({"source_id":source_id,"cursor":cursor,"next_cursor":key,"events":events});
     let receipt = ingestion::accept_in(db, "owner", &key, page, profile)?;
+    if let Some(kind) = feishu_kind {
+        crate::retrieval::record_feishu_kind(db, &receipt, kind)?;
+    }
     db.execute(
         "UPDATE history_sources SET events=events+?2 WHERE source_id=?1",
         params![
@@ -262,7 +279,7 @@ fn scan_files(
         if !active(&tx, &source.id)? {
             return Ok(None);
         }
-        accept(&tx, &source.id, page.events, profile)?;
+        accept(&tx, &source.id, page.events, profile, None)?;
         tx.execute(
             "INSERT INTO history_files VALUES(?1,?2,?3,?4,?5)
              ON CONFLICT(source_id,path) DO UPDATE SET
@@ -295,7 +312,7 @@ fn scan_feishu(
     };
     let account = history_feishu::account(&source.account, stop)?;
     if !listed {
-        let page = match account.chats(token.as_deref(), stop) {
+        let page = match account.chat_list("p2p,group", token.as_deref(), stop) {
             Err(error) if error.code == "feishu_cursor_expired" && token.is_some() => {
                 lock(database)?.execute(
                     "UPDATE history_feishu_passes SET list_token=NULL WHERE source_id=?1",
@@ -310,11 +327,16 @@ fn scan_feishu(
         if !active(&tx, &source.id)? {
             return Ok(None);
         }
-        for chat in page.ids {
+        for chat in page.chats {
+            let kind = match chat.mode.as_str() {
+                "p2p" => Some("dm"),
+                "group" | "topic" => Some("group"),
+                _ => None,
+            };
             tx.execute(
-                "INSERT INTO history_feishu_chats(source_id,chat_id,seen_at) VALUES(?1,?2,?3)
-                 ON CONFLICT(source_id,chat_id) DO UPDATE SET seen_at=excluded.seen_at",
-                params![source.id, chat, end],
+                "INSERT INTO history_feishu_chats(source_id,chat_id,seen_at,kind) VALUES(?1,?2,?3,?4)
+                 ON CONFLICT(source_id,chat_id) DO UPDATE SET seen_at=excluded.seen_at, kind=coalesce(excluded.kind,kind)",
+                params![source.id, chat.id, end, kind],
             )?;
         }
         tx.execute(
@@ -324,16 +346,16 @@ fn scan_feishu(
         tx.commit()?;
         return Ok(Some(1));
     }
-    let chat: Option<(String, i64, Option<String>)> = lock(database)?
+    let chat: Option<(String, i64, Option<String>, Option<String>)> = lock(database)?
         .query_row(
-            "SELECT chat_id,watermark,page_token FROM history_feishu_chats
+            "SELECT chat_id,watermark,page_token,kind FROM history_feishu_chats
              WHERE source_id=?1 AND watermark<?2 AND seen_at=?2 AND blocked_at<>?2
              ORDER BY page_token IS NULL,watermark DESC,chat_id LIMIT 1",
             params![source.id, end],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let Some((chat, start, token)) = chat else {
+    let Some((chat, start, token, kind)) = chat else {
         return scan_feishu_thread(database, source, profile, &account, end, stop);
     };
     let result = account.messages(&chat, (start - 60).max(0), end, token.as_deref(), stop);
@@ -344,7 +366,7 @@ fn scan_feishu(
         return Ok(None);
     }
     let (next, watermark) = if let Some(page) = page {
-        accept(&tx, &source.id, page.events, profile)?;
+        accept(&tx, &source.id, page.events, profile, kind.as_deref())?;
         for thread in page.thread_ids {
             tx.execute(
                 "INSERT OR IGNORE INTO history_feishu_threads(source_id,chat_id,thread_id)
@@ -379,17 +401,17 @@ fn scan_feishu_thread(
     end: i64,
     stop: &impl Fn() -> bool,
 ) -> Result<Option<i64>> {
-    let thread: Option<(String, i64, Option<String>)> = lock(database)?
+    let thread: Option<(String, i64, Option<String>, Option<String>)> = lock(database)?
         .query_row(
-            "SELECT t.thread_id,t.watermark,t.page_token FROM history_feishu_threads t
+            "SELECT t.thread_id,t.watermark,t.page_token,c.kind FROM history_feishu_threads t
              JOIN history_feishu_chats c ON t.source_id=c.source_id AND t.chat_id=c.chat_id
              WHERE t.source_id=?1 AND t.watermark<?2 AND c.seen_at=?2 AND t.blocked_at<>?2
              ORDER BY t.page_token IS NULL,t.watermark DESC,t.thread_id LIMIT 1",
             params![source.id, end],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let Some((thread, start, token)) = thread else {
+    let Some((thread, start, token, kind)) = thread else {
         lock(database)?.execute(
             "DELETE FROM history_feishu_passes WHERE source_id=?1",
             [&source.id],
@@ -410,7 +432,7 @@ fn scan_feishu_thread(
         let next = page
             .next_token
             .filter(|_| page.oldest_timestamp.is_none_or(|oldest| oldest >= since));
-        accept(&tx, &source.id, page.events, profile)?;
+        accept(&tx, &source.id, page.events, profile, kind.as_deref())?;
         let watermark = if next.is_none() { end } else { start };
         (next, watermark)
     } else {

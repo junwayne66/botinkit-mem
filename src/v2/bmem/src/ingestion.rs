@@ -156,6 +156,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             root_id TEXT PRIMARY KEY REFERENCES ing_roots(root_id),
             withdrawn_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS ing_extract_denials (root_id TEXT PRIMARY KEY REFERENCES ing_roots(root_id));
+        CREATE TABLE IF NOT EXISTS ing_extract_pauses (source_id TEXT PRIMARY KEY REFERENCES ing_sources(source_id));
         CREATE TABLE IF NOT EXISTS ing_event_versions (
             event_id       TEXT PRIMARY KEY,
             root_id        TEXT NOT NULL,
@@ -191,6 +193,11 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_jobs_claim ON ing_jobs (status, available_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_source_created
             ON ing_jobs(source_id, created_at, status, available_at, lease_expires_at, event_id);
+        CREATE INDEX IF NOT EXISTS idx_jobs_due_by_source ON ing_jobs(
+            source_id, CASE WHEN status='running' THEN lease_expires_at ELSE available_at END
+        ) WHERE status IN ('pending','failed','running');
+        CREATE INDEX IF NOT EXISTS idx_jobs_last_attempt_by_source
+            ON ing_jobs(source_id, updated_at DESC) WHERE attempts>0;
         CREATE INDEX IF NOT EXISTS idx_events_source_received
             ON ing_event_versions(source_id, received_at);
 
@@ -510,13 +517,20 @@ fn accept_page(
             "action_denied: adapter '{actor}' is not bound to source '{source_id}' for page submission"
         )));
     }
-    let permitted = if let Some(task_id) = history_task {
+    let history_kind: Option<String> = if let Some(task_id) = history_task {
         tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM history_task_jobs
-              WHERE task_id=?1 AND source_id=?2 AND state='running' AND targets='[]')",
+            "SELECT kind FROM history_task_jobs
+              WHERE task_id=?1 AND source_id=?2 AND state='running'
+                AND (targets='[]' OR kind='archive')",
             params![task_id, source_id],
-            |row| row.get::<_, bool>(0),
-        )?
+            |row| row.get(0),
+        )
+        .optional()?
+    } else {
+        None
+    };
+    let permitted = if history_task.is_some() {
+        history_kind.is_some()
     } else {
         grant_active_in(tx, &source_id, "capture")?
     };
@@ -540,7 +554,7 @@ fn accept_page(
         // A rejected row rolls back the whole page, including earlier versions.
         let p = plan_event(tx, &source, event, ordinal)?;
         if p.change_kind == "revoked" {
-            withdraw_root(tx, &p.root_id)?;
+            withdraw_root(tx, &p.root_id, true)?;
         }
         let disposition = p.action.label();
         match p.action {
@@ -606,10 +620,14 @@ fn accept_page(
         }
     }
 
-    tx.execute(
-        "UPDATE ing_sources SET cursor = ?1, updated_at = ?2 WHERE source_id = ?3",
-        params![next_cursor, received_at, source_id],
-    )?;
+    // Owner-confirmed archive pages have their own transactional checkpoint.
+    // An archive import cannot advance the continuous adapter's source cursor.
+    if history_kind.as_deref() != Some("archive") {
+        tx.execute(
+            "UPDATE ing_sources SET cursor = ?1, updated_at = ?2 WHERE source_id = ?3",
+            params![next_cursor, received_at, source_id],
+        )?;
+    }
 
     let receipt = json!({
         "ingest_id": new_id("ing"),
@@ -697,7 +715,9 @@ pub fn job_candidates(conn: &Connection, job_id: &str) -> Result<Value> {
     }))
 }
 
-/// Claim the oldest runnable job, extending a fresh lease.
+/// Serve the least recently processed source first. Within that source, claim
+/// the earliest due input. Repeated failures move to their retry time so they
+/// cannot occupy the front of the queue solely because they were created first.
 ///
 /// Runnable means: (`pending` or `failed` and due, or `running` with an
 /// expired lease) **and** the input version is still active **and** the
@@ -719,14 +739,19 @@ pub fn claim(conn: &mut Connection, route: &str) -> Result<Option<Job>> {
                  JOIN ing_jobs candidate ON candidate.rowid=(
                      SELECT q.rowid FROM ing_jobs q
                      WHERE q.source_id=m.source_id
-                       AND ((q.status IN ('pending','failed') AND q.available_at<=?1)
-                            OR (q.status='running' AND q.lease_expires_at<=?1))
+                       AND q.status IN ('pending','failed','running')
+                       AND (CASE WHEN q.status='running' THEN q.lease_expires_at ELSE q.available_at END)<=?1
                        AND EXISTS(SELECT 1 FROM ing_event_versions e
-                                  WHERE e.event_id=q.event_id AND e.active=1)
-                     ORDER BY q.created_at LIMIT 1
+                                  WHERE e.event_id=q.event_id AND e.active=1
+                                  AND NOT EXISTS(SELECT 1 FROM ing_extract_denials d WHERE d.root_id=e.root_id))
+                     ORDER BY (CASE WHEN q.status='running' THEN q.lease_expires_at ELSE q.available_at END),q.rowid LIMIT 1
                  )
                  WHERE m.fingerprint=?2
-                 ORDER BY candidate.created_at,candidate.rowid LIMIT 1
+                 AND NOT EXISTS(SELECT 1 FROM ing_extract_pauses pause WHERE pause.source_id=m.source_id)
+                 ORDER BY (SELECT recent.updated_at FROM ing_jobs recent
+                           WHERE recent.source_id=m.source_id AND recent.attempts>0
+                           ORDER BY recent.updated_at DESC LIMIT 1),
+                          candidate.created_at,candidate.rowid LIMIT 1
              )",
             params![now, route],
             |r| {
@@ -815,10 +840,13 @@ pub fn finish(conn: &mut Connection, job: &Job, candidates: Value, route: &str) 
         value: String,
         condition: Option<String>,
         spans: Vec<String>,
+        invalid_support: bool,
     }
     let mut prepared = Vec::with_capacity(list.len());
     for (ordinal, c) in list.iter().enumerate() {
-        let obj = c
+        let mut proposal = c.clone();
+        redact_secrets(&mut proposal);
+        let obj = proposal
             .as_object()
             .ok_or_else(|| Error::invalid(format!("candidate {ordinal} must be an object")))?;
         let kind = require_str(obj, "kind")?.to_string();
@@ -842,24 +870,19 @@ pub fn finish(conn: &mut Connection, job: &Job, candidates: Value, route: &str) 
                     "candidate {ordinal}: support must be an array of span ids"
                 ))
             })?;
-        if support.is_empty() {
-            return Err(Error::invalid(format!(
-                "candidate {ordinal}: support must reference at least one input span"
-            )));
-        }
         let mut spans = Vec::with_capacity(support.len());
+        let mut invalid_support = support.is_empty();
         for s in support {
             let sid = s.as_str().ok_or_else(|| {
                 Error::invalid(format!(
                     "candidate {ordinal}: support entries must be strings"
                 ))
             })?;
-            if !known_spans.iter().any(|k| k == sid) {
-                return Err(Error::invalid(format!(
-                    "candidate {ordinal} references unknown span '{sid}'"
-                )));
+            if known_spans.iter().any(|k| k == sid) {
+                spans.push(sid.to_string());
+            } else {
+                invalid_support = true;
             }
-            spans.push(sid.to_string());
         }
         prepared.push(Candidate {
             kind,
@@ -868,6 +891,7 @@ pub fn finish(conn: &mut Connection, job: &Job, candidates: Value, route: &str) 
             value,
             condition,
             spans,
+            invalid_support,
         });
     }
 
@@ -905,7 +929,8 @@ pub fn finish(conn: &mut Connection, job: &Job, candidates: Value, route: &str) 
     // Fail-closed rechecks against durable state, not the passed snapshot.
     let version_active: Option<i64> = tx
         .query_row(
-            "SELECT active FROM ing_event_versions WHERE event_id = ?1",
+            "SELECT active AND NOT EXISTS(SELECT 1 FROM ing_extract_denials d WHERE d.root_id=e.root_id)
+             FROM ing_event_versions e WHERE event_id = ?1",
             params![job_event],
             |r| r.get(0),
         )
@@ -927,7 +952,24 @@ pub fn finish(conn: &mut Connection, job: &Job, candidates: Value, route: &str) 
         )));
     }
 
-    let mut recorded = 0usize;
+    let valid = list
+        .iter()
+        .zip(&prepared)
+        .filter(|(_, candidate)| !candidate.invalid_support)
+        .map(|(proposal, _)| proposal.clone())
+        .collect::<Vec<_>>();
+    let verified = crate::authority::adjudicate(&tx, &job.input, &valid)?;
+    let verified_spans = if valid.is_empty() {
+        std::collections::BTreeSet::new()
+    } else {
+        let mut query =
+            tx.prepare("SELECT span_id FROM authority_observations WHERE event_id=?1")?;
+        query
+            .query_map([job.event_id.as_str()], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<std::collections::BTreeSet<_>>>()?
+    };
+    let mut credited = std::collections::BTreeSet::new();
+    let mut decisions = Vec::new();
     for (
         ordinal,
         Candidate {
@@ -937,15 +979,44 @@ pub fn finish(conn: &mut Connection, job: &Job, candidates: Value, route: &str) 
             value,
             condition,
             spans,
+            invalid_support,
         },
     ) in prepared.into_iter().enumerate()
     {
+        let candidate_id = new_id("cand");
+        let (decision, reason) = if invalid_support {
+            ("rejected", "missing_source_span")
+        } else if !spans.iter().any(|span| verified_spans.contains(span)) {
+            ("pending", "source_does_not_verify_proposal")
+        } else if spans
+            .iter()
+            .filter(|span| verified_spans.contains(*span))
+            .map(|span| credited.insert(span.clone()))
+            .fold(false, |any, added| any || added)
+        {
+            ("adopted", "source_observation_verified")
+        } else {
+            ("merged", "same_verified_source_span")
+        };
+        // Retain the disposition and a stable candidate ID without persisting
+        // unsupported proposal text or a model-invented source reference.
+        let (subject, key, value, condition, spans) = if invalid_support {
+            (
+                String::new(),
+                String::new(),
+                "null".into(),
+                None,
+                Vec::new(),
+            )
+        } else {
+            (subject, key, value, condition, spans)
+        };
         tx.execute(
             "INSERT INTO ing_candidates
              (candidate_id, job_id, ordinal, kind, subject, key, value, condition, support, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
-                new_id("cand"),
+                candidate_id,
                 job.id,
                 ordinal as i64,
                 kind,
@@ -957,17 +1028,16 @@ pub fn finish(conn: &mut Connection, job: &Job, candidates: Value, route: &str) 
                 now,
             ],
         )?;
-        recorded += 1;
+        decisions.push(json!({"candidate_id":candidate_id,"kind":decision,"reason":reason}));
     }
-    let recorded = recorded as i64;
-    let verified = crate::authority::adjudicate(&tx, &job.input, &list)?;
+    let recorded = decisions.len();
     tx.execute(
-        "UPDATE ing_jobs SET status = 'done', lease_expires_at = NULL,
+        "UPDATE ing_jobs SET status = 'done', lease_expires_at = NULL, fail_reason = NULL,
                 result = ?1, updated_at = ?2
          WHERE job_id = ?3",
         params![
             canonical(
-                &json!({ "candidates_recorded": recorded, "observations_verified": verified })
+                &json!({ "candidates_recorded": recorded, "observations_verified": verified, "decisions":decisions })
             ),
             now,
             job.id
@@ -1177,7 +1247,7 @@ fn plan_event(
         Some(Value::String(s)) if !s.trim().is_empty() => Some(s.clone()),
         Some(_) => return Err(bad("task_id must be a non-empty string".into())),
     };
-    let native_version = match obj.get("native_version") {
+    let mut native_version = match obj.get("native_version") {
         None | Some(Value::Null) => None,
         Some(Value::String(s)) if !s.trim().is_empty() => Some(s.clone()),
         Some(Value::Number(n)) => Some(n.to_string()),
@@ -1203,11 +1273,15 @@ fn plan_event(
             return Err(bad("tool_result events must carry a checks object".into()));
         }
         let checks = obj
-            .get("checks")
-            .filter(|c| c.is_object())
+            .get("checks").and_then(Value::as_object)
             .ok_or_else(|| bad("checks must be an object".into()))?;
-        if checks.as_object().is_none_or(Map::is_empty) {
+        if checks.is_empty() {
             return Err(bad("checks must not be empty".into()));
+        }
+        // These objects have already passed the same recursive credential redaction as every event.
+        if checks.iter().any(|(field, value)| crate::tool_receipt::is_typed(value)
+            && (!crate::tool_receipt::valid_field(field) || !crate::tool_receipt::valid_marker_check(value))) {
+            return Err(bad("invalid typed artifact check".into()));
         }
         json!({"checks": checks})
     } else {
@@ -1220,6 +1294,30 @@ fn plan_event(
             .ok_or_else(|| bad("text must be a string".into()))?;
         json!({"text": text})
     };
+
+    // Historical Claude records can share a turn's promptId with a different
+    // displayed message. Keep v1 for the matching live Hook or prior import.
+    if source.kind == "claude-code"
+        && source.account == "local"
+        && actor_kind == "user_message"
+        && change_kind == "created"
+        && native_version.as_deref() == Some("1")
+        && let Some(message_id) = obj.get("transcript_message_id").and_then(Value::as_str)
+    {
+        let previous: Option<String> = conn.query_row(
+            "SELECT json_extract(e.content,'$.text') FROM ing_roots r JOIN ing_event_versions e USING(root_id)
+             WHERE r.namespace=?1 AND r.native_object=?2 AND e.version_key='v:1' AND e.active=1",
+            params![source.namespace, native_object], |row| row.get(0),
+        ).optional()?;
+        if let Some(previous) = previous
+            && !crate::history_hosts::matches_claude_prompt(
+                &previous,
+                content["text"].as_str().unwrap_or_default(),
+            )
+        {
+            native_version = Some(format!("message:{message_id}"));
+        }
+    }
 
     // Stable version identity: native version, else canonical fingerprint
     // over content plus change kind (transport fields excluded).
@@ -1581,7 +1679,7 @@ fn job_row_to_value(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
 
 const JOB_SELECT: &str = "SELECT j.job_id, j.source_id, j.event_id, j.intake_version, j.input,
             j.status, j.attempts, j.available_at, j.lease_expires_at,
-            j.fail_reason, j.created_at, j.updated_at,
+            CASE WHEN j.status<>'done' THEN j.fail_reason END, j.created_at, j.updated_at,
             (SELECT COUNT(*) FROM ing_candidates c WHERE c.job_id = j.job_id)
      FROM ing_jobs j";
 
@@ -1627,20 +1725,22 @@ pub fn set_extract(
     Ok(json!({"source_id":source_id,"extract_enabled":enabled}))
 }
 
-fn erase_event(db: &Connection, id: &str) -> Result<()> {
+fn erase_event(db: &Connection, id: &str, clean_vectors: bool) -> Result<()> {
     db.execute(
         "UPDATE ing_event_versions SET active=0,content='{}' WHERE event_id=?1",
         [id],
     )?;
     crate::retrieval::drop_event(db, id)?;
-    crate::vector::drop_event(db, id)?;
+    if clean_vectors {
+        crate::vector::drop_event(db, id)?;
+    }
     db.execute("DELETE FROM authority_observations WHERE event_id=?1", [id])?;
     db.execute("DELETE FROM ing_candidates WHERE job_id IN (SELECT job_id FROM ing_jobs WHERE event_id=?1)",[id])?;
-    db.execute("UPDATE ing_jobs SET status='cancelled',input='{}',result=NULL,fail_reason=NULL,lease_expires_at=NULL,updated_at=?2 WHERE event_id=?1",params![id,now_utc()])?;
+    db.execute("UPDATE ing_jobs SET status='cancelled',input='{}',result=NULL,fail_reason='input_withdrawn',lease_expires_at=NULL,updated_at=?2 WHERE event_id=?1",params![id,now_utc()])?;
     Ok(())
 }
 
-fn withdraw_root(db: &Connection, root: &str) -> Result<usize> {
+fn withdraw_root(db: &Connection, root: &str, clean_vectors: bool) -> Result<usize> {
     db.execute(
         "INSERT OR IGNORE INTO ing_root_revocations VALUES(?1,?2)",
         params![root, now_utc()],
@@ -1652,9 +1752,22 @@ fn withdraw_root(db: &Connection, root: &str) -> Result<usize> {
             .collect::<rusqlite::Result<Vec<_>>>()?
     };
     for id in &ids {
-        erase_event(db, id)?;
+        erase_event(db, id, clean_vectors)?;
     }
     Ok(ids.len())
+}
+
+pub fn forget_root(db: &Connection, root: &str) -> Result<Value> {
+    if !db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM ing_roots WHERE root_id=?1)",
+        [root],
+        |row| row.get::<_, bool>(0),
+    )? {
+        return Err(Error::missing("source root is unavailable"));
+    }
+    let withdrawn_events = withdraw_root(db, root, false)?;
+    crate::governance::enqueue_vector_cleanup(db, root)?;
+    Ok(json!({"root_id":root,"withdrawn_events":withdrawn_events}))
 }
 
 pub fn forget(db: &Connection, id: &str) -> Result<Value> {
@@ -1672,7 +1785,11 @@ pub fn forget(db: &Connection, id: &str) -> Result<Value> {
     };
     let mut withdrawn = 0;
     for root in roots {
-        withdrawn += withdraw_root(db, &root)?;
+        withdrawn += withdraw_root(db, &root, true)?;
     }
     Ok(json!({"source_id":id,"withdrawn_events":withdrawn}))
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/v2/ingestion_queue.rs"]
+mod queue_tests;

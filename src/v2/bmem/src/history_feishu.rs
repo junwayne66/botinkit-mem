@@ -16,11 +16,6 @@ pub struct Account {
     pub identity: feishu::Account,
 }
 
-pub struct ChatPage {
-    pub ids: Vec<String>,
-    pub next_token: Option<String>,
-}
-
 /// One chat as returned by the authorized user's chat list: its stable native
 /// id, the Feishu `chat_mode` (p2p/group) used to restrict dm vs group, and the
 /// human-readable name shown as the import target label.
@@ -82,14 +77,6 @@ pub fn account(account_key: &str, stop: &impl Fn() -> bool) -> Result<Account> {
 }
 
 impl Account {
-    pub fn chats(&self, page_token: Option<&str>, stop: &impl Fn() -> bool) -> Result<ChatPage> {
-        let list = self.chat_list("p2p,group", page_token, stop)?;
-        Ok(ChatPage {
-            ids: list.chats.into_iter().map(|chat| chat.id).collect(),
-            next_token: list.next_token,
-        })
-    }
-
     /// List one page of the authorized user's chats restricted to `types`
     /// (`p2p`, `group`, or `p2p,group`), carrying each chat's mode and name so
     /// the import picker can label targets and keep dm/group apart.
